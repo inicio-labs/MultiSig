@@ -196,7 +196,7 @@ const CreateNewAccount = () => {
         <div className="w-full flex flex-col  space-y-1">
           <div className="flex flex-row justify-between w-full">
             <div className="md:text-[18px] sm:text-[16px] text-[15px] lg:text-[20px] font-[500] font-dmmono uppercase">
-              CREATE NEW ACCOUNT
+              CREATE NEW ACCOUNT - TESTING SIGNING
             </div>
 
             <div className="lg:text-[14px] md:text-[13px] sm:text-[12px] text-[11px] font-dmmono font-[500]">
