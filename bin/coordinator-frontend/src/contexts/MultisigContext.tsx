@@ -178,6 +178,16 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     }
   }, [midenWalletSession.connected]);
 
+  // Attempt to auto-connect external wallets on mount
+  useEffect(() => {
+    const savedSource = localStorage.getItem('currentWalletSource');
+    if (savedSource === 'miden-wallet') {
+      connectMidenWalletRaw().catch(() => {
+        // Silently ignore auto-connect failures as the user may have locked their wallet
+      });
+    }
+  }, [connectMidenWalletRaw]);
+
   const activeCommitment = useMemo(() => {
     if (walletSource === 'para' && paraSession.connected) return paraSession.commitment;
     if (walletSource === 'miden-wallet' && midenWalletSession.connected) return midenWalletSession.commitment;
@@ -379,6 +389,8 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       // Persist account ID so middleware allows dashboard access
       if (ms.accountId) {
         localStorage.setItem('currentWalletId', ms.accountId);
+        localStorage.setItem('currentWalletSource', walletSource);
+        localStorage.setItem('currentWalletScheme', signatureScheme);
         document.cookie = `currentWalletId=${ms.accountId}; path=/; max-age=31536000`;
       }
 
@@ -448,6 +460,8 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       // Persist account ID so middleware allows dashboard access
       if (ms.accountId) {
         localStorage.setItem('currentWalletId', ms.accountId);
+        localStorage.setItem('currentWalletSource', walletSource);
+        localStorage.setItem('currentWalletScheme', signatureScheme);
         document.cookie = `currentWalletId=${ms.accountId}; path=/; max-age=31536000`;
       }
 
@@ -473,11 +487,27 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (autoLoadAttemptedRef.current) return;
     if (!multisigClient || !signer || !psmCommitment) return;
+    
     const savedId = localStorage.getItem('currentWalletId');
     if (!savedId) return;
+
+    const savedSource = localStorage.getItem('currentWalletSource') as WalletSource | null;
+    const savedScheme = localStorage.getItem('currentWalletScheme') as SignatureScheme | null;
+
+    // Do not abort if it's external but disconnected; instead just wait for the next render
+    if (savedSource === 'para' && !paraSession.connected) return;
+    if (savedSource === 'miden-wallet' && !midenWalletSession.connected) return;
+
     autoLoadAttemptedRef.current = true;
-    handleLoad(savedId);
-  }, [multisigClient, signer, psmCommitment, handleLoad]);
+
+    if (savedSource && savedSource !== walletSource) {
+      setWalletSource(savedSource);
+    }
+    
+    setTimeout(() => {
+        handleLoad(savedId, savedScheme ?? 'falcon');
+    }, 100);
+  }, [multisigClient, signer, psmCommitment, handleLoad, paraSession.connected, midenWalletSession.connected, walletSource]);
 
   const handleSync = useCallback(async () => {
     if (!multisig || !webClient) return;
