@@ -15,8 +15,8 @@ const Security = () => {
     connectMidenWallet,
     disconnectMidenWallet,
     openParaModal,
-    psmUrl,
-    psmStatus,
+    guardianUrl,
+    guardianStatus,
   } = useMultisig();
 
   const handleCopy = (text: string) => {
@@ -114,17 +114,17 @@ const Security = () => {
           </div>
         )}
 
-        {/* PSM Connection */}
+        {/* Guardian Connection */}
         <div className="border border-gray-200 rounded-lg p-6">
-          <h3 className="text-[16px] font-dmmono font-[500] mb-4">PSM CONNECTION</h3>
+          <h3 className="text-[16px] font-dmmono font-[500] mb-4">Guardian Connection</h3>
           <div className="flex items-center gap-2 mb-2">
             <span className={`w-2 h-2 rounded-full ${
-              psmStatus === 'connected' ? 'bg-green-500' :
-              psmStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' : 'bg-red-500'
+              guardianStatus === 'connected' ? 'bg-green-500' :
+              guardianStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' : 'bg-red-500'
             }`} />
-            <span className="text-[12px] font-dmmono">{psmStatus}</span>
+            <span className="text-[12px] font-dmmono">{guardianStatus}</span>
           </div>
-          <div className="text-[11px] font-dmmono text-gray-500 break-all">{psmUrl}</div>
+          <div className="text-[11px] font-dmmono text-gray-500 break-all">{guardianUrl}</div>
         </div>
       </div>
     </div>

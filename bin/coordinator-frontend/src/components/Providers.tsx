@@ -9,7 +9,7 @@ import { Toaster } from 'sonner';
 import { store } from '../store';
 import { MultisigProvider, useMultisig } from '../contexts/MultisigContext';
 import { AppHeader } from './AppHeader';
-import { PARA_API_KEY, PARA_ENVIRONMENT } from '@/config/psm';
+import { PARA_API_KEY, PARA_ENVIRONMENT } from '@/config/guardian';
 
 import '@getpara/react-sdk-lite/styles.css';
 

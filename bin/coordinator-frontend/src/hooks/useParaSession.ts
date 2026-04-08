@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useParaMiden } from '@miden-sdk/use-miden-para-react';
 import { tryComputeEcdsaCommitmentHex, EcdsaFormat } from '@openzeppelin/miden-multisig-client';
-import { MIDEN_RPC_URL } from '@/config/psm';
+import { MIDEN_RPC_URL } from '@/config/guardian';
 import type { ExternalWalletState } from '@/wallets/types';
 
 interface WalletWithPublicKey {

@@ -36,7 +36,7 @@ const PendingActions: React.FC<PendingActionsProps> = ({ threshold, fixedHeight 
 
   // Filter to only show pending (not yet executed) proposals
   const pendingProposals = useMemo(() => {
-    return proposals.filter(p => p.status.type === 'pending' || p.status.type === 'ready');
+    return proposals.filter(p => p.status === 'pending' || p.status === 'ready');
   }, [proposals]);
 
   const effectiveThreshold = threshold ?? detectedConfig?.threshold ?? 0;
@@ -126,7 +126,7 @@ const PendingActions: React.FC<PendingActionsProps> = ({ threshold, fixedHeight 
                      proposal.metadata?.proposalType === 'add_signer' ? 'ADD SIGNER' :
                      proposal.metadata?.proposalType === 'remove_signer' ? 'REMOVE SIGNER' :
                      proposal.metadata?.proposalType === 'change_threshold' ? 'CHANGE THRESHOLD' :
-                     proposal.metadata?.proposalType === 'switch_psm' ? 'SWITCH PSM' :
+                     proposal.metadata?.proposalType === 'switch_guardian' ? 'Switch Guardian' :
                      (proposal.metadata?.proposalType ?? 'UNKNOWN').toUpperCase()}
                   </span>
                 </div>

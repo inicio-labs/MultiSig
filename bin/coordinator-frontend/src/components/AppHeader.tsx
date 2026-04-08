@@ -18,27 +18,27 @@ export function AppHeader() {
     connectMidenWallet,
     disconnectMidenWallet,
     openParaModal,
-    psmStatus,
-    psmUrl,
-    setPsmUrl,
-    connectToPsm,
+    guardianStatus,
+    guardianUrl,
+    setGuardianUrl,
+    connectToGuardian,
   } = useMultisig();
 
-  const [psmPopoverOpen, setPsmPopoverOpen] = useState(false);
+  const [guardianPopoverOpen, setGuardianPopoverOpen] = useState(false);
   const [walletPopoverOpen, setWalletPopoverOpen] = useState(false);
   const [keysPopoverOpen, setKeysPopoverOpen] = useState(false);
-  const [urlInput, setUrlInput] = useState(psmUrl);
+  const [urlInput, setUrlInput] = useState(guardianUrl);
 
-  const psmRef = useRef<HTMLDivElement>(null);
+  const guardianRef = useRef<HTMLDivElement>(null);
   const walletRef = useRef<HTMLDivElement>(null);
   const keysRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { setUrlInput(psmUrl); }, [psmUrl]);
+  useEffect(() => { setUrlInput(guardianUrl); }, [guardianUrl]);
 
   // Close popovers on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (psmRef.current && !psmRef.current.contains(e.target as Node)) setPsmPopoverOpen(false);
+      if (guardianRef.current && !guardianRef.current.contains(e.target as Node)) setGuardianPopoverOpen(false);
       if (walletRef.current && !walletRef.current.contains(e.target as Node)) setWalletPopoverOpen(false);
       if (keysRef.current && !keysRef.current.contains(e.target as Node)) setKeysPopoverOpen(false);
     };
@@ -46,10 +46,10 @@ export function AppHeader() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const handlePsmSave = () => {
-    setPsmUrl(urlInput);
-    connectToPsm(urlInput);
-    setPsmPopoverOpen(false);
+  const handleGuardianSave = () => {
+    setGuardianUrl(urlInput);
+    connectToGuardian(urlInput);
+    setGuardianPopoverOpen(false);
   };
 
   const handleCopy = (text: string, label: string) => {
@@ -226,38 +226,38 @@ export function AppHeader() {
           </div>
         ) : null}
 
-        {/* PSM Status */}
-        <div className="relative" ref={psmRef}>
+        {/* Guardian Status */}
+        <div className="relative" ref={guardianRef}>
           <button
-            onClick={() => setPsmPopoverOpen(!psmPopoverOpen)}
+            onClick={() => setGuardianPopoverOpen(!guardianPopoverOpen)}
             className={`px-3 py-1 rounded text-[11px] font-[500] uppercase transition-colors ${
-              psmStatus === 'connected'
+              guardianStatus === 'connected'
                 ? 'bg-green-600 text-white hover:bg-green-700'
-                : psmStatus === 'connecting'
+                : guardianStatus === 'connecting'
                   ? 'bg-yellow-500 text-white hover:bg-yellow-600'
                   : 'bg-red-500 text-white hover:bg-red-600'
             }`}
           >
-            PSM {psmStatus === 'connected' ? '\u25CF' : psmStatus === 'connecting' ? '\u25D0' : '\u25CB'}
+            GUARDIAN {guardianStatus === 'connected' ? '\u25CF' : guardianStatus === 'connecting' ? '\u25D0' : '\u25CB'}
           </button>
-          {psmPopoverOpen && (
+          {guardianPopoverOpen && (
             <div className="absolute right-0 top-full mt-1 w-[320px] bg-white border border-[#00000019] shadow-lg rounded p-3 z-50">
-              <div className="text-[12px] font-[500] mb-1">PSM CONFIGURATION</div>
+              <div className="text-[12px] font-[500] mb-1">GUARDIAN CONFIGURATION</div>
               <div className="text-[10px] text-gray-500 mb-3">
-                {psmStatus === 'connected' ? 'Connected to PSM server' :
-                 psmStatus === 'connecting' ? 'Connecting...' : 'Failed to connect'}
+                {guardianStatus === 'connected' ? 'Connected to Guardian server' :
+                 guardianStatus === 'connecting' ? 'Connecting...' : 'Failed to connect'}
               </div>
               <div className="mb-2">
                 <label className="text-[10px] text-gray-500 uppercase mb-1 block">Endpoint URL</label>
                 <input
                   value={urlInput}
                   onChange={(e) => setUrlInput(e.target.value)}
-                  placeholder="https://psm-stg.openzeppelin.com"
+                  placeholder="https://guardian-stg.openzeppelin.com"
                   className="w-full px-2 py-1.5 border border-[#00000019] rounded text-[11px] focus:outline-none focus:border-[#FF5500]"
                 />
               </div>
               <button
-                onClick={handlePsmSave}
+                onClick={handleGuardianSave}
                 className="px-3 py-1.5 bg-[#FF5500] text-white text-[11px] rounded hover:bg-[#E04A00] transition-colors"
               >
                 SAVE & RECONNECT

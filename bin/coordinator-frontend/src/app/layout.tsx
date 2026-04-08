@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, DM_Mono} from "next/font/google";
 import "./globals.css";
-import { Providers } from "../components/Providers";
+import { ClientProviders } from "../components/ClientProviders";
 
 // Force dynamic rendering for the entire app
 export const dynamic = 'force-dynamic';
@@ -43,9 +43,9 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${dmMono.variable} antialiased`}
       >
-        <Providers>
+        <ClientProviders>
           {children}
-        </Providers>
+        </ClientProviders>
       </body>
     </html>
   );

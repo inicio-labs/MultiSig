@@ -12,16 +12,16 @@ import {
   MidenWalletSigner,
   type SignatureScheme,
 } from '@openzeppelin/miden-multisig-client';
-import type { Signer } from '@openzeppelin/psm-client';
+import type { Signer } from '@openzeppelin/guardian-client';
 import type { WebClient } from '@miden-sdk/miden-sdk';
-import type { SignerInfo } from '@/types/psm';
+import type { SignerInfo } from '@/types/guardian';
 import type { WalletSource } from '@/wallets/types';
 import { normalizeCommitment } from '@/lib/helpers';
 
 export interface ExternalSignerParams {
   walletSource: WalletSource;
   paraContext?: { para: ParaSigningContext; walletId: string; commitment: string; publicKey: string };
-  midenWalletContext?: { wallet: WalletSigningContext; commitment: string; scheme: SignatureScheme };
+  midenWalletContext?: { wallet: WalletSigningContext; commitment: string; scheme: SignatureScheme; publicKey?: string };
 }
 
 export function createSigner(
@@ -38,9 +38,9 @@ export function createSigner(
     const ctx = external.midenWalletContext;
     if (ctx.scheme === 'ecdsa') {
       const localSigner = new EcdsaSigner(signerInfo.ecdsa.secretKey);
-      return new MidenWalletSigner(ctx.wallet, ctx.commitment, ctx.scheme, localSigner);
+      return new MidenWalletSigner(ctx.wallet, ctx.commitment, ctx.scheme, localSigner, ctx.publicKey);
     }
-    return new MidenWalletSigner(ctx.wallet, ctx.commitment, ctx.scheme);
+    return new MidenWalletSigner(ctx.wallet, ctx.commitment, ctx.scheme, undefined, ctx.publicKey);
   }
 
   const activeSigner = signatureScheme === 'ecdsa' ? signerInfo.ecdsa : signerInfo.falcon;
@@ -51,12 +51,12 @@ export function createSigner(
 
 export async function initMultisigClient(
   webClient: WebClient,
-  psmEndpoint: string,
+  guardianEndpoint: string,
   scheme?: SignatureScheme,
-): Promise<{ client: MultisigClient; psmCommitment: string; psmPubkey?: string }> {
-  const client = new MultisigClientClass(webClient, { psmEndpoint });
-  const { psmCommitment, psmPublicKey } = await client.initialize(scheme);
-  return { client, psmCommitment, psmPubkey: psmPublicKey };
+): Promise<{ client: MultisigClient; guardianCommitment: string; guardianPubkey?: string }> {
+  const client = new MultisigClientClass(webClient, { guardianEndpoint });
+  const { commitment, pubkey } = await client.guardianClient.getPubkey(scheme);
+  return { client, guardianCommitment: commitment, guardianPubkey: pubkey };
 }
 
 export async function createMultisigAccount(
@@ -64,9 +64,9 @@ export async function createMultisigAccount(
   signerCommitment: string,
   otherCommitments: string[],
   threshold: number,
-  psmCommitment: string,
+  guardianCommitment: string,
   signer: Signer,
-  psmPublicKey?: string,
+  guardianPublicKey?: string,
   procedureThresholds?: ProcedureThreshold[],
   signatureScheme: SignatureScheme = 'falcon',
 ): Promise<Multisig> {
@@ -74,9 +74,9 @@ export async function createMultisigAccount(
   const config: MultisigConfig = {
     threshold,
     signerCommitments,
-    psmCommitment,
-    psmPublicKey,
-    psmEnabled: true,
+    guardianCommitment,
+    guardianPublicKey,
+    guardianEnabled: true,
     procedureThresholds,
     storageMode: 'private',
     signatureScheme,
@@ -88,11 +88,11 @@ export async function loadMultisigAccount(
   multisigClient: MultisigClient,
   accountId: string,
   signer: Signer,
-  psmPublicKey?: string,
+  guardianPublicKey?: string,
 ): Promise<Multisig> {
   const multisig = await multisigClient.load(accountId, signer);
-  if (psmPublicKey) {
-    multisig.setPsmPublicKey(psmPublicKey);
+  if (guardianPublicKey) {
+    multisig.guardianPublicKey = guardianPublicKey;
   }
   return multisig;
 }

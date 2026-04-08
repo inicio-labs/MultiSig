@@ -9,10 +9,10 @@ import { TaskBarProps } from "@/types";
 
 const TaskBar: React.FC<TaskBarProps> = () => {
   const {
-    psmUrl,
-    setPsmUrl,
-    psmStatus,
-    connectToPsm,
+    guardianUrl,
+    setGuardianUrl,
+    guardianStatus,
+    connectToGuardian,
     activeCommitment,
     activeScheme,
     walletSource,
@@ -30,8 +30,8 @@ const TaskBar: React.FC<TaskBarProps> = () => {
   } = useMultisig();
 
   const [isCopied, setIsCopied] = useState(false);
-  const [showPsmEditor, setShowPsmEditor] = useState(false);
-  const [psmUrlDraft, setPsmUrlDraft] = useState(psmUrl);
+  const [showGuardianEditor, setShowGuardianEditor] = useState(false);
+  const [guardianUrlDraft, setGuardianUrlDraft] = useState(guardianUrl);
   const [showSignerKeys, setShowSignerKeys] = useState(false);
 
   const walletName = useMemo(() => {
@@ -56,11 +56,11 @@ const TaskBar: React.FC<TaskBarProps> = () => {
     }
   };
 
-  const handlePsmReconnect = async () => {
-    setPsmUrl(psmUrlDraft);
-    await connectToPsm(psmUrlDraft);
-    setShowPsmEditor(false);
-    toast.success("Reconnected to PSM");
+  const handleGuardianReconnect = async () => {
+    setGuardianUrl(guardianUrlDraft);
+    await connectToGuardian(guardianUrlDraft);
+    setShowGuardianEditor(false);
+    toast.success("Reconnected to Guardian");
   };
 
   return (
@@ -99,46 +99,46 @@ const TaskBar: React.FC<TaskBarProps> = () => {
           </div>
         </div>
 
-        {/* Center - PSM Status & Wallet Source */}
+        {/* Center - Guardian Status & Wallet Source */}
         <div className="flex items-center gap-3">
-          {/* PSM Status Badge */}
+          {/* Guardian Status Badge */}
           <div className="relative">
             <button
-              onClick={() => { setShowPsmEditor(!showPsmEditor); setPsmUrlDraft(psmUrl); }}
+              onClick={() => { setShowGuardianEditor(!showGuardianEditor); setGuardianUrlDraft(guardianUrl); }}
               className={`flex items-center gap-1.5 px-2 py-1 rounded text-[9px] font-dmmono font-[500] border transition-colors ${
-                psmStatus === 'connected'
+                guardianStatus === 'connected'
                   ? 'border-green-300 bg-green-50 text-green-700'
-                  : psmStatus === 'connecting'
+                  : guardianStatus === 'connecting'
                     ? 'border-yellow-300 bg-yellow-50 text-yellow-700'
                     : 'border-red-300 bg-red-50 text-red-700'
               }`}
             >
               <span className={`w-1.5 h-1.5 rounded-full ${
-                psmStatus === 'connected' ? 'bg-green-500' :
-                psmStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' : 'bg-red-500'
+                guardianStatus === 'connected' ? 'bg-green-500' :
+                guardianStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' : 'bg-red-500'
               }`} />
-              PSM {psmStatus}
+              Guardian {guardianStatus}
             </button>
 
-            {/* PSM Endpoint Editor Popover */}
-            {showPsmEditor && (
+            {/* Guardian Endpoint Editor Popover */}
+            {showGuardianEditor && (
               <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded shadow-lg p-3 w-[320px]">
-                <div className="text-[10px] font-dmmono font-[500] mb-1 uppercase">PSM Endpoint</div>
+                <div className="text-[10px] font-dmmono font-[500] mb-1 uppercase">Guardian Endpoint</div>
                 <input
                   type="text"
-                  value={psmUrlDraft}
-                  onChange={(e) => setPsmUrlDraft(e.target.value)}
+                  value={guardianUrlDraft}
+                  onChange={(e) => setGuardianUrlDraft(e.target.value)}
                   className="w-full text-[11px] font-dmmono border border-gray-200 rounded px-2 py-1 mb-2 focus:outline-none focus:ring-1 focus:ring-[#FF5500]"
                 />
                 <div className="flex gap-2">
                   <button
-                    onClick={handlePsmReconnect}
+                    onClick={handleGuardianReconnect}
                     className="flex-1 bg-[#FF5500] text-white text-[10px] font-dmmono px-2 py-1 rounded hover:bg-[#E04A00] transition-colors"
                   >
                     RECONNECT
                   </button>
                   <button
-                    onClick={() => setShowPsmEditor(false)}
+                    onClick={() => setShowGuardianEditor(false)}
                     className="flex-1 border border-gray-200 text-[10px] font-dmmono px-2 py-1 rounded hover:bg-gray-50 transition-colors"
                   >
                     CANCEL
