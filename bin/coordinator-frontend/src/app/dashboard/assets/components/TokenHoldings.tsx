@@ -88,8 +88,8 @@ const TokenHoldings = ({ fungibleAssets, isLoading }: TokenHoldingsProps) => {
 
               {/* Right Side - Values */}
               <div className="flex flex-col items-end">
-                <div className="text-[12px] font-bold text-[#000000] font-dmmono">{asset.balance/1000000}</div>
-                <div className="text-[8px] text-[#000000] font-dmmono">{asset.balance/1000000} USD</div>
+                <div className="text-[12px] font-bold text-[#000000] font-dmmono">{Number(asset.balance)/1000000}</div>
+                <div className="text-[8px] text-[#000000] font-dmmono">{Number(asset.balance)/1000000} USD</div>
               </div>
             </div>
           ))

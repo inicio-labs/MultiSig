@@ -1,8 +1,7 @@
 'use client';
 
 import React from 'react';
-import { WalletMultiButton } from '@demox-labs/miden-wallet-adapter';
-import { WalletAdapterNetwork } from '@demox-labs/miden-wallet-adapter-base';
+import { WalletMultiButton, WalletAdapterNetwork } from '@miden-sdk/miden-wallet-adapter';
 
 const SimpleWalletButton: React.FC = () => {
   return (

@@ -2,9 +2,7 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
-import { useWallet } from '@demox-labs/miden-wallet-adapter';
-import { WalletMultiButton } from '@demox-labs/miden-wallet-adapter';
-import { WalletAdapterNetwork } from '@demox-labs/miden-wallet-adapter-base';
+import { useWallet, WalletMultiButton, WalletAdapterNetwork } from '@miden-sdk/miden-wallet-adapter';
 
 interface WalletStatusProps {
   className?: string;

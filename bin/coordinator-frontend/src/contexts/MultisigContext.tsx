@@ -32,7 +32,7 @@ import type { SignerInfo } from '@/types/guardian';
 import type { WalletSource } from '@/wallets/types';
 import { useParaSession } from '@/hooks/useParaSession';
 import { useMidenWallet } from '@/hooks/useMidenWallet';
-import { MidenWalletAdapter } from '@demox-labs/miden-wallet-adapter-miden';
+import { MidenWalletAdapter } from '@miden-sdk/miden-wallet-adapter-miden';
 
 function detectConfig(ms: Multisig): DetectedMultisigConfig | null {
   try {
@@ -152,14 +152,57 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
   const [detectedConfig, setDetectedConfig] = useState<DetectedMultisigConfig | null>(null);
   const [syncingState, setSyncingState] = useState(false);
 
-  const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [proposals, setProposalsRaw] = useState<Proposal[]>([]);
+
+  // Persist finalized proposals to localStorage so transaction history survives page reloads.
+  // Guardian only returns active proposals — executed ones are lost without local persistence.
+  const setProposals = useCallback((proposalsOrUpdater: Proposal[] | ((prev: Proposal[]) => Proposal[])) => {
+    setProposalsRaw(prev => {
+      const next = typeof proposalsOrUpdater === 'function' ? proposalsOrUpdater(prev) : proposalsOrUpdater;
+      // Merge with any finalized proposals from localStorage not present in the new list
+      const walletId = localStorage.getItem('currentWalletId');
+      if (walletId) {
+        const storageKey = `txHistory:${walletId}`;
+        const nextIds = new Set(next.map(p => p.id));
+        // Load existing history
+        let stored: Proposal[] = [];
+        try { stored = JSON.parse(localStorage.getItem(storageKey) || '[]'); } catch { /* ignore */ }
+        // Add any finalized proposals from the new list to storage
+        const newFinalized = next.filter(p => p.status === 'finalized');
+        const storedIds = new Set(stored.map(p => p.id));
+        for (const p of newFinalized) {
+          if (!storedIds.has(p.id)) {
+            stored.push(p);
+          }
+        }
+        localStorage.setItem(storageKey, JSON.stringify(stored));
+        // Merge stored finalized proposals that aren't in the new list
+        const merged = [...next];
+        for (const p of stored) {
+          if (!nextIds.has(p.id)) {
+            merged.push(p);
+          }
+        }
+        return merged;
+      }
+      return next;
+    });
+  }, []);
+
   const [creatingProposal, setCreatingProposal] = useState(false);
   const [signingProposal, setSigningProposal] = useState<string | null>(null);
   const [executingProposal, setExecutingProposal] = useState<string | null>(null);
 
   const [consumableNotes, setConsumableNotes] = useState<Array<{ id: string; assets: Array<{ faucetId: string; amount: bigint }> }>>([]);
 
-  const [walletSource, setWalletSource] = useState<WalletSource>('local');
+  const [walletSource, setWalletSourceState] = useState<WalletSource>(() => {
+    if (typeof window === 'undefined') return 'local';
+    return (localStorage.getItem('walletSource') as WalletSource) || 'local';
+  });
+  const setWalletSource = useCallback((source: WalletSource) => {
+    setWalletSourceState(source);
+    localStorage.setItem('walletSource', source);
+  }, []);
   const [paraModalOpen, setParaModalOpen] = useState(false);
 
   const { session: paraSession, paraClient, getWalletId } = useParaSession();
@@ -173,13 +216,21 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     }
   }, [midenWalletConnectError]);
 
+  // Auto-reconnect Miden Wallet on reload if it was the persisted wallet source
+  useEffect(() => {
+    if (walletSource === 'miden-wallet' && !midenWalletSession.connected) {
+      connectMidenWalletRaw().catch(() => { /* ignore — wallet may not be available yet */ });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Auto-switch wallet source when an external wallet connects
   useEffect(() => {
     if (paraSession.connected) {
       setWalletSource('para');
       if (paraModalOpen) setParaModalOpen(false);
     }
-  }, [paraSession.connected, paraModalOpen]);
+  }, [paraSession.connected, paraModalOpen, setWalletSource]);
 
   useEffect(() => {
     if (midenWalletSession.connected) {
@@ -679,6 +730,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
           'Please wait for it to be confirmed before creating new proposals.'
         );
       } else {
+        console.error('[MultisigContext] Failed to create send proposal:', err);
         setError(`Failed to create proposal: ${err instanceof Error ? err.message : 'Unknown'}`);
       }
     } finally {
@@ -737,37 +789,11 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     setPendingCandidateWarning(null);
     try {
       await multisig.executeProposal(proposalId);
-      toast.success('Proposal executed successfully');
+      toast.success('Proposal executed successfully. Click Sync to refresh.');
 
-      // Sync after execution
-      if (webClient) {
-        setSyncingState(true);
-        try {
-          try {
-            await webClient.syncState();
-          } catch {
-            await new Promise(resolve => setTimeout(resolve, 500));
-            await webClient.syncState();
-          }
-          const synced = await multisig.syncProposals();
-          const state = await multisig.syncState();
-          const notes = await multisig.getConsumableNotes();
-          setDetectedConfig(detectConfig(multisig));
-          setGuardianState(state);
-          setProposals(synced);
-          setConsumableNotes(notes);
-        } catch (syncErr) {
-          const message = syncErr instanceof Error ? syncErr.message : String(syncErr);
-          if (message.includes('account nonce is too low to import')) {
-            setPendingCandidateWarning(
-              'Sync warning: local state is ahead of the on-chain state. ' +
-              'This can happen right after executing a transaction. Please wait a moment and sync again.'
-            );
-          }
-        } finally {
-          setSyncingState(false);
-        }
-      }
+      // Update local proposals list — the SDK already marked it finalized internally
+      setProposals(multisig.listProposals());
+      setDetectedConfig(detectConfig(multisig));
     } catch (err) {
       const message = formatError(err, 'Execute failed');
       if (isPendingCandidateError(err)) {
@@ -822,13 +848,16 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
   }, [multisig]);
 
   const handleDisconnect = useCallback(() => {
+    const walletId = localStorage.getItem('currentWalletId');
+    if (walletId) localStorage.removeItem(`txHistory:${walletId}`);
     setMultisig(null);
     setGuardianState(null);
-    setProposals([]);
+    setProposalsRaw([]);
     setError(null);
     setDetectedConfig(null);
     setConsumableNotes([]);
-  }, []);
+    setWalletSource('local');
+  }, [setWalletSource]);
 
   const connectMidenWallet = useCallback(async () => {
     try {

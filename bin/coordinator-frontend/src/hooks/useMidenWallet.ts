@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { MessageSignerWalletAdapter } from '@demox-labs/miden-wallet-adapter-base';
+import type { MessageSignerWalletAdapter } from '@miden-sdk/miden-wallet-adapter-base';
 import {
   WalletAdapterNetwork,
   PrivateDataPermission,
-} from '@demox-labs/miden-wallet-adapter-base';
+} from '@miden-sdk/miden-wallet-adapter-base';
 import { PublicKeyFormat } from '@openzeppelin/miden-multisig-client';
 import type { ExternalWalletState } from '@/wallets/types';
 

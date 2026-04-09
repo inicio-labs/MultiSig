@@ -11,9 +11,9 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({ threshold, fixe
   const router = useRouter();
   const { proposals, detectedConfig, syncingState } = useMultisig();
 
-  // Show all proposals (both pending and executed) as recent transactions
+  // Show only finalized (executed) proposals as recent transactions
   const allProposals = useMemo(() => {
-    return [...proposals].reverse(); // Most recent first
+    return [...proposals].filter(p => p.status === 'finalized').reverse(); // Most recent first
   }, [proposals]);
 
   const effectiveThreshold = threshold ?? detectedConfig?.threshold ?? 0;

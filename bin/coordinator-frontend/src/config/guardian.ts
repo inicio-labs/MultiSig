@@ -1,4 +1,4 @@
-export const GUARDIAN_ENDPOINT = process.env.NEXT_PUBLIC_GUARDIAN_ENDPOINT || process.env.NEXT_PUBLIC_PSM_ENDPOINT || 'https://guardian-stg.openzeppelin.com';
+export const GUARDIAN_ENDPOINT = process.env.NEXT_PUBLIC_GUARDIAN_ENDPOINT || 'https://guardian-stg.openzeppelin.com';
 export const MIDEN_RPC_URL = process.env.NEXT_PUBLIC_MIDEN_RPC_URL || 'https://rpc.testnet.miden.io';
 export const MIDEN_DB_NAME = 'MidenClientDB';
 

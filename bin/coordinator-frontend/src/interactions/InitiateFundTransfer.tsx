@@ -3,6 +3,8 @@ import { useState, useMemo } from "react";
 import media from "../../public/media";
 import Image from "next/image";
 import { useMultisig } from "@/contexts/MultisigContext";
+import { normalizeAccountId } from "@/lib/helpers";
+import { AccountId, Address } from "@miden-sdk/miden-sdk";
 import { toast } from "sonner";
 
 interface InitiateFundTransferProps {
@@ -59,9 +61,26 @@ const InitiateFundTransfer = ({ onCancel }: InitiateFundTransferProps) => {
       return;
     }
 
+    const sdk = { AccountId, Address } as Parameters<typeof normalizeAccountId>[1];
+    let recipientHex: string;
+    try {
+      recipientHex = normalizeAccountId(formData.recipientId, sdk);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Invalid recipient account ID");
+      return;
+    }
+
+    let faucetHex: string;
+    try {
+      faucetHex = normalizeAccountId(formData.faucetId, sdk);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Invalid faucet ID");
+      return;
+    }
+
     try {
       const amount = BigInt(Math.round(Number(formData.amount) * 1000000));
-      await handleCreateSendProposal(formData.recipientId.trim(), formData.faucetId.trim(), amount);
+      await handleCreateSendProposal(recipientHex, faucetHex, amount);
       setIsTransactionInitiated(true);
       toast.success("Send proposal created!");
       setTimeout(() => onCancel?.(), 1500);
@@ -91,7 +110,7 @@ const InitiateFundTransfer = ({ onCancel }: InitiateFundTransferProps) => {
               type="text"
               value={formData.recipientId}
               onChange={(e) => handleInputChange("recipientId", e.target.value)}
-              placeholder="0x..."
+              placeholder="0x... or mtst1..."
               className="bg-[#FFFFFF] w-full lg:h-[40px] md:h-[40px] sm:h-[36px] h-[32px] border-[1.09px] border-[rgba(217,217,217,1)] px-3 pr-10 font-dmmono font-[500] text-[12px] focus:outline-none focus:ring-2 focus:ring-[#FF5500]/60"
             />
             <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
