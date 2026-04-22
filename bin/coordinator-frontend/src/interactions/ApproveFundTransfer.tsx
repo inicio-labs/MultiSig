@@ -22,7 +22,7 @@ export const ApproveFundTransfer = ({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const pendingProposals = useMemo(() => {
-    return proposals.filter(p => p.status.type === 'pending' || p.status.type === 'ready');
+    return proposals.filter(p => p.status === 'pending' || p.status === 'ready');
   }, [proposals]);
 
   const threshold = detectedConfig?.threshold ?? 0;

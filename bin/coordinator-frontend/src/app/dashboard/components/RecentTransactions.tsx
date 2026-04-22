@@ -68,7 +68,7 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({ threshold, fixe
             );
             const sigCount = proposal.signatures?.length ?? 0;
             const isSend = proposal.metadata?.proposalType === 'p2id';
-            const isExecuted = proposal.status.type === 'finalized';
+            const isExecuted = proposal.status === 'finalized';
 
             return (
               <div
@@ -86,7 +86,7 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({ threshold, fixe
                      proposal.metadata?.proposalType === 'add_signer' ? 'ADD SIGNER' :
                      proposal.metadata?.proposalType === 'remove_signer' ? 'REMOVE SIGNER' :
                      proposal.metadata?.proposalType === 'change_threshold' ? 'CHANGE THRESHOLD' :
-                     proposal.metadata?.proposalType === 'switch_psm' ? 'SWITCH PSM' :
+                     proposal.metadata?.proposalType === 'switch_guardian' ? 'SWITCH GUARDIAN' :
                      (proposal.metadata?.proposalType ?? 'UNKNOWN').toUpperCase()}
                   </span>
                 </div>

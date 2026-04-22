@@ -1,5 +1,5 @@
-import { WebClient, AuthSecretKey } from '@miden-sdk/miden-sdk';
-import { MIDEN_DB_NAME, MIDEN_RPC_URL } from '@/config/psm';
+import { MidenClient, AuthSecretKey } from '@miden-sdk/miden-sdk';
+import { MIDEN_DB_NAME, MIDEN_RPC_URL, MIDEN_NOTE_TRANSPORT_URL } from '@/config/psm';
 import { normalizeCommitment } from '@/lib/helpers';
 import type { SignerInfo } from '@/types/psm';
 
@@ -7,11 +7,27 @@ const SIGNER_DB_NAME = 'MultisigSignerKeys';
 const SIGNER_STORE_NAME = 'keys';
 
 export async function clearMidenDatabase(dbName = MIDEN_DB_NAME): Promise<void> {
+  // deleteDatabase silently fires `onblocked` (and then `onsuccess` only once
+  // all connections close) when another tab/worker still holds the DB open.
+  // Previously we resolved on `onblocked` — that meant the stale DB was never
+  // wiped, and when we re-created MidenClient against a new network the cached
+  // genesis digest from the previous network was still in the store, causing
+  // the node to reject our accept header. Wait (with a timeout) for actual
+  // deletion, and surface a clear error if it never completes.
   return new Promise((resolve, reject) => {
     const request = indexedDB.deleteDatabase(dbName);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-    request.onblocked = () => resolve();
+    let blocked = false;
+    const timeout = setTimeout(() => {
+      if (blocked) {
+        reject(new Error(
+          `Cannot clear Miden DB "${dbName}" — another tab or worker is holding it open. ` +
+          `Close all other tabs on this origin and reload.`
+        ));
+      }
+    }, 5000);
+    request.onsuccess = () => { clearTimeout(timeout); resolve(); };
+    request.onerror = () => { clearTimeout(timeout); reject(request.error); };
+    request.onblocked = () => { blocked = true; /* keep waiting for onsuccess */ };
   });
 }
 
@@ -88,11 +104,20 @@ export async function clearSignerKeys(): Promise<void> {
   });
 }
 
-export async function createWebClient(rpcUrl = MIDEN_RPC_URL): Promise<WebClient> {
-  const client = await WebClient.createClient(rpcUrl);
-  await client.syncState();
-  return client;
+export async function createMidenClient(rpcUrl = MIDEN_RPC_URL): Promise<MidenClient> {
+  // Note: do NOT sync here. Syncing before any note tags are registered
+  // advances the cursor past the current tip, causing the client to miss
+  // public notes minted before tag registration. Tags are added in
+  // handleCreate/handleLoad/handleSync and the first sync happens there.
+  return MidenClient.create({
+    rpcUrl,
+    noteTransportUrl: MIDEN_NOTE_TRANSPORT_URL,
+    storeName: MIDEN_DB_NAME,
+  });
 }
+
+/** @deprecated Use createMidenClient */
+export const createWebClient = createMidenClient;
 
 export function initializeSigner(): SignerInfo {
   const falconSecretKey = AuthSecretKey.rpoFalconWithRNG(undefined);

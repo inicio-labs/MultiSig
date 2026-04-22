@@ -36,7 +36,7 @@ const PendingActions: React.FC<PendingActionsProps> = ({ threshold, fixedHeight 
 
   // Filter to only show pending (not yet executed) proposals
   const pendingProposals = useMemo(() => {
-    return proposals.filter(p => p.status.type === 'pending' || p.status.type === 'ready');
+    return proposals.filter(p => p.status === 'pending' || p.status === 'ready');
   }, [proposals]);
 
   const effectiveThreshold = threshold ?? detectedConfig?.threshold ?? 0;
@@ -46,7 +46,8 @@ const PendingActions: React.FC<PendingActionsProps> = ({ threshold, fixedHeight 
       await handleSignProposal(proposalId);
       toast.success("Proposal signed successfully!");
     } catch (err) {
-      showNotification("error", "Signing failed. Please try again.");
+      const msg = err instanceof Error ? err.message : String(err);
+      showNotification("error", `Signing failed: ${msg}`);
     }
   };
 
@@ -54,7 +55,8 @@ const PendingActions: React.FC<PendingActionsProps> = ({ threshold, fixedHeight 
     try {
       await handleExecuteProposal(proposalId);
     } catch (err) {
-      showNotification("error", "Execution failed. Please try again.");
+      const msg = err instanceof Error ? err.message : String(err);
+      showNotification("error", `Execution failed: ${msg}`);
     }
   };
 
@@ -126,7 +128,7 @@ const PendingActions: React.FC<PendingActionsProps> = ({ threshold, fixedHeight 
                      proposal.metadata?.proposalType === 'add_signer' ? 'ADD SIGNER' :
                      proposal.metadata?.proposalType === 'remove_signer' ? 'REMOVE SIGNER' :
                      proposal.metadata?.proposalType === 'change_threshold' ? 'CHANGE THRESHOLD' :
-                     proposal.metadata?.proposalType === 'switch_psm' ? 'SWITCH PSM' :
+                     proposal.metadata?.proposalType === 'switch_guardian' ? 'SWITCH GUARDIAN' :
                      (proposal.metadata?.proposalType ?? 'UNKNOWN').toUpperCase()}
                   </span>
                 </div>

@@ -11,7 +11,7 @@ interface InitiateFundTransferProps {
 
 const InitiateFundTransfer = ({ onCancel }: InitiateFundTransferProps) => {
   const {
-    handleCreateSendProposal,
+    handleCreateP2idProposal,
     creatingProposal,
     detectedConfig,
   } = useMultisig();
@@ -61,7 +61,7 @@ const InitiateFundTransfer = ({ onCancel }: InitiateFundTransferProps) => {
 
     try {
       const amount = BigInt(Math.round(Number(formData.amount) * 1000000));
-      await handleCreateSendProposal(formData.recipientId.trim(), formData.faucetId.trim(), amount);
+      await handleCreateP2idProposal(formData.recipientId.trim(), formData.faucetId.trim(), amount);
       setIsTransactionInitiated(true);
       toast.success("Send proposal created!");
       setTimeout(() => onCancel?.(), 1500);
