@@ -3,6 +3,7 @@ import { useState, useMemo } from "react";
 import media from "../../public/media";
 import Image from "next/image";
 import { useMultisig } from "@/contexts/MultisigContext";
+import { toHexAccountId } from "@/lib/helpers";
 import { toast } from "sonner";
 
 interface InitiateFundTransferProps {
@@ -61,7 +62,8 @@ const InitiateFundTransfer = ({ onCancel }: InitiateFundTransferProps) => {
 
     try {
       const amount = BigInt(Math.round(Number(formData.amount) * 1000000));
-      await handleCreateP2idProposal(formData.recipientId.trim(), formData.faucetId.trim(), amount);
+      const recipientHex = toHexAccountId(formData.recipientId.trim());
+      await handleCreateP2idProposal(recipientHex, formData.faucetId.trim(), amount);
       setIsTransactionInitiated(true);
       toast.success("Send proposal created!");
       setTimeout(() => onCancel?.(), 1500);

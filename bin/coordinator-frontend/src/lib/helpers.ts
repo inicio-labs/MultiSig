@@ -1,3 +1,15 @@
+import { AccountId } from '@miden-sdk/miden-sdk';
+
+// Accepts a hex account ID (with or without 0x) or a bech32 address (mtst1..., mm1..., mdev1...).
+// Returns the canonical hex string expected by AccountId.fromHex().
+export function toHexAccountId(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return trimmed;
+  const stripped = trimmed.startsWith('0x') || trimmed.startsWith('0X') ? trimmed.slice(2) : trimmed;
+  if (/^[0-9a-fA-F]+$/.test(stripped)) return trimmed;
+  return AccountId.fromBech32(trimmed).toString();
+}
+
 export function normalizeCommitment(hex: string): string {
   const trimmed = hex.trim();
   if (!trimmed) throw new Error('Commitment is required');
