@@ -4,6 +4,7 @@ import Image from "next/image";
 import media from "../../../../public/media";
 import { useMultisig } from "@/contexts/MultisigContext";
 import { truncateHex, copyToClipboard } from "@/lib/helpers";
+import { AccountId, AccountInterface, NetworkId } from "@miden-sdk/miden-sdk";
 import { toast } from "sonner";
 import { TaskBarProps } from "@/types";
 
@@ -30,6 +31,7 @@ const TaskBar: React.FC<TaskBarProps> = () => {
   } = useMultisig();
 
   const [isCopied, setIsCopied] = useState(false);
+  const [isBech32Copied, setIsBech32Copied] = useState(false);
   const [showGuardianEditor, setShowGuardianEditor] = useState(false);
   const [guardianUrlDraft, setGuardianUrlDraft] = useState(guardianUrl);
   const [showSignerKeys, setShowSignerKeys] = useState(false);
@@ -53,6 +55,20 @@ const TaskBar: React.FC<TaskBarProps> = () => {
         setIsCopied(true);
         setTimeout(() => setIsCopied(false), 2000);
       });
+    }
+  };
+
+  const copyBech32 = () => {
+    if (!accountId) return;
+    try {
+      const bech32 = AccountId.fromHex(accountId).toBech32(NetworkId.testnet(), AccountInterface.BasicWallet);
+      copyToClipboard(bech32, () => {
+        setIsBech32Copied(true);
+        setTimeout(() => setIsBech32Copied(false), 2000);
+        toast.success("Bech32 address copied");
+      });
+    } catch {
+      toast.error("Failed to convert account ID to bech32");
     }
   };
 
@@ -83,7 +99,7 @@ const TaskBar: React.FC<TaskBarProps> = () => {
               <button
                 onClick={copyAccountId}
                 className="flex items-center justify-center w-4 h-4 bg-gray-100 hover:bg-gray-200 rounded transition-colors duration-150"
-                title="Copy account ID"
+                title="Copy hex account ID"
               >
                 {isCopied ? (
                   <svg className="w-2.5 h-2.5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
@@ -93,6 +109,20 @@ const TaskBar: React.FC<TaskBarProps> = () => {
                   <svg className="w-2.5 h-2.5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                   </svg>
+                )}
+              </button>
+              <button
+                onClick={copyBech32}
+                disabled={!accountId}
+                className="flex items-center justify-center px-1 h-4 bg-gray-100 hover:bg-gray-200 rounded transition-colors duration-150 text-[7px] font-dmmono font-[500] disabled:opacity-40 disabled:cursor-not-allowed"
+                title="Copy bech32 address"
+              >
+                {isBech32Copied ? (
+                  <svg className="w-2.5 h-2.5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                ) : (
+                  <span className="text-gray-600">B32</span>
                 )}
               </button>
             </div>
