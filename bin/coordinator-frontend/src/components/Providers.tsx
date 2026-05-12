@@ -8,7 +8,6 @@ import { Toaster } from 'sonner';
 
 import { store } from '../store';
 import { MultisigProvider, useMultisig } from '../contexts/MultisigContext';
-import { AppHeader } from './AppHeader';
 import { PARA_API_KEY, PARA_ENVIRONMENT } from '@/config/psm';
 
 import '@getpara/react-sdk-lite/styles.css';
@@ -54,8 +53,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       >
         <Provider store={store}>
           <MultisigProvider>
-            <AppHeader />
-            {children}
+{children}
             {PARA_API_KEY && <ParaModalWrapper />}
             <Toaster position="bottom-right" />
           </MultisigProvider>
