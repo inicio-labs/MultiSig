@@ -6,6 +6,7 @@ import Svg from "../../../public/svg/index.js";
 
 import { useRouter } from "next/navigation";
 import { useWalletForm } from '../../hooks/useWalletForm';
+import { AppHeader } from '@/components/AppHeader';
 
 // Force dynamic rendering to avoid WASM loading issues during build
 export const dynamic = 'force-dynamic';
@@ -22,6 +23,7 @@ const Page = () => {
 
   return (
     <div className="w-full h-screen ">
+      <AppHeader />
       <div className="relative w-full md:w-[90%] lg:w-[70%] mx-auto h-full flex flex-col space-y-4 sm:space-y-6 md:space-y-12 py-2 sm:py-5 md:py-10">
         {/* Header Section */}
         <div className="flex flex-col w-full items-center space-y-2">

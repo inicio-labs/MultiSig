@@ -9,6 +9,7 @@ import { useAuth } from "../../../hooks/useAuth";
 import { useMultisig } from "@/contexts/MultisigContext";
 import { truncateHex } from "@/lib/helpers";
 import { toast } from "sonner";
+import { AppHeader } from "@/components/AppHeader";
 
 // Force dynamic rendering to avoid WASM loading issues during build
 export const dynamic = 'force-dynamic';
@@ -227,6 +228,7 @@ const CreateNewAccount = () => {
 
   return (
     <>
+      <AppHeader />
       <div className="  w-[90%] sm:w-[70%] flex flex-col md:space-y-14 sm:space-y-12 space-y-10 lg:space-y-16 md:w-[60%] lg:w-[60%] xl:w-[45%] mx-auto h-screen py-4 md:py-6">
         {/* stepper starts here */}
         <div className="w-full flex flex-col  space-y-1">

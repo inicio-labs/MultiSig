@@ -81,14 +81,16 @@ export function AppHeader() {
             <div className="absolute right-0 top-full mt-1 w-[280px] bg-white border border-[#00000019] shadow-lg rounded p-3 z-50">
               <div className="text-[12px] font-[500] mb-2">WALLET SOURCE</div>
               <div className="flex flex-col gap-1.5">
-                <button
-                  onClick={() => { setWalletSource('local'); setWalletPopoverOpen(false); }}
-                  className={`w-full text-left px-3 py-2 text-[11px] rounded border ${
-                    walletSource === 'local' ? 'bg-[#FF5500] text-white border-[#FF5500]' : 'border-[#00000019] hover:border-[#FF5500]'
-                  }`}
-                >
-                  LOCAL KEYS
-                </button>
+                {process.env.NODE_ENV !== 'production' && (
+                  <button
+                    onClick={() => { setWalletSource('local'); setWalletPopoverOpen(false); }}
+                    className={`w-full text-left px-3 py-2 text-[11px] rounded border ${
+                      walletSource === 'local' ? 'bg-[#FF5500] text-white border-[#FF5500]' : 'border-[#00000019] hover:border-[#FF5500]'
+                    }`}
+                  >
+                    LOCAL KEYS
+                  </button>
+                )}
 
                 {paraSession.connected ? (
                   <button
@@ -154,10 +156,10 @@ export function AppHeader() {
           )}
         </div>
 
-        {/* Signer Keys */}
-        {generatingSigner ? (
+        {/* Signer Keys — dev only */}
+        {process.env.NODE_ENV !== 'production' && generatingSigner ? (
           <span className="text-[11px] text-gray-400">Generating keys...</span>
-        ) : signer ? (
+        ) : process.env.NODE_ENV !== 'production' && signer ? (
           <div className="relative" ref={keysRef}>
             <button
               onClick={() => setKeysPopoverOpen(!keysPopoverOpen)}
