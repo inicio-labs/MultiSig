@@ -180,14 +180,16 @@ const TaskBar: React.FC<TaskBarProps> = () => {
 
           {/* Wallet Source Selector */}
           <div className="flex items-center gap-1">
-            <button
-              onClick={() => setWalletSource('local')}
-              className={`px-2 py-1 text-[9px] font-dmmono font-[500] border rounded transition-colors ${
-                walletSource === 'local' ? 'bg-[#FF5500] text-white border-[#FF5500]' : 'bg-white text-gray-600 border-gray-200 hover:border-[#FF5500]'
-              }`}
-            >
-              LOCAL
-            </button>
+            {process.env.NODE_ENV !== 'production' && (
+              <button
+                onClick={() => setWalletSource('local')}
+                className={`px-2 py-1 text-[9px] font-dmmono font-[500] border rounded transition-colors ${
+                  walletSource === 'local' ? 'bg-[#FF5500] text-white border-[#FF5500]' : 'bg-white text-gray-600 border-gray-200 hover:border-[#FF5500]'
+                }`}
+              >
+                LOCAL
+              </button>
+            )}
             <button
               onClick={() => {
                 if (paraSession.connected) {

@@ -156,10 +156,10 @@ export function AppHeader() {
           )}
         </div>
 
-        {/* Signer Keys — dev only */}
-        {process.env.NODE_ENV !== 'production' && generatingSigner ? (
+        {/* Signer Keys */}
+        {generatingSigner ? (
           <span className="text-[11px] text-gray-400">Generating keys...</span>
-        ) : process.env.NODE_ENV !== 'production' && signer ? (
+        ) : signer ? (
           <div className="relative" ref={keysRef}>
             <button
               onClick={() => setKeysPopoverOpen(!keysPopoverOpen)}
