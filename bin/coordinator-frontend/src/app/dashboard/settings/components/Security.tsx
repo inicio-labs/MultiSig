@@ -1,6 +1,6 @@
 import React from "react";
 import { useMultisig } from "@/contexts/MultisigContext";
-import { copyToClipboard, truncateHex } from "@/lib/helpers";
+import { copyToClipboard } from "@/lib/helpers";
 import { toast } from "sonner";
 
 const Security = () => {
@@ -30,14 +30,16 @@ const Security = () => {
         <div className="border border-gray-200 rounded-lg p-6">
           <h3 className="text-[16px] font-dmmono font-[500] mb-4">WALLET SOURCE</h3>
           <div className="flex gap-3 mb-4">
-            <button
-              onClick={() => setWalletSource('local')}
-              className={`px-4 py-2 font-dmmono text-[12px] border rounded ${
-                walletSource === 'local' ? 'bg-[#FF5500] text-white border-[#FF5500]' : 'border-gray-200 hover:border-[#FF5500]'
-              }`}
-            >
-              LOCAL KEYS
-            </button>
+            {process.env.NODE_ENV !== 'production' && (
+              <button
+                onClick={() => setWalletSource('local')}
+                className={`px-4 py-2 font-dmmono text-[12px] border rounded ${
+                  walletSource === 'local' ? 'bg-[#FF5500] text-white border-[#FF5500]' : 'border-gray-200 hover:border-[#FF5500]'
+                }`}
+              >
+                LOCAL KEYS
+              </button>
+            )}
             <button
               onClick={() => {
                 if (paraSession.connected) setWalletSource('para');
@@ -86,7 +88,7 @@ const Security = () => {
         </div>
 
         {/* Local Signer Keys Section */}
-        {signer && (
+        {process.env.NODE_ENV !== 'production' && signer && (
           <div className="border border-gray-200 rounded-lg p-6">
             <h3 className="text-[16px] font-dmmono font-[500] mb-4">LOCAL SIGNER KEYS</h3>
             <div className="space-y-3">

@@ -207,12 +207,12 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
 
   const [consumableNotes, setConsumableNotes] = useState<Array<{ id: string; assets: Array<{ faucetId: string; amount: bigint }> }>>([]);
 
-  const [walletSource, setWalletSource] = useState<WalletSource>('local');
+  const [walletSource, setWalletSource] = useState<WalletSource>('miden-wallet');
   const [paraModalOpen, setParaModalOpen] = useState(false);
 
   const { session: paraSession, paraClient, getWalletId } = useParaSession();
-  const [midenWalletAdapter] = useState(() => new MidenWalletAdapter({ appName: 'Miden Multisig' }));
-  const { session: midenWalletSession, connect: connectMidenWalletRaw, disconnect: disconnectMidenWallet, signBytes, connectError: midenWalletConnectError } = useMidenWallet(midenWalletAdapter);
+  const [midenWalletAdapter, setMidenWalletAdapter] = useState(() => new MidenWalletAdapter({ appName: 'Miden Multisig' }));
+  const { session: midenWalletSession, connect: connectMidenWalletRaw, disconnect: disconnectMidenWalletRaw, signBytes, connectError: midenWalletConnectError } = useMidenWallet(midenWalletAdapter);
 
   useEffect(() => {
     if (midenWalletConnectError) {
@@ -929,6 +929,13 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       toast.error(classifyWalletError(err));
     }
   }, [connectMidenWalletRaw]);
+
+  const disconnectMidenWallet = useCallback(async () => {
+    await disconnectMidenWalletRaw();
+    // Recreate the adapter so the next connect() gets a clean instance —
+    // the extension may leave window.midenWallet in a stale state after disconnect.
+    setMidenWalletAdapter(new MidenWalletAdapter({ appName: 'Miden Multisig' }));
+  }, [disconnectMidenWalletRaw]);
 
   const value = useMemo((): MultisigContextValue => ({
     midenClient,

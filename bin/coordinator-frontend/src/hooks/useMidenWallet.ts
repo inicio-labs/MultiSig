@@ -25,6 +25,7 @@ export function useMidenWallet(adapter: MessageSignerWalletAdapter | null) {
 
     const handleConnect = (_address: string) => {
       const pk = adapter.publicKey;
+      console.log(pk)
       if (!pk) {
         setConnectError('Miden Wallet connected but did not provide a public key');
         return;
@@ -89,6 +90,9 @@ export function useMidenWallet(adapter: MessageSignerWalletAdapter | null) {
 
   const disconnect = useCallback(async () => {
     if (!adapter) return;
+    // Reset the connecting guard so any hung connect() attempt doesn't
+    // permanently block future reconnects.
+    connectingRef.current = false;
     await adapter.disconnect();
   }, [adapter]);
 

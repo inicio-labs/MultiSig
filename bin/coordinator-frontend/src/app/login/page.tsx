@@ -1,8 +1,9 @@
 'use client'
 
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import Image from 'next/image'
 import Svg from "../../../public/svg/index.js";
+import { AnimatePresence, motion } from 'framer-motion';
 
 import { useRouter } from "next/navigation";
 import { useWalletForm } from '../../hooks/useWalletForm';
@@ -11,9 +12,12 @@ import { AppHeader } from '@/components/AppHeader';
 // Force dynamic rendering to avoid WASM loading issues during build
 export const dynamic = 'force-dynamic';
 
+const MIDEN_WALLET_URL = 'https://chromewebstore.google.com/detail/miden-wallet/ablmompanofnodfdkgchkpmphailefpb?hl=en';
+
 const Page = () => {
   const router = useRouter()
   const { reset } = useWalletForm()
+  const [showInstallModal, setShowInstallModal] = useState(false)
 
   useEffect(() => {
     reset()
@@ -21,8 +25,67 @@ const Page = () => {
     localStorage.removeItem('walletCurrentStep')
   }, [reset])
 
+  useEffect(() => {
+    // Give the extension time to inject itself into window
+    const timer = setTimeout(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const w = window as any
+      const installed = !!(w.midenWallet || w.miden)
+      if (!installed) setShowInstallModal(true)
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [])
+
   return (
     <div className="w-full h-screen ">
+      <AnimatePresence>
+        {showInstallModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 16 }}
+              className="bg-white border border-[rgba(0,0,0,0.19)] p-8 w-[90%] max-w-[420px] flex flex-col space-y-5"
+            >
+              <div className="flex items-center space-x-3">
+                <div className="relative w-[28px] h-[28px] shrink-0">
+                  <Image src={Svg.logo} alt="logo" fill objectFit="contain" />
+                </div>
+                <div className="font-dmmono text-[16px] uppercase font-[500]">
+                  Miden Wallet Not Detected
+                </div>
+              </div>
+
+              <p className="text-[12px] font-dmmono text-[rgba(0,0,0,0.7)] leading-relaxed">
+                It looks like you haven&apos;t installed the Miden Wallet browser extension.
+                You&apos;ll need it to sign transactions and interact with your multisig account.
+              </p>
+
+              <div className="flex flex-col space-y-2">
+                <a
+                  href={MIDEN_WALLET_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="h-[38px] w-full flex items-center justify-center bg-[rgba(255,85,0,1)] text-white font-dmmono text-[13px] uppercase tracking-[-2%] font-[500] hover:bg-[#e04a00] transition-colors"
+                >
+                  Download Miden Wallet
+                </a>
+                <button
+                  onClick={() => setShowInstallModal(false)}
+                  className="h-[38px] w-full flex items-center justify-center border border-[rgba(0,0,0,0.2)] bg-[rgba(249,249,249,1)] font-dmmono text-[13px] uppercase tracking-[-2%] text-[rgba(0,0,0,0.6)] hover:text-black transition-colors cursor-pointer"
+                >
+                  Continue anyway
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <AppHeader />
       <div className="relative w-full md:w-[90%] lg:w-[70%] mx-auto h-full flex flex-col space-y-4 sm:space-y-6 md:space-y-12 py-2 sm:py-5 md:py-10">
         {/* Header Section */}
