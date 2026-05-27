@@ -17,7 +17,7 @@ export const dynamic = 'force-dynamic';
 const CreateNewAccount = () => {
   const router = useRouter();
   const { setWalletId } = useAuth();
-  const { handleCreate, creating, activeScheme, activeCommitment, walletSource, error: multisigError } = useMultisig();
+  const { handleCreate, creating, activeScheme, activeCommitment, walletSource, midenWalletSession, connectMidenWallet } = useMultisig();
   const {
     formData,
     currentStep,
@@ -204,7 +204,13 @@ const CreateNewAccount = () => {
   const handleStep3Scroll = (e: React.UIEvent<HTMLDivElement>) => {
     setStep3ScrollTop(e.currentTarget.scrollTop);
   };
+  const needsWalletConnect = walletSource === 'miden-wallet' && !midenWalletSession.connected;
+
   const handleCreateWallet = async () => {
+    if (needsWalletConnect) {
+      toast.error("Please connect your Miden Wallet first.");
+      return;
+    }
     setIsCreating(true);
     setCreationError(null);
 
@@ -727,19 +733,29 @@ const CreateNewAccount = () => {
                   <div className="font-dmmono font-[400] text-[#000000]  lg:text-[14px] md:text-[13px] sm:text-[12px] text-[11px]">
                     Deploy your multi-signature account to the blockchain
                   </div>
-                  <div className="w-full h-[123px] border-[0.5px] border-[rgba(46,161,80,1)] flex flex-col items-center justify-center bg-[rgba(238,253,243,1)] my-10">
-                    <div className="relative w-[48px] h-[48px] my-2">
-                      <Image
-                        src={Svg.tick}
-                        alt="tick"
-                        fill
-                        objectFit="contain"
-                      />
+                  {needsWalletConnect ? (
+                    <div className="w-full border-[0.5px] border-[rgba(255,85,0,0.4)] flex flex-col items-center justify-center gap-3 bg-[rgba(255,85,0,0.04)] my-10 p-6">
+                      <div className="font-dmmono font-[500] text-[rgba(255,85,0,1)] lg:text-[14px] md:text-[13px] sm:text-[12px] text-[11px] text-center">
+                        Connect your Miden Wallet to continue
+                      </div>
+                      <button
+                        type="button"
+                        onClick={connectMidenWallet}
+                        className="bg-[#FF5500] text-white font-dmmono font-[500] text-[12px] px-6 py-2 hover:bg-[#e04a00] transition-colors"
+                      >
+                        CONNECT MIDEN WALLET
+                      </button>
                     </div>
-                    <div className="font-dmmono font-[500] text-[rgba(46,161,80,1)] lg:text-[16px] md:text-[14px] sm:text-[12px] text-[11px]">
-                      Ready to Deploy
+                  ) : (
+                    <div className="w-full h-[123px] border-[0.5px] border-[rgba(46,161,80,1)] flex flex-col items-center justify-center bg-[rgba(238,253,243,1)] my-10">
+                      <div className="relative w-[48px] h-[48px] my-2">
+                        <Image src={Svg.tick} alt="tick" fill objectFit="contain" />
+                      </div>
+                      <div className="font-dmmono font-[500] text-[rgba(46,161,80,1)] lg:text-[16px] md:text-[14px] sm:text-[12px] text-[11px]">
+                        Ready to Deploy
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   <div className="w-full border-[1.09px] border-[rgba(217,217,217,1)] text-[12px] font-dmmono font-[400] mt-14  bg-[rgba(245,245,245,1)] p-2  ]">
                     Important: Once deployed, these settings cannot be changed.
@@ -777,7 +793,8 @@ const CreateNewAccount = () => {
                 (currentStep === 2 &&
                   (Number.isNaN(totalSignersNum) ||
                     filledSignersCount < totalSignersNum ||
-                    filledPublicKeysCount < totalSignersNum))
+                    filledPublicKeysCount < totalSignersNum)) ||
+                (currentStep === 4 && needsWalletConnect)
               }
               className="bg-[rgba(255,85,0,1)] px-4 min-w-[144px] h-full font-[500] font-dmmono lg:text-[16px] md:text-[14px] sm:text-[12px] text-[11px] text-[rgba(255,255,255,1)] disabled:opacity-50 disabled:cursor-not-allowed"
             >
