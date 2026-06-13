@@ -22,13 +22,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed }) => {
   const router = useRouter();
   const pathname = usePathname();
 
-  const handleNavigation = (path: string) => {
-    router.push(path);
-  };
-
-  const isActive = (path: string) => {
-    return pathname === path;
-  };
+  const isActive = (path: string) => pathname === path;
 
   const handleLogout = () => {
     localStorage.clear();
@@ -41,12 +35,13 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed }) => {
   };
 
   return (
-    <div className="relative w-full h-full flex flex-col bg-[#f9f9f9]">
-      {/* Collapse toggle */}
-      <div className="flex justify-end px-3 pt-4">
+    <div className="w-full h-full flex flex-col bg-[#f9f9f9] overflow-hidden">
+
+      {/* Collapse toggle — always right-aligned */}
+      <div className="flex justify-end px-2 pt-4 shrink-0">
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-[rgba(0,0,0,0.04)] text-[rgba(0,0,0,0.6)] hover:text-[#111] transition-colors"
+          className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-[rgba(0,0,0,0.04)] text-[rgba(0,0,0,0.6)] hover:text-[#111] transition-colors shrink-0"
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
           <svg
@@ -62,40 +57,40 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed }) => {
         </button>
       </div>
 
-      <div className="flex flex-col pt-4 pb-3 gap-1 flex-1">
+      {/* Nav items */}
+      <div className="flex flex-col pt-2 pb-3 gap-1 flex-1">
         {sidebarPages.map((page, index) => (
           <div
             key={index}
-            className={`mx-3 py-2.5 px-3 flex items-center gap-3 cursor-pointer rounded-[8px] transition-colors ${
-              isActive(page.path)
-                ? "bg-[#FF5500]/10"
-                : "hover:bg-[rgba(0,0,0,0.04)]"
+            className={`mx-2 py-2.5 px-2 flex items-center gap-3 cursor-pointer rounded-[8px] transition-colors ${
+              isActive(page.path) ? "bg-[#FF5500]/10" : "hover:bg-[rgba(0,0,0,0.04)]"
             }`}
-            onClick={() => handleNavigation(page.path)}
+            onClick={() => router.push(page.path)}
           >
+            {/* Icon — always at same position, never moves */}
             <div className="w-[20px] h-[20px] relative shrink-0">
               <Image src={page.pageIcon} alt={page.pageName} quality={100} fill />
             </div>
-            {!collapsed && (
-              <div
-                className={`text-[13px] font-[500] whitespace-nowrap ${
-                  isActive(page.path) ? "text-[#FF5500]" : "text-[#111]"
-                }`}
-              >
-                {page.pageName}
-              </div>
-            )}
+
+            {/* Label — fades and slides out, never unmounts */}
+            <span
+              className={`text-[13px] font-[500] whitespace-nowrap overflow-hidden transition-all duration-300 ${
+                isActive(page.path) ? "text-[#FF5500]" : "text-[#111]"
+              } ${collapsed ? "w-0 opacity-0" : "w-auto opacity-100"}`}
+            >
+              {page.pageName}
+            </span>
           </div>
         ))}
       </div>
 
-      {/* Logout button at the bottom */}
-      <div className="mt-auto mb-4">
+      {/* Logout */}
+      <div className="mb-4 shrink-0">
         <div
-          className="mx-3 py-2.5 px-3 flex items-center gap-3 cursor-pointer hover:bg-red-50 rounded-[8px] transition-colors"
+          className="mx-2 py-2.5 px-2 flex items-center gap-3 cursor-pointer hover:bg-red-50 rounded-[8px] transition-colors"
           onClick={handleLogout}
         >
-          <div className="w-[20px] h-[20px] relative flex items-center justify-center shrink-0">
+          <div className="w-[20px] h-[20px] flex items-center justify-center shrink-0">
             <svg
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
@@ -111,11 +106,13 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed }) => {
               />
             </svg>
           </div>
-          {!collapsed && (
-            <div className="text-[13px] font-[500] whitespace-nowrap text-gray-700 hover:text-red-500">
-              Logout
-            </div>
-          )}
+          <span
+            className={`text-[13px] font-[500] whitespace-nowrap overflow-hidden text-gray-700 transition-all duration-300 ${
+              collapsed ? "w-0 opacity-0" : "w-auto opacity-100"
+            }`}
+          >
+            Logout
+          </span>
         </div>
       </div>
     </div>

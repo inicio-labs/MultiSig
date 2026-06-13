@@ -23,7 +23,7 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({ threshold, fixe
   };
 
   return (
-    <div className="flex flex-col gap-2 w-full border rounded-[10px] p-4">
+    <div className="flex flex-col gap-2 w-full border border-[rgba(0,0,0,0.08)] rounded-[10px] p-4">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div className="text-[16px] font-[500] text-[#00000099]">
@@ -68,7 +68,7 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({ threshold, fixe
             );
             const sigCount = proposal.signatures?.length ?? 0;
             const isSend = proposal.metadata?.proposalType === 'p2id';
-            const isExecuted = proposal.status.type === 'finalized';
+            const isExecuted = proposal.status === 'finalized';
 
             return (
               <div
@@ -86,7 +86,7 @@ const RecentTransactions: React.FC<RecentTransactionsProps> = ({ threshold, fixe
                      proposal.metadata?.proposalType === 'add_signer' ? 'Add signer' :
                      proposal.metadata?.proposalType === 'remove_signer' ? 'Remove signer' :
                      proposal.metadata?.proposalType === 'change_threshold' ? 'Change threshold' :
-                     proposal.metadata?.proposalType === 'switch_psm' ? 'Switch PSM' :
+                     proposal.metadata?.proposalType === 'switch_guardian' ? 'Switch Guardian' :
                      (proposal.metadata?.proposalType ?? 'Unknown')}
                   </span>
                 </div>

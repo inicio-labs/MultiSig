@@ -1,7 +1,5 @@
 "use client";
 import React, { useState, useMemo } from "react";
-import Image from "next/image";
-import media from "../../../../public/media";
 import { useMultisig } from "@/contexts/MultisigContext";
 import { truncateHex, copyToClipboard } from "@/lib/helpers";
 import { AccountId, AccountInterface, NetworkId } from "@miden-sdk/miden-sdk";
@@ -26,7 +24,6 @@ const TaskBar: React.FC<TaskBarProps> = () => {
     paraSession,
     midenWalletSession,
     connectMidenWallet,
-    disconnectMidenWallet,
     openParaModal,
   } = useMultisig();
 
@@ -80,70 +77,71 @@ const TaskBar: React.FC<TaskBarProps> = () => {
   };
 
   return (
-    <div className="border-b-[0.5px] border-[#0000001A] p-2 bg-white">
+    <div className="border-b border-[rgba(0,0,0,0.06)] px-4 py-3 bg-white font-dmmono">
       <div className="flex items-center justify-between">
-        {/* Left side - Account info — width matches sidebar */}
-        <div className="w-[220px] flex items-center justify-center shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-[8px] bg-[#DFD8D3] flex items-center justify-center shrink-0">
-            <span className="text-[13px] font-[600] text-[#FF5500]">
-              {walletName.slice(0, 1).toUpperCase()}
-            </span>
-          </div>
-          <div className="flex flex-col">
-            <div className="text-[13px] text-[#111] font-[600]">
-              {walletName}
+        {/* Left — account info, width matches sidebar */}
+        <div className="w-[220px] flex items-center shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-[8px] bg-[#DFD8D3] flex items-center justify-center shrink-0">
+              <span className="text-[13px] font-[600] text-[#FF5500]">
+                {walletName.slice(0, 1).toUpperCase()}
+              </span>
             </div>
-            <div className="flex items-center gap-2">
-              <div
-                className="text-[11px] text-[rgba(0,0,0,0.5)] font-[400] cursor-help"
-                title={accountId || "No Account ID"}
-              >
-                {accountId ? truncateHex(accountId, 8, 6) : "No Account"}
+            <div className="flex flex-col">
+              <div className="text-[13px] text-[#111] font-[600]">
+                {walletName}
               </div>
-              <button
-                onClick={copyAccountId}
-                className="flex items-center justify-center w-4 h-4 bg-gray-100 hover:bg-gray-200 rounded transition-colors duration-150"
-                title="Copy hex account ID"
-              >
-                {isCopied ? (
-                  <svg className="w-2.5 h-2.5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                  </svg>
-                ) : (
-                  <svg className="w-2.5 h-2.5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                  </svg>
-                )}
-              </button>
-              <button
-                onClick={copyBech32}
-                disabled={!accountId}
-                className="flex items-center justify-center px-1 h-4 bg-gray-100 hover:bg-gray-200 rounded transition-colors duration-150 text-[7px] font-dmmono font-[500] disabled:opacity-40 disabled:cursor-not-allowed"
-                title="Copy bech32 address"
-              >
-                {isBech32Copied ? (
-                  <svg className="w-2.5 h-2.5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                  </svg>
-                ) : (
-                  <span className="text-gray-600">B32</span>
-                )}
-              </button>
+              <div className="flex items-center gap-2">
+                <div
+                  className="text-[11px] text-[rgba(0,0,0,0.5)] font-[400] cursor-help"
+                  title={accountId || "No Account ID"}
+                >
+                  {accountId ? truncateHex(accountId, 8, 6) : "No Account"}
+                </div>
+                <button
+                  onClick={copyAccountId}
+                  className="flex items-center justify-center w-4 h-4 bg-gray-100 hover:bg-gray-200 rounded transition-colors duration-150"
+                  title="Copy hex account ID"
+                >
+                  {isCopied ? (
+                    <svg className="w-2.5 h-2.5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  ) : (
+                    <svg className="w-2.5 h-2.5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                  )}
+                </button>
+                <button
+                  onClick={copyBech32}
+                  disabled={!accountId}
+                  className="flex items-center justify-center px-1 h-4 bg-gray-100 hover:bg-gray-200 rounded transition-colors duration-150 text-[7px] font-[500] disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Copy bech32 address"
+                >
+                  {isBech32Copied ? (
+                    <svg className="w-2.5 h-2.5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  ) : (
+                    <span className="text-gray-600">B32</span>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Center - PSM Status & Wallet Source */}
+        {/* Center — guardian status + wallet source */}
         <div className="flex items-center gap-3">
           {/* Guardian Status Badge */}
           <div className="relative">
             <button
-              onClick={() => { setShowPsmEditor(!showPsmEditor); setPsmUrlDraft(psmUrl); }}
-              className={`flex items-center gap-1.5 h-8 px-3 rounded-full text-[11px] font-[500] transition-colors ${
-                psmStatus === 'connected'
+              onClick={() => { setShowGuardianEditor(!showGuardianEditor); setGuardianUrlDraft(guardianUrl); }}
+              className={`flex items-center gap-1.5 h-8 px-3 rounded-[8px] text-[11px] font-[500] transition-colors ${
+                guardianStatus === 'connected'
                   ? 'bg-[rgba(46,161,80,0.08)] text-[rgba(46,161,80,1)] hover:bg-[rgba(46,161,80,0.12)]'
-                  : psmStatus === 'connecting'
+                  : guardianStatus === 'connecting'
                     ? 'bg-[rgba(234,179,8,0.08)] text-[rgba(180,140,0,1)] hover:bg-[rgba(234,179,8,0.12)]'
                     : 'bg-[rgba(220,38,38,0.08)] text-[rgba(220,38,38,1)] hover:bg-[rgba(220,38,38,0.12)]'
               }`}
@@ -155,25 +153,24 @@ const TaskBar: React.FC<TaskBarProps> = () => {
               GUARDIAN {guardianStatus}
             </button>
 
-            {/* Guardian Endpoint Editor Popover */}
             {showGuardianEditor && (
-              <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded shadow-lg p-3 w-[320px]">
-                <div className="text-[10px] font-[500] mb-1">PSM Endpoint</div>
+              <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded-[8px] shadow-lg p-3 w-[320px]">
+                <div className="text-[10px] font-[500] mb-1">Guardian Endpoint</div>
                 <input
                   type="text"
-                  value={psmUrlDraft}
-                  onChange={(e) => setPsmUrlDraft(e.target.value)}
+                  value={guardianUrlDraft}
+                  onChange={(e) => setGuardianUrlDraft(e.target.value)}
                   className="w-full text-[11px] border border-gray-200 rounded px-2 py-1 mb-2 focus:outline-none focus:ring-1 focus:ring-[#FF5500]"
                 />
                 <div className="flex gap-2">
                   <button
-                    onClick={handlePsmReconnect}
+                    onClick={handleGuardianReconnect}
                     className="flex-1 bg-[#FF5500] text-white text-[10px] px-2 py-1 rounded hover:bg-[#E04A00] transition-colors"
                   >
                     RECONNECT
                   </button>
                   <button
-                    onClick={() => setShowPsmEditor(false)}
+                    onClick={() => setShowGuardianEditor(false)}
                     className="flex-1 border border-gray-200 text-[10px] px-2 py-1 rounded hover:bg-gray-50 transition-colors"
                   >
                     CANCEL
@@ -183,113 +180,69 @@ const TaskBar: React.FC<TaskBarProps> = () => {
             )}
           </div>
 
-<<<<<<< HEAD
-          {/* Wallet Source Selector */}
-          <div className="flex items-center gap-1">
+          {/* Wallet Source Segmented Control */}
+          <div className="flex items-center h-8 bg-[rgba(245,245,245,1)] rounded-[8px] p-0.5">
             {process.env.NODE_ENV !== 'production' && (
               <button
                 onClick={() => setWalletSource('local')}
-                className={`px-2 py-1 text-[9px] font-dmmono font-[500] border rounded transition-colors ${
-                  walletSource === 'local' ? 'bg-[#FF5500] text-white border-[#FF5500]' : 'bg-white text-gray-600 border-gray-200 hover:border-[#FF5500]'
+                className={`flex items-center px-3 h-full text-[11px] font-[500] rounded-[6px] transition-all ${
+                  walletSource === 'local'
+                    ? 'bg-white text-[#FF5500] shadow-sm'
+                    : 'text-[rgba(0,0,0,0.55)] hover:text-[#111]'
                 }`}
               >
-                LOCAL
+                Local
               </button>
             )}
-=======
-          {/* Wallet Source Selector — segmented control */}
-          <div className="flex items-center h-8 bg-[rgba(245,245,245,1)] rounded-[8px] p-0.5">
-            <button
-              onClick={() => setWalletSource('local')}
-              className={`flex items-center px-3 h-full text-[11px] font-[500] rounded-[6px] transition-all ${
-                walletSource === 'local'
-                  ? 'bg-white text-[#FF5500] shadow-sm'
-                  : 'text-[rgba(0,0,0,0.55)] hover:text-[#111]'
-              }`}
-            >
-              Local
-            </button>
->>>>>>> db4908d (style: remove redundant font-geist from child elements)
             <button
               onClick={() => {
-                if (paraSession.connected) {
-                  setWalletSource('para');
-                } else {
-                  openParaModal();
-                }
+                if (paraSession.connected) setWalletSource('para');
+                else openParaModal();
               }}
-<<<<<<< HEAD
-              className={`px-2 py-1 text-[9px] font-dmmono font-[500] border rounded transition-colors ${
-                walletSource === 'para' ? 'bg-[#FF5500] text-white border-[#FF5500]' : 'bg-white text-gray-600 border-gray-200 hover:border-[#FF5500]'
-=======
               className={`flex items-center px-3 h-full text-[11px] font-[500] rounded-[6px] transition-all ${
                 walletSource === 'para'
                   ? 'bg-white text-[#FF5500] shadow-sm'
                   : 'text-[rgba(0,0,0,0.55)] hover:text-[#111]'
->>>>>>> db4908d (style: remove redundant font-geist from child elements)
               }`}
             >
-              PARA {paraSession.connected ? '(connected)' : ''}
+              Para {paraSession.connected ? '(connected)' : ''}
             </button>
             <button
               onClick={() => {
-                if (midenWalletSession.connected) {
-                  setWalletSource('miden-wallet');
-                } else {
-                  connectMidenWallet();
-                }
+                if (midenWalletSession.connected) setWalletSource('miden-wallet');
+                else connectMidenWallet();
               }}
-<<<<<<< HEAD
-              className={`px-2 py-1 text-[9px] font-dmmono font-[500] border rounded transition-colors ${
-                walletSource === 'miden-wallet' ? 'bg-[#FF5500] text-white border-[#FF5500]' : 'bg-white text-gray-600 border-gray-200 hover:border-[#FF5500]'
-=======
               className={`flex items-center px-3 h-full text-[11px] font-[500] rounded-[6px] transition-all ${
                 walletSource === 'miden-wallet'
                   ? 'bg-white text-[#FF5500] shadow-sm'
                   : 'text-[rgba(0,0,0,0.55)] hover:text-[#111]'
->>>>>>> db4908d (style: remove redundant font-geist from child elements)
               }`}
             >
-              WALLET {midenWalletSession.connected ? '(connected)' : ''}
+              Wallet {midenWalletSession.connected ? '(connected)' : ''}
             </button>
           </div>
         </div>
 
-        {/* Right side - Signer Keys & Sync */}
-        <div className="flex items-center gap-2 pr-2">
-          {/* Active Commitment Display */}
+        {/* Right — commitment display + sync */}
+        <div className="flex items-center gap-2">
           <div className="relative">
             <button
               onClick={() => setShowSignerKeys(!showSignerKeys)}
-<<<<<<< HEAD
-              className="flex items-center gap-1 px-2 py-1 text-[9px] font-dmmono font-[500] border border-gray-200 rounded hover:border-[#FF5500] transition-colors"
-=======
               className="flex items-center gap-2 h-8 px-3 text-[11px] font-[500] bg-[rgba(245,245,245,1)] rounded-[8px] hover:bg-[rgba(235,235,235,1)] transition-colors"
->>>>>>> db4908d (style: remove redundant font-geist from child elements)
               title={activeCommitment || "No commitment"}
             >
               <span className="text-gray-500">{activeScheme.toUpperCase()}</span>
               <span>{activeCommitment ? truncateHex(activeCommitment, 6, 4) : generatingSigner ? 'Generating...' : 'N/A'}</span>
             </button>
 
-            {/* Signer Keys Popover */}
             {showSignerKeys && signer && (
-              <div className="absolute top-full right-0 mt-1 z-50 bg-white border border-gray-200 rounded shadow-lg p-3 w-[360px]">
-<<<<<<< HEAD
-                <div className="text-[10px] font-dmmono font-[500] mb-2 uppercase">Local Signer Keys</div>
-                <div className="space-y-2">
-                  <div>
-                    <div className="text-[9px] font-dmmono text-gray-500 uppercase">Falcon Commitment</div>
-                    <div
-                      className="text-[10px] font-dmmono bg-gray-50 p-1 rounded cursor-pointer hover:bg-gray-100 break-all"
-=======
+              <div className="absolute top-full right-0 mt-1 z-50 bg-white border border-gray-200 rounded-[8px] shadow-lg p-3 w-[360px]">
                 <div className="text-[10px] font-[500] mb-2">Local Signer Keys</div>
                 <div className="space-y-2">
                   <div>
                     <div className="text-[9px] text-gray-500">Falcon Commitment</div>
                     <div
                       className="text-[10px] bg-gray-50 p-1 rounded cursor-pointer hover:bg-gray-100 break-all"
->>>>>>> db4908d (style: remove redundant font-geist from child elements)
                       onClick={() => copyToClipboard(signer.falcon.commitment, () => toast.success("Falcon commitment copied"))}
                       title="Click to copy"
                     >
@@ -297,15 +250,9 @@ const TaskBar: React.FC<TaskBarProps> = () => {
                     </div>
                   </div>
                   <div>
-<<<<<<< HEAD
-                    <div className="text-[9px] font-dmmono text-gray-500 uppercase">ECDSA Commitment</div>
-                    <div
-                      className="text-[10px] font-dmmono bg-gray-50 p-1 rounded cursor-pointer hover:bg-gray-100 break-all"
-=======
                     <div className="text-[9px] text-gray-500">ECDSA Commitment</div>
                     <div
                       className="text-[10px] bg-gray-50 p-1 rounded cursor-pointer hover:bg-gray-100 break-all"
->>>>>>> db4908d (style: remove redundant font-geist from child elements)
                       onClick={() => copyToClipboard(signer.ecdsa.commitment, () => toast.success("ECDSA commitment copied"))}
                       title="Click to copy"
                     >
@@ -315,11 +262,7 @@ const TaskBar: React.FC<TaskBarProps> = () => {
                 </div>
                 <button
                   onClick={() => setShowSignerKeys(false)}
-<<<<<<< HEAD
-                  className="mt-2 w-full text-[9px] font-dmmono border border-gray-200 rounded py-1 hover:bg-gray-50"
-=======
                   className="mt-2 w-full text-[9px] border border-gray-200 rounded py-1 hover:bg-gray-50"
->>>>>>> db4908d (style: remove redundant font-geist from child elements)
                 >
                   CLOSE
                 </button>
@@ -327,16 +270,11 @@ const TaskBar: React.FC<TaskBarProps> = () => {
             )}
           </div>
 
-          {/* Sync Button */}
           {multisig && (
             <button
               onClick={handleSync}
               disabled={syncingState}
-<<<<<<< HEAD
-              className="px-2 py-1 text-[9px] font-dmmono font-[500] border border-gray-200 rounded hover:border-[#FF5500] hover:bg-[#FF5500]/5 transition-colors disabled:opacity-50"
-=======
               className="flex items-center h-8 px-3 text-[11px] font-[500] text-[#111] bg-[rgba(245,245,245,1)] rounded-[8px] hover:bg-[rgba(235,235,235,1)] transition-colors disabled:opacity-50"
->>>>>>> db4908d (style: remove redundant font-geist from child elements)
               title="Sync state"
             >
               {syncingState ? (

@@ -1,0 +1,192 @@
+"use client";
+import { useState, useMemo } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { useMultisig } from "@/contexts/MultisigContext";
+import { toHexAccountId } from "@/lib/helpers";
+import { toast } from "sonner";
+
+interface SendModalProps {
+  open: boolean;
+  onClose: () => void;
+}
+
+const SendModal = ({ open, onClose }: SendModalProps) => {
+  const { handleCreateP2idProposal, creatingProposal, detectedConfig } = useMultisig();
+
+  const [formData, setFormData] = useState({ recipientId: "", amount: "", faucetId: "" });
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  const vaultBalances = detectedConfig?.vaultBalances ?? [];
+  const threshold = detectedConfig?.threshold ?? 0;
+  const signerCount = detectedConfig?.signerCommitments?.length ?? 0;
+
+  const selectedBalance = useMemo(() => {
+    if (!formData.faucetId) return 0;
+    const b = vaultBalances.find(v => v.faucetId === formData.faucetId);
+    return b ? Number(b.amount) / 1000000 : 0;
+  }, [formData.faucetId, vaultBalances]);
+
+  const handleSubmit = async () => {
+    setError(null);
+    if (!formData.recipientId.trim()) { setError("Recipient account ID is required"); return; }
+    if (!formData.faucetId.trim()) { setError("Please select a token"); return; }
+    if (!formData.amount || Number(formData.amount) <= 0) { setError("Please enter a valid amount"); return; }
+    try {
+      const amount = BigInt(Math.round(Number(formData.amount) * 1000000));
+      const recipientHex = toHexAccountId(formData.recipientId.trim());
+      await handleCreateP2idProposal(recipientHex, formData.faucetId.trim(), amount);
+      setSuccess(true);
+      toast.success("Send proposal created!");
+      setTimeout(() => { setSuccess(false); setFormData({ recipientId: "", amount: "", faucetId: "" }); onClose(); }, 1500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create send proposal");
+    }
+  };
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          key="send-overlay"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 backdrop-blur-sm"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={onClose}
+        >
+          <motion.div
+            key="send-modal"
+            onClick={e => e.stopPropagation()}
+            initial={{ y: 8, scale: 0.98, opacity: 0 }}
+            animate={{ y: 0, scale: 1, opacity: 1 }}
+            exit={{ y: 8, scale: 0.98, opacity: 0 }}
+            transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+            className="w-[480px] max-w-[90vw] bg-white rounded-[12px] border border-[rgba(0,0,0,0.08)] shadow-xl overflow-hidden"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(0,0,0,0.06)]">
+              <div className="text-[16px] font-[600] text-[#111]">
+                Send Funds
+              </div>
+              <button
+                onClick={onClose}
+                className="w-7 h-7 flex items-center justify-center rounded-[6px] hover:bg-gray-100 text-[rgba(0,0,0,0.4)] transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="px-5 py-4 flex flex-col gap-4">
+              {error && (
+                <div className="rounded-[8px] border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-600">
+                  {error}
+                </div>
+              )}
+
+              {/* Recipient */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[12px] font-[500] text-[rgba(0,0,0,0.5)]">
+                  Recipient Account ID
+                </label>
+                <input
+                  type="text"
+                  value={formData.recipientId}
+                  onChange={e => setFormData(p => ({ ...p, recipientId: e.target.value }))}
+                  placeholder="0x..."
+                  className="w-full h-10 rounded-[8px] border border-[rgba(0,0,0,0.08)] px-3 font-mono text-[12px] text-[#111] placeholder:text-[rgba(0,0,0,0.3)] focus:outline-none focus:ring-1 focus:ring-[#FF5500] bg-white"
+                />
+              </div>
+
+              {/* Token */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[12px] font-[500] text-[rgba(0,0,0,0.5)]">
+                  Token
+                </label>
+                <select
+                  value={formData.faucetId}
+                  onChange={e => setFormData(p => ({ ...p, faucetId: e.target.value }))}
+                  className="w-full h-10 rounded-[8px] border border-[rgba(0,0,0,0.08)] px-3 text-[12px] text-[#111] focus:outline-none focus:ring-1 focus:ring-[#FF5500] bg-white"
+                >
+                  <option value="">Select token…</option>
+                  {vaultBalances.map((b, i) => (
+                    <option key={i} value={b.faucetId}>
+                      {b.faucetId.slice(0, 16)}… — {(Number(b.amount) / 1000000).toFixed(2)}
+                    </option>
+                  ))}
+                </select>
+                {formData.faucetId && (
+                  <div className="text-[11px] text-[rgba(0,0,0,0.4)]">
+                    Available: {selectedBalance.toFixed(2)}
+                  </div>
+                )}
+              </div>
+
+              {/* Amount */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[12px] font-[500] text-[rgba(0,0,0,0.5)]">
+                  Amount
+                </label>
+                <input
+                  type="number"
+                  value={formData.amount}
+                  onChange={e => setFormData(p => ({ ...p, amount: e.target.value }))}
+                  placeholder="0.00"
+                  className="w-full h-10 rounded-[8px] border border-[rgba(0,0,0,0.08)] px-3 text-[12px] text-[#111] placeholder:text-[rgba(0,0,0,0.3)] focus:outline-none focus:ring-1 focus:ring-[#FF5500] bg-white"
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={onClose}
+                  className="flex-1 h-10 rounded-[8px] border border-[rgba(0,0,0,0.08)] text-[13px] font-[500] text-[rgba(0,0,0,0.6)] hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSubmit}
+                  disabled={creatingProposal || !formData.recipientId || !formData.amount || !formData.faucetId}
+                  className="flex-[2] h-10 rounded-[8px] bg-[#FF5500] hover:bg-[#E64A00] text-white text-[13px] font-[500] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  {creatingProposal ? "Creating…" : "Create Transfer Request"}
+                </button>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className={`px-5 py-3 border-t border-[rgba(0,0,0,0.06)] bg-[#f9f9f9] rounded-b-[12px] ${success ? "bg-green-50" : ""}`}>
+              {success ? (
+                <div className="text-[13px] font-[500] text-[#28A857]">
+                  Transfer request initiated — queued for approval
+                </div>
+              ) : (
+                <>
+                  <div className="text-[12px] font-[500] text-[#111]">Multi-signature required</div>
+                  <div className="text-[11px] text-[rgba(0,0,0,0.45)] mt-0.5">
+                    Requires {threshold || "—"} of {signerCount || "—"} approvals before execution
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Loading overlay */}
+            {creatingProposal && (
+              <div className="absolute inset-0 bg-white/70 backdrop-blur-sm flex items-center justify-center rounded-[12px] z-10">
+                <div className="flex flex-col items-center gap-3">
+                  <div className="w-8 h-8 border-[3px] border-[#FF5500] border-t-transparent rounded-full animate-spin" />
+                  <div className="text-[13px] font-[500] text-[rgba(0,0,0,0.5)]">Creating proposal…</div>
+                </div>
+              </div>
+            )}
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+};
+
+export default SendModal;
