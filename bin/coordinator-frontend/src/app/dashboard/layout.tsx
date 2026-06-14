@@ -31,7 +31,7 @@ export default function Layout({
           <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} />
         </aside>
 
-        <main className="flex-1 overflow-y-auto p-4">
+        <main className="flex-1 overflow-y-auto p-4 scrollbar-hidden" style={{ scrollbarGutter: 'stable' }}>
           {children}
         </main>
       </div>

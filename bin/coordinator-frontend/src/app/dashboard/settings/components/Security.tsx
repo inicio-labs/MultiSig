@@ -27,7 +27,7 @@ const Security = () => {
     <div className="w-full h-full">
       <div className="space-y-6">
         {/* Wallet Source Section */}
-        <div className="border border-gray-200 rounded-lg p-6">
+        <div className="border border-gray-200 rounded-[10px] p-6">
           <h3 className="text-[16px] font-[500] mb-4">WALLET SOURCE</h3>
           <div className="flex gap-3 mb-4">
             {process.env.NODE_ENV !== 'production' && (
@@ -89,7 +89,7 @@ const Security = () => {
 
         {/* Local Signer Keys Section */}
         {process.env.NODE_ENV !== 'production' && signer && (
-          <div className="border border-gray-200 rounded-lg p-6">
+          <div className="border border-gray-200 rounded-[10px] p-6">
             <h3 className="text-[16px] font-[500] mb-4">LOCAL SIGNER KEYS</h3>
             <div className="space-y-3">
               <div className="bg-gray-50 p-3 rounded">

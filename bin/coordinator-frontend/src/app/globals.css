@@ -56,6 +56,14 @@ body {
   scrollbar-color: rgba(156, 163, 175, 0.3) transparent;
 }
 
+/* Hide scrollbar visually but keep it functional */
+.scrollbar-hidden {
+  scrollbar-width: none; /* Firefox */
+}
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none; /* Chrome, Safari */
+}
+
 #__next-build-watcher,
 #__nextjs-error-overlay,
 nextjs-portal {
