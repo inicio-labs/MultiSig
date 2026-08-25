@@ -23,7 +23,7 @@ import {
   AccountInspector,
 } from "@openzeppelin/miden-multisig-client";
 import { GuardianHttpError } from "@openzeppelin/guardian-client";
-import { AccountId, type MidenClient } from "@miden-sdk/miden-sdk";
+import { AccountId, NoteType, type MidenClient } from "@miden-sdk/miden-sdk";
 
 import { normalizeCommitment } from "@/lib/helpers";
 import { formatError, classifyWalletError } from "@/lib/errors";
@@ -40,6 +40,8 @@ import {
   loadMultisigAccount,
   createSigner,
   registerAccountNoteTag,
+  getOutputNotesFromTxSummary,
+  relayPrivateNote,
 } from "@/lib/multisigApi";
 import type { ExternalSignerParams } from "@/lib/multisigApi";
 import { GUARDIAN_ENDPOINT } from "@/config/psm";
@@ -156,6 +158,20 @@ function applyExecutedOverride<T extends { id: string; status: string }>(
   );
 }
 
+export type PrivateSendStep =
+  | "idle"
+  | "creating-proposal"
+  | "relaying-notes"
+  | "done"
+  | "error";
+
+export interface PrivateSendProgress {
+  step: PrivateSendStep;
+  totalNotes: number;
+  relayedNotes: number;
+  error?: string;
+}
+
 interface MultisigContextValue {
   // Core state
   midenClient: MidenClient | null;
@@ -220,6 +236,13 @@ interface MultisigContextValue {
     faucetId: string,
     amount: bigint,
   ) => Promise<void>;
+  handleSendPrivateNote: (
+    recipientId: string,
+    faucetId: string,
+    amount: bigint,
+  ) => Promise<void>;
+  privateSendProgress: PrivateSendProgress;
+  resetPrivateSendProgress: () => void;
   handleCreateConsumeNotesProposal: (noteIds: string[]) => Promise<void>;
   handleCreateAddSignerProposal: (
     commitment: string,
@@ -319,6 +342,12 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
   const [executingProposal, setExecutingProposal] = useState<string | null>(
     null,
   );
+  const [privateSendProgress, setPrivateSendProgress] =
+    useState<PrivateSendProgress>({
+      step: "idle",
+      totalNotes: 0,
+      relayedNotes: 0,
+    });
 
   const [consumableNotes, setConsumableNotes] = useState<
     Array<{ id: string; assets: Array<{ faucetId: string; amount: bigint }> }>
@@ -1075,6 +1104,71 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     [multisig],
   );
 
+  // Relays before the note is executed, not after: a crash between execute
+  // and relay leaves the commitment on-chain with contents nowhere (funds
+  // stuck), while a crash between relay and execute just leaves a harmless
+  // orphaned entry in the transport service. Relaying early also guarantees
+  // the block hint sendPrivate captures (the client's current sync height)
+  // sits at or before the note's eventual commitment, not after it.
+  const handleSendPrivateNote = useCallback(
+    async (recipientId: string, faucetId: string, amount: bigint) => {
+      if (!multisig || !midenClient) return;
+
+      setPrivateSendProgress({
+        step: "creating-proposal",
+        totalNotes: 0,
+        relayedNotes: 0,
+      });
+      setError(null);
+      setPendingCandidateWarning(null);
+      try {
+        const proposal = await multisig.createP2idProposal(
+          recipientId,
+          faucetId,
+          amount,
+          undefined,
+          { noteType: NoteType.Private },
+        );
+        setProposals(multisig.listProposals());
+
+        const notes = getOutputNotesFromTxSummary(proposal.txSummary);
+        setPrivateSendProgress({
+          step: "relaying-notes",
+          totalNotes: notes.length,
+          relayedNotes: 0,
+        });
+
+        for (const note of notes) {
+          await relayPrivateNote(midenClient, note, recipientId);
+          setPrivateSendProgress((prev) => ({
+            ...prev,
+            relayedNotes: prev.relayedNotes + 1,
+          }));
+        }
+
+        setPrivateSendProgress((prev) => ({ ...prev, step: "done" }));
+        toast.success("Private send proposal created and relayed");
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        if (isPendingCandidateError(err)) {
+          setPendingCandidateWarning(
+            "A previous transaction is still being processed on-chain. " +
+              "Please wait for it to be confirmed before creating new proposals.",
+          );
+        } else {
+          setError(`Failed to send privately: ${message}`);
+        }
+        setPrivateSendProgress((prev) => ({ ...prev, step: "error", error: message }));
+        throw err;
+      }
+    },
+    [multisig, midenClient],
+  );
+
+  const resetPrivateSendProgress = useCallback(() => {
+    setPrivateSendProgress({ step: "idle", totalNotes: 0, relayedNotes: 0 });
+  }, []);
+
   const handleCreateSwitchGuardianProposal = useCallback(
     async (newEndpoint: string, newPubkey: string) => {
       if (!multisig) return;
@@ -1401,6 +1495,9 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       handleSignProposal,
       handleExecuteProposal,
       handleCreateP2idProposal,
+      handleSendPrivateNote,
+      privateSendProgress,
+      resetPrivateSendProgress,
       handleCreateConsumeNotesProposal,
       handleCreateAddSignerProposal,
       handleCreateRemoveSignerProposal,
@@ -1468,6 +1565,9 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       handleSignProposal,
       handleExecuteProposal,
       handleCreateP2idProposal,
+      handleSendPrivateNote,
+      privateSendProgress,
+      resetPrivateSendProgress,
       handleCreateConsumeNotesProposal,
       handleCreateAddSignerProposal,
       handleCreateRemoveSignerProposal,
