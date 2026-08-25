@@ -1,16 +1,17 @@
 "use client";
-import React, { useState } from "react";
+import React from "react";
 import General from "./components/General";
 import Security from "./components/Security";
 import Signers from "./components/Signers";
 import Notifications from "./components/Notifications";
 import Transactionguard from "./components/Transactionguard";
+import { useDashboardUI } from "@/contexts/DashboardUIContext";
 
 // Force dynamic rendering to avoid WASM loading issues during build
 export const dynamic = 'force-dynamic';
 
 const Settings = () => {
-  const [activeTab, setActiveTab] = useState("general");
+  const { settingsTab: activeTab, setSettingsTab: setActiveTab } = useDashboardUI();
 
   const tabs = [
     { id: "general", label: "GENERAL" },
@@ -18,7 +19,7 @@ const Settings = () => {
     { id: "signers", label: "SIGNERS" },
     { id: "notifications", label: "NOTIFICATIONS" },
     { id: "transactionguard", label: "TRANSACTION GUARD" },
-  ];
+  ] as const;
 
   const renderTabContent = () => {
     switch (activeTab) {

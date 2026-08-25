@@ -22,7 +22,7 @@ import { MIDEN_RPC_URL, GUARDIAN_ENDPOINT } from '@/config/psm';
 export interface ExternalSignerParams {
   walletSource: WalletSource;
   paraContext?: { para: ParaSigningContext; walletId: string; commitment: string; publicKey: string };
-  midenWalletContext?: { wallet: WalletSigningContext; commitment: string; scheme: SignatureScheme };
+  midenWalletContext?: { wallet: WalletSigningContext; commitment: string; scheme: SignatureScheme; publicKey?: string };
 }
 
 export function createSigner(
@@ -37,11 +37,7 @@ export function createSigner(
 
   if (external?.walletSource === 'miden-wallet' && external.midenWalletContext) {
     const ctx = external.midenWalletContext;
-    if (ctx.scheme === 'ecdsa') {
-      const localSigner = new EcdsaSigner(signerInfo.ecdsa.secretKey);
-      return new MidenWalletSigner(ctx.wallet, ctx.commitment, ctx.scheme, localSigner);
-    }
-    return new MidenWalletSigner(ctx.wallet, ctx.commitment, ctx.scheme);
+    return new MidenWalletSigner(ctx.wallet, ctx.commitment, ctx.scheme, undefined, ctx.publicKey);
   }
 
   const activeSigner = signatureScheme === 'ecdsa' ? signerInfo.ecdsa : signerInfo.falcon;

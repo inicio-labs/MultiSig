@@ -152,6 +152,41 @@ const CreateNewAccount = () => {
   const [activeSignerIndex, setActiveSignerIndex] = useState(0);
   const [step3ScrollTop, setStep3ScrollTop] = useState(0);
   const step3ScrollRef = useRef<HTMLDivElement>(null);
+
+  const [showTooltip, setShowTooltip] = useState(false);
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const currentSignerKey = formData.signerPublicKeys[activeSignerIndex] ?? '';
+
+  // Auto-show after 5s idle (no key entered), then auto-hide after 3s
+  useEffect(() => {
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    if (autoHideTimerRef.current) clearTimeout(autoHideTimerRef.current);
+
+    if (currentStep !== 2 || activeSignerIndex === 0 || currentSignerKey.trim() !== '') {
+      setShowTooltip(false);
+      return;
+    }
+
+    idleTimerRef.current = setTimeout(() => {
+      setShowTooltip(true);
+      autoHideTimerRef.current = setTimeout(() => setShowTooltip(false), 3000);
+    }, 5000);
+
+    return () => {
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      if (autoHideTimerRef.current) clearTimeout(autoHideTimerRef.current);
+    };
+  }, [currentStep, activeSignerIndex, currentSignerKey]);
+
+  const handleTooltipMouseEnter = () => {
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    if (autoHideTimerRef.current) clearTimeout(autoHideTimerRef.current);
+    setShowTooltip(true);
+  };
+  const handleTooltipMouseLeave = () => setShowTooltip(false);
+
   useEffect(() => {
     if (activeSignerIndex > formData.signerAddresses.length - 1) {
       setActiveSignerIndex(Math.max(0, formData.signerAddresses.length - 1));
@@ -186,7 +221,6 @@ const CreateNewAccount = () => {
       toast.success("Multisig account created successfully!");
       router.push("/dashboard/home");
     } catch (error) {
-      console.error("Failed to create wallet:", error);
       setCreationError(
         error instanceof Error ? error.message : "Failed to create wallet"
       );
@@ -430,8 +464,52 @@ const CreateNewAccount = () => {
                     <div className="font-geist font-[600] text-[#111] lg:text-[20px] md:text-[19px] sm:text-[17px] text-[16px]">
                       Add Signers
                     </div>
-                    <div className="font-geist font-[400] text-[rgba(0,0,0,0.45)] lg:text-[14px] md:text-[13px] sm:text-[12px] text-[11px] mt-0.5">
-                      Add signer commitments that will be authorized to sign transactions
+                    <div className="flex items-center gap-2">
+                      <div className="font-geist font-[400] text-[rgba(0,0,0,0.45)] lg:text-[14px] md:text-[13px] sm:text-[12px] text-[11px] mt-0.5">
+                        Add signer Public Keys that will be authorized to sign transactions
+                      </div>
+                      <div className="relative shrink-0">
+                        <button
+                          type="button"
+                          onMouseEnter={handleTooltipMouseEnter}
+                          onMouseLeave={handleTooltipMouseLeave}
+                          className="w-[16px] h-[16px] rounded-full border border-[rgba(0,0,0,0.3)] text-[rgba(0,0,0,0.5)] flex items-center justify-center text-[10px] font-dmmono hover:border-[#FF5500] hover:text-[#FF5500] transition-colors cursor-default"
+                        >
+                          ?
+                        </button>
+                        <AnimatePresence>
+                          {showTooltip && (
+                            <motion.div
+                              initial={{ opacity: 0, y: 4 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: 4 }}
+                              transition={{ duration: 0.2 }}
+                              className="absolute left-0 top-5 z-50 w-[220px] bg-white border border-[rgba(0,0,0,0.15)] p-3 shadow-md"
+                            >
+                              <div className="font-dmmono text-[10px] font-[500] uppercase mb-2 text-[rgba(0,0,0,0.8)]">
+                                How to get your public key
+                              </div>
+                              <div className="flex flex-col space-y-1.5">
+                                {[
+                                  'Open Miden Wallet extension',
+                                  'Click Settings icon',
+                                  'Click Advanced settings',
+                                  'Copy Account public key',
+                                ].map((step, i) => (
+                                  <div key={i} className="flex items-start gap-2">
+                                    <span className="shrink-0 w-[14px] h-[14px] rounded-full bg-[#FF5500] text-white flex items-center justify-center text-[8px] font-dmmono font-[500] mt-0.5">
+                                      {i + 1}
+                                    </span>
+                                    <span className="font-dmmono text-[10px] text-[rgba(0,0,0,0.7)]">
+                                      {step}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
                     </div>
                   </div>
                 </div>

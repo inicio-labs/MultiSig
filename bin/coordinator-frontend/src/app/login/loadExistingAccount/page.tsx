@@ -47,7 +47,6 @@ const LoadExistingWallet = () => {
             localStorage.setItem("currentWalletId", normalizedId);
             router.push("/dashboard/home");
         } catch (error) {
-            console.error("Error loading account:", error);
             const msg = error instanceof Error ? error.message : "Failed to load account";
             setLocalError(msg);
             toast.error(msg);

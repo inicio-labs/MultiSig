@@ -25,21 +25,30 @@ export function useMidenWallet(adapter: MessageSignerWalletAdapter | null) {
 
     const handleConnect = (_address: string) => {
       const pk = adapter.publicKey;
-      console.log(pk)
       if (!pk) {
         setConnectError('Miden Wallet connected but did not provide a public key');
         return;
       }
-      const { scheme, publicKeyHex, commitment } = PublicKeyFormat.parse(pk);
+      const { publicKeyHex, commitment } = PublicKeyFormat.parse(pk);
+      // Miden Wallet keys are ECDSA; the length-based heuristic in PublicKeyFormat.parse
+      // mislabels 32-byte keys as falcon, so force the scheme it actually uses.
+      const scheme = 'ecdsa' as const;
       if (!commitment) {
         setConnectError(`Failed to derive commitment from ${scheme} public key (len=${pk.length})`);
         return;
       }
+      // For a 32-byte key, PublicKeyFormat.parse takes its Falcon-commitment
+      // branch and returns publicKeyHex === commitment, not a real secp256k1
+      // point — passing that to MidenWalletSigner as an explicit key fails its
+      // curve-point validation. Only trust publicKeyHex when the raw key is
+      // actually EC-point-shaped; otherwise leave it null so the signer instead
+      // recovers the real key from a produced signature.
+      const isValidEcdsaPointLength = pk.length === 33 || pk.length === 65;
       setConnectError(null);
       setSession({
         source: 'miden-wallet',
         connected: true,
-        publicKey: publicKeyHex,
+        publicKey: isValidEcdsaPointLength ? publicKeyHex : null,
         commitment,
         scheme,
       });

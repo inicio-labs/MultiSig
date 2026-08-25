@@ -14,8 +14,8 @@ const TokenHoldings = ({ fungibleAssets, isLoading }: TokenHoldingsProps) => {
       await navigator.clipboard.writeText(text);
       setCopiedIndex(index);
       setTimeout(() => setCopiedIndex(null), 2000); // Reset after 2 seconds
-    } catch (err) {
-      console.error('Failed to copy text: ', err);
+    } catch {
+      /* clipboard write failed */
     }
   };
 

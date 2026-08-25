@@ -100,7 +100,11 @@ const PendingActions: React.FC<PendingActionsProps> = ({ threshold, fixedHeight 
           </div>
         ) : pendingProposals.length > 0 ? (
           pendingProposals.map((proposal) => {
-            const propThreshold = getEffectiveThreshold(
+            // Prefer the threshold snapshot frozen on the proposal at creation time
+            // (metadata.requiredSignatures) over recomputing it from the account's
+            // *current* threshold — otherwise an already-signed/executed proposal
+            // can appear to need more signatures after the threshold later changes.
+            const propThreshold = proposal.metadata?.requiredSignatures ?? getEffectiveThreshold(
               proposal.metadata?.proposalType,
               effectiveThreshold,
               detectedConfig?.procedureThresholds

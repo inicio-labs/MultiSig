@@ -10,10 +10,27 @@ interface ReceiveModalProps {
 }
 
 const ReceiveModal = ({ open, onClose }: ReceiveModalProps) => {
-  const { consumableNotes, handleCreateConsumeNotesProposal, creatingProposal } = useMultisig();
+  const { consumableNotes, proposals, handleCreateConsumeNotesProposal, creatingProposal } = useMultisig();
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
 
-  const notes = useMemo(() => consumableNotes ?? [], [consumableNotes]);
+  const proposedNoteIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const p of proposals ?? []) {
+      // Include finalized proposals too: a note can only be consumed once, and
+      // the local note store can lag behind on-chain state right after execute
+      // (especially under the para/delegated-signing flow), so an already-
+      // executed note can briefly still show up from getConsumableNotes().
+      if (p.metadata.proposalType === "consume_notes") {
+        for (const id of p.metadata.noteIds) ids.add(id);
+      }
+    }
+    return ids;
+  }, [proposals]);
+
+  const notes = useMemo(
+    () => (consumableNotes ?? []).filter(n => !proposedNoteIds.has(n.id)),
+    [consumableNotes, proposedNoteIds]
+  );
 
   const handleSelectAll = () => {
     setSelectedNoteIds(selectedNoteIds.length === notes.length ? [] : notes.map(n => n.id));

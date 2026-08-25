@@ -4,16 +4,14 @@ import React, { useMemo, useState } from "react";
 import PendingActions from "../components/PendingActions";
 import RecentTransactions from "../components/RecentTransactions";
 import { useMultisig } from "@/contexts/MultisigContext";
-import SendModal from "./components/SendModal";
-import ReceiveModal from "./components/ReceiveModal";
+import { useDashboardUI } from "@/contexts/DashboardUIContext";
 import ApproveModal from "./components/ApproveModal";
 
 export const dynamic = 'force-dynamic';
 
 const Page: React.FC = () => {
   const { detectedConfig } = useMultisig();
-  const [isSendOpen, setIsSendOpen] = useState(false);
-  const [isReceiveOpen, setIsReceiveOpen] = useState(false);
+  const { openSendModal, openReceiveModal } = useDashboardUI();
   const [isApproveOpen, setIsApproveOpen] = useState(false);
 
   const walletName = useMemo(() => {
@@ -89,13 +87,13 @@ const Page: React.FC = () => {
         <div className="col-span-4 flex flex-col h-[140px] md:h-[160px] gap-2">
           <div className="flex gap-2 flex-1">
             <button
-              onClick={() => setIsSendOpen(true)}
+              onClick={openSendModal}
               className="flex-1 rounded-[10px] border border-[rgba(0,0,0,0.08)] bg-white text-[14px] font-[500] text-[#111] hover:bg-gray-50 transition-colors"
             >
               Send
             </button>
             <button
-              onClick={() => setIsReceiveOpen(true)}
+              onClick={openReceiveModal}
               className="flex-1 rounded-[10px] border border-[rgba(0,0,0,0.08)] bg-white text-[14px] font-[500] text-[#111] hover:bg-gray-50 transition-colors"
             >
               Receive
@@ -120,9 +118,7 @@ const Page: React.FC = () => {
         <RecentTransactions threshold={threshold} fixedHeight={true} />
       </div>
 
-      {/* Modals */}
-      <SendModal open={isSendOpen} onClose={() => setIsSendOpen(false)} />
-      <ReceiveModal open={isReceiveOpen} onClose={() => setIsReceiveOpen(false)} />
+      {/* Modal — Send/Receive are mounted globally in dashboard/layout.tsx so the chat assistant can open them from any page */}
       <ApproveModal open={isApproveOpen} onClose={() => setIsApproveOpen(false)} />
     </div>
   );

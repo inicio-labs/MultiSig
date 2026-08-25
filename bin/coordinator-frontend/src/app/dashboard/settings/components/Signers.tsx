@@ -1,9 +1,11 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Image from "next/image";
+import { AnimatePresence, motion } from "framer-motion";
 import media from "../../../../../public/media";
 import { useMultisig } from "@/contexts/MultisigContext";
 import { copyToClipboard, truncateHex } from "@/lib/helpers";
+import { getEffectiveThreshold } from "@/lib/procedures";
 import { toast } from "sonner";
 
 const signerIcons = [media.signer1, media.signer2, media.signer3];
@@ -23,12 +25,18 @@ const Signers = () => {
   const [increaseThreshold, setIncreaseThreshold] = useState(false);
   const [newThreshold, setNewThreshold] = useState<number | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [commitmentToRemove, setCommitmentToRemove] = useState<string | null>(null);
 
   const signerCommitments = detectedConfig?.signerCommitments ?? [];
   const currentThreshold = detectedConfig?.threshold ?? 0;
   const numSigners = detectedConfig?.numSigners ?? signerCommitments.length;
   const myCommitment = multisig?.signerCommitment;
   const displayThreshold = newThreshold ?? currentThreshold;
+  const updateSignersThreshold = detectedConfig?.procedureThresholds?.get('update_signers') ?? null;
+
+  useEffect(() => {
+    setNewThreshold(null);
+  }, [detectedConfig]);
 
   const handleCopy = (text: string) => {
     copyToClipboard(text, () => toast.success("Copied!"));
@@ -45,12 +53,19 @@ const Signers = () => {
     setIncreaseThreshold(false);
   };
 
-  const handleRemoveSigner = async (commitment: string) => {
+  const confirmRemoveSigner = async () => {
+    if (!commitmentToRemove) return;
+    setCommitmentToRemove(null);
     setValidationError(null);
     const remainingSigners = numSigners - 1;
+    const effectiveThreshold = getEffectiveThreshold(
+      'remove_signer',
+      currentThreshold,
+      detectedConfig?.procedureThresholds,
+    );
     const adjustedThreshold =
-      currentThreshold > remainingSigners ? remainingSigners : undefined;
-    await handleCreateRemoveSignerProposal(commitment, adjustedThreshold);
+      effectiveThreshold > remainingSigners ? remainingSigners : undefined;
+    await handleCreateRemoveSignerProposal(commitmentToRemove, adjustedThreshold);
   };
 
   const handleChangeThreshold = async () => {
@@ -177,7 +192,7 @@ const Signers = () => {
 
                   {/* Remove */}
                   <button
-                    onClick={() => handleRemoveSigner(commitment)}
+                    onClick={() => setCommitmentToRemove(commitment)}
                     disabled={!canRemove || creatingProposal}
                     title={canRemove ? "Propose removing this signer" : "Cannot remove the only signer"}
                     className="flex-shrink-0 px-3 py-1.5 text-[11px] font-[500] rounded-[8px] border border-red-200 text-red-500 hover:bg-red-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
@@ -198,7 +213,7 @@ const Signers = () => {
       </div>
 
       {/* Add signer */}
-      <div className="w-full rounded-[10px] border border-[rgba(0,0,0,0.08)] flex flex-col gap-3 p-4">
+      {detectedConfig && <div className="w-full rounded-[10px] border border-[rgba(0,0,0,0.08)] flex flex-col gap-3 p-4">
         <div className="text-[15px] font-[600] text-[#111]">
           Add Signer
         </div>
@@ -234,15 +249,114 @@ const Signers = () => {
         >
           Create Add Signer Proposal
         </button>
-      </div>
+      </div>}
+
+      {/* Remove signer confirmation dialog */}
+      <AnimatePresence>
+        {commitmentToRemove && (
+          <motion.div
+            key="remove-overlay"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 backdrop-blur-sm"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setCommitmentToRemove(null)}
+          >
+            <motion.div
+              key="remove-dialog"
+              onClick={(e) => e.stopPropagation()}
+              initial={{ y: 8, scale: 0.98, opacity: 0 }}
+              animate={{ y: 0, scale: 1, opacity: 1 }}
+              exit={{ y: 8, scale: 0.98, opacity: 0 }}
+              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+              className="w-[420px] max-w-[90vw] bg-white rounded-[12px] border border-[rgba(0,0,0,0.08)] shadow-xl overflow-hidden"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(0,0,0,0.06)]">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-[8px] bg-[#FF55000A] border border-[#FF550033] flex items-center justify-center shrink-0">
+                    <svg className="w-3.5 h-3.5 text-[#FF5500]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <span className="text-[15px] font-[600] text-[#FF5500]">Remove Signer</span>
+                </div>
+                <button
+                  onClick={() => setCommitmentToRemove(null)}
+                  className="w-7 h-7 flex items-center justify-center rounded-[6px] hover:bg-gray-100 text-[rgba(0,0,0,0.4)] transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="px-5 py-4 flex flex-col gap-3">
+                <p className="text-[13px] text-[rgba(0,0,0,0.6)] leading-relaxed">
+                  This will create a proposal to permanently remove the following signer from the multisig.
+                  The removal takes effect only after{" "}
+                  <span className="font-[600] text-[#111]">{currentThreshold} of {numSigners}</span> signers approve it.
+                </p>
+
+                {/* Commitment display */}
+                <div className="rounded-[8px] border border-[rgba(0,0,0,0.08)] bg-[rgba(0,0,0,0.02)] px-3 py-2.5">
+                  <div className="text-[10px] font-[500] text-[rgba(0,0,0,0.4)] uppercase tracking-wide mb-1">
+                    Signer commitment
+                    {myCommitment && commitmentToRemove.toLowerCase() === myCommitment.toLowerCase() && (
+                      <span className="ml-1.5 text-red-500 normal-case tracking-normal">(you)</span>
+                    )}
+                  </div>
+                  <span className="text-[11px] font-mono text-[#111] break-all">{commitmentToRemove}</span>
+                </div>
+
+                {/* Self-removal warning */}
+                {myCommitment && commitmentToRemove.toLowerCase() === myCommitment.toLowerCase() && (
+                  <div className="rounded-[8px] border border-red-200 bg-red-50 px-3 py-2.5">
+                    <div className="text-[12px] font-[600] text-red-600 mb-0.5">You are removing yourself</div>
+                    <div className="text-[11px] text-[rgba(0,0,0,0.55)]">
+                      Once this proposal is approved and executed, you will lose access to this multisig permanently.
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-[rgba(0,0,0,0.06)]">
+                <button
+                  onClick={() => setCommitmentToRemove(null)}
+                  className="h-9 px-4 rounded-[8px] border border-[rgba(0,0,0,0.08)] text-[12px] font-[500] text-[rgba(0,0,0,0.6)] hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmRemoveSigner}
+                  disabled={creatingProposal}
+                  className="h-9 px-4 rounded-[8px] bg-[#FF5500] hover:bg-[#E64A00] text-white text-[12px] font-[500] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Create Remove Proposal
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Change threshold */}
-      <div className="w-full rounded-[10px] border border-[rgba(0,0,0,0.08)] flex flex-col gap-3 p-4">
+      {detectedConfig && <div className="w-full rounded-[10px] border border-[rgba(0,0,0,0.08)] flex flex-col gap-3 p-4">
         <div className="text-[15px] font-[600] text-[#111]">
           Change Threshold
         </div>
-        <div className="text-[12px] font-[400] text-[rgba(0,0,0,0.5)]">
-          Current: {currentThreshold} of {numSigners} signers required
+        <div className="flex flex-col gap-1">
+          <div className="text-[12px] font-[400] text-[rgba(0,0,0,0.5)]">
+            Default: {currentThreshold} of {numSigners} signers required
+          </div>
+          <div className="text-[12px] font-[400] text-[rgba(0,0,0,0.5)]">
+            Update signers override:{" "}
+            {updateSignersThreshold !== null
+              ? `${updateSignersThreshold} of ${numSigners} required`
+              : "none (uses default)"}
+          </div>
         </div>
 
         <div className="flex flex-row items-center gap-4">
@@ -283,7 +397,7 @@ const Signers = () => {
         >
           Create Change Threshold Proposal
         </button>
-      </div>
+      </div>}
     </div>
   );
 };

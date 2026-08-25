@@ -44,6 +44,14 @@ const nextConfig = {
       path: false,
     }
 
+    // Force @miden-sdk/miden-sdk to resolve to its /lazy entry point so the
+    // "node" export condition (which lacks WASM Array types) is never picked
+    // up during SSR bundling.
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      '@miden-sdk/miden-sdk': path.join(__dirname, 'node_modules/@miden-sdk/miden-sdk/dist/st/index.js'),
+    }
+
     // Stub out optional Para wallet connector modules that aren't used
     // These are optionally required by @getpara/react-sdk-lite
     const emptyStub = path.join(__dirname, 'src/stubs/empty.js');
@@ -62,6 +70,18 @@ const nextConfig = {
       ),
       new webpack.NormalModuleReplacementPlugin(
         /^@farcaster\/miniapp-sdk$/,
+        emptyStub
+      ),
+      new webpack.NormalModuleReplacementPlugin(
+        /^@getpara\/aa-safe$/,
+        emptyStub
+      ),
+      new webpack.NormalModuleReplacementPlugin(
+        /^@getpara\/aa-thirdweb$/,
+        emptyStub
+      ),
+      new webpack.NormalModuleReplacementPlugin(
+        /^@getpara\/aa-zerodev$/,
         emptyStub
       ),
     )

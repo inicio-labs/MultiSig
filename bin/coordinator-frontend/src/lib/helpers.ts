@@ -24,7 +24,7 @@ export function normalizeCommitment(hex: string): string {
 export function copyToClipboard(text: string, onSuccess?: () => void): void {
   navigator.clipboard.writeText(text).then(() => {
     onSuccess?.();
-  });
+  }).catch(() => {});
 }
 
 export async function clearIndexedDB(): Promise<void> {

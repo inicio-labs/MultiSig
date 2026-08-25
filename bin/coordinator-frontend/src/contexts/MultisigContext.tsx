@@ -23,7 +23,7 @@ import {
   AccountInspector,
 } from "@openzeppelin/miden-multisig-client";
 import { GuardianHttpError } from "@openzeppelin/guardian-client";
-import type { MidenClient } from "@miden-sdk/miden-sdk";
+import { AccountId, type MidenClient } from "@miden-sdk/miden-sdk";
 
 import { normalizeCommitment } from "@/lib/helpers";
 import { formatError, classifyWalletError } from "@/lib/errors";
@@ -48,6 +48,62 @@ import type { WalletSource } from "@/wallets/types";
 import { useParaSession } from "@/hooks/useParaSession";
 import { useMidenWallet } from "@/hooks/useMidenWallet";
 import { MidenWalletAdapter } from "@demox-labs/miden-wallet-adapter-miden";
+
+// Temporary debug instrumentation for the receive-funds vault investigation.
+// Logs fully-expanded JSON (via a BigInt-safe replacer) instead of console's
+// collapsed "Array(1)" previews, which hid the actual data in prior sessions.
+function debugLog(tag: string, data: unknown): void {
+  try {
+    const json = JSON.stringify(
+      data,
+      (_key, value) => (typeof value === "bigint" ? `${value.toString()}n` : value),
+      2,
+    );
+    console.log(`[DEBUG] ${tag}\n${json}`);
+  } catch (stringifyErr) {
+    console.log(`[DEBUG] ${tag} (unstringifiable):`, data, stringifyErr);
+  }
+}
+
+function rawVaultSnapshot(account: {
+  vault(): { fungibleAssets(): Iterable<{ faucetId(): { toString(): string }; amount(): unknown }> };
+  nonce?: () => { toString(): string };
+}): { nonce: string | null; fungibleAssets: Array<{ faucetId: string; amount: string }> } | { error: string } {
+  try {
+    const nonce = account.nonce ? account.nonce().toString() : null;
+    const fungibleAssets = Array.from(account.vault().fungibleAssets()).map((a) => ({
+      faucetId: a.faucetId().toString(),
+      amount: String(a.amount()),
+    }));
+    return { nonce, fungibleAssets };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// Fetches the account directly from the underlying raw client, bypassing
+// `multisig.account` (a cached field the SDK only refreshes inside syncState()
+// AFTER its nonce guard passes — see ensureSafeToOverwriteLocalState in
+// multisig.js). This is the same call syncState() makes internally right
+// before it throws, so it should reflect the TRUE current local state even
+// when `multisig.account` is stuck on a stale pre-execute snapshot.
+async function getLiveAccountSnapshot(
+  multisig: Multisig,
+): Promise<ReturnType<typeof rawVaultSnapshot> | { error: string }> {
+  try {
+    const rawClient = await (
+      multisig as unknown as {
+        getRawClient(): Promise<{ getAccount(id: unknown): Promise<unknown> }>;
+      }
+    ).getRawClient();
+    const accountId = AccountId.fromHex(multisig.accountId);
+    const liveAccount = await rawClient.getAccount(accountId);
+    if (!liveAccount) return { error: "getAccount returned null" };
+    return rawVaultSnapshot(liveAccount as Parameters<typeof rawVaultSnapshot>[0]);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+}
 
 function isPendingCandidateError(error: unknown): boolean {
   const errorStr = error instanceof Error ? error.message : String(error);
@@ -354,14 +410,16 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       };
     }
     if (walletSource === "miden-wallet" && midenWalletSession.connected) {
-      if (!midenWalletSession.commitment || !midenWalletSession.scheme)
+      if (!midenWalletSession.commitment || !midenWalletSession.scheme) {
         return undefined;
+      }
       return {
         walletSource: "miden-wallet",
         midenWalletContext: {
           wallet: { signBytes },
           commitment: midenWalletSession.commitment,
           scheme: midenWalletSession.scheme,
+          publicKey: midenWalletSession.publicKey ?? undefined,
         },
       };
     }
@@ -418,9 +476,9 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
             );
             setMultisig(reloadedMs);
 
-            const [synced, state, notes] = await Promise.all([
+            const state = await reloadedMs.syncState();
+            const [synced, notes] = await Promise.all([
               reloadedMs.syncProposals(),
-              reloadedMs.syncState(),
               reloadedMs.getConsumableNotes(),
             ]);
             const config = AccountInspector.fromAccount(reloadedMs.account);
@@ -440,9 +498,9 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
             if (isNotFound || isNonceTooLow) {
               try {
                 multisig.setGuardianClient(msClient.guardianClient);
-                const [synced, state, notes] = await Promise.all([
+                const state = await multisig.syncState();
+                const [synced, notes] = await Promise.all([
                   multisig.syncProposals(),
-                  multisig.syncState(),
                   multisig.getConsumableNotes(),
                 ]);
                 const config = AccountInspector.fromAccount(multisig.account);
@@ -590,9 +648,9 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
               /* no private notes or transport unavailable */
             }
           }
-          const [synced, state, notes] = await Promise.all([
+          const state = await ms.syncState();
+          const [synced, notes] = await Promise.all([
             ms.syncProposals(),
-            ms.syncState(),
             ms.getConsumableNotes(),
           ]);
           const config = AccountInspector.fromAccount(ms.account);
@@ -695,9 +753,9 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
-        const [synced, state, notes] = await Promise.all([
+        const state = await ms.syncState();
+        const [synced, notes] = await Promise.all([
           ms.syncProposals(),
-          ms.syncState(),
           ms.getConsumableNotes(),
         ]);
         const config = AccountInspector.fromAccount(ms.account);
@@ -712,6 +770,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
         } else {
           setError(`Failed to load: ${message}`);
         }
+        throw err;
       } finally {
         setLoadingAccount(false);
       }
@@ -789,18 +848,49 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
         /* no private notes or transport unavailable */
       }
 
-      const [synced, state, notes] = await Promise.all([
+      const state = await multisig.syncState();
+      const [synced, notes] = await Promise.all([
         multisig.syncProposals(),
-        multisig.syncState(),
         multisig.getConsumableNotes(),
       ]);
       const config = AccountInspector.fromAccount(multisig.account);
+      debugLog("handleSync: SUCCEEDED", {
+        accountId: multisig.accountId,
+        vaultBalances: config?.vaultBalances,
+        rawVault: rawVaultSnapshot(multisig.account),
+        consumableNotes: notes,
+      });
       setGuardianState(state);
       setDetectedConfig(config);
       setProposals(applyExecutedOverride(synced, multisig.accountId));
       setConsumableNotes(notes);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      debugLog("handleSync: THREW", {
+        accountId: multisig.accountId,
+        message,
+        vaultAtCatchTime: rawVaultSnapshot(multisig.account),
+      });
+      if (message.includes("nonce")) {
+        try {
+          const verify = await multisig.verifyStateCommitment();
+          const fallbackConfig = AccountInspector.fromAccount(multisig.account);
+          const liveSnapshot = await getLiveAccountSnapshot(multisig);
+          debugLog("handleSync: verifyStateCommitment SUCCEEDED (chain confirms local state)", {
+            accountId: multisig.accountId,
+            verify,
+            vaultBalances_fromCachedAccount: fallbackConfig?.vaultBalances,
+            cachedAccountVault: rawVaultSnapshot(multisig.account),
+            liveAccountVault: liveSnapshot,
+          });
+          setDetectedConfig(fallbackConfig);
+        } catch (verifyErr) {
+          debugLog("handleSync: verifyStateCommitment FAILED (chain not yet confirmed)", {
+            accountId: multisig.accountId,
+            error: verifyErr instanceof Error ? verifyErr.message : String(verifyErr),
+          });
+        }
+      }
       if (message.includes("account nonce is too low to import")) {
         setPendingCandidateWarning(
           "Sync warning: local state is ahead of the on-chain state. " +
@@ -925,6 +1015,12 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     async (noteIds: string[]) => {
       if (!multisig) return;
 
+      const selectedNotes = consumableNotes.filter((n) => noteIds.includes(n.id));
+      debugLog("handleCreateConsumeNotesProposal: notes about to be consumed", {
+        noteIds,
+        selectedNotes,
+      });
+
       setCreatingProposal(true);
       setError(null);
       setPendingCandidateWarning(null);
@@ -947,7 +1043,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
         setCreatingProposal(false);
       }
     },
-    [multisig],
+    [multisig, consumableNotes],
   );
 
   const handleCreateP2idProposal = useCallback(
@@ -1064,8 +1160,28 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
           );
         }
 
+        debugLog("handleExecuteProposal: BEFORE execute", {
+          proposalId,
+          proposalType: fresh.metadata?.proposalType,
+          noteIds: fresh.metadata?.proposalType === "consume_notes" ? fresh.metadata.noteIds : undefined,
+          signatureCount: fresh.signatures?.length,
+          vaultBefore: rawVaultSnapshot(multisig.account),
+        });
+
         await multisig.executeProposal(proposalId);
         toast.success("Proposal executed successfully");
+
+        // Checkpoint: local transaction execution just ran. This reads the vault
+        // BEFORE any syncState()/Guardian involvement, to isolate whether local
+        // execution itself credited the vault, independent of the sync layer.
+        // Logs BOTH the cached `multisig.account` field AND a live fetch straight
+        // from the raw client, so we can see directly whether the cached field
+        // is stale relative to the true local state.
+        debugLog("handleExecuteProposal: immediately AFTER local execute (pre-sync)", {
+          proposalId,
+          cachedAccountVault: rawVaultSnapshot(multisig.account),
+          liveAccountVault: await getLiveAccountSnapshot(multisig),
+        });
 
         // Persist execution locally so reloads and sync-button clicks keep treating
         // this proposal as finalized even if Guardian is slow to transition it.
@@ -1081,12 +1197,18 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
               await new Promise((resolve) => setTimeout(resolve, 500));
               await midenClient.sync();
             }
-            const [synced, state, notes] = await Promise.all([
+            const state = await multisig.syncState();
+            const [synced, notes] = await Promise.all([
               multisig.syncProposals(),
-              multisig.syncState(),
               multisig.getConsumableNotes(),
             ]);
             const config = AccountInspector.fromAccount(multisig.account);
+            debugLog("handleExecuteProposal: post-execute sync SUCCEEDED", {
+              proposalId,
+              vaultBalances: config?.vaultBalances,
+              rawVault: rawVaultSnapshot(multisig.account),
+              consumableNotesRemaining: notes,
+            });
             setGuardianState(state);
             setDetectedConfig(config);
             setProposals(applyExecutedOverride(synced, multisig.accountId));
@@ -1094,6 +1216,31 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
           } catch (syncErr) {
             const message =
               syncErr instanceof Error ? syncErr.message : String(syncErr);
+            debugLog("handleExecuteProposal: post-execute sync THREW", {
+              proposalId,
+              message,
+              vaultAtCatchTime: rawVaultSnapshot(multisig.account),
+            });
+            if (message.includes("nonce")) {
+              try {
+                const verify = await multisig.verifyStateCommitment();
+                const fallbackConfig = AccountInspector.fromAccount(multisig.account);
+                const liveSnapshot = await getLiveAccountSnapshot(multisig);
+                debugLog("handleExecuteProposal: verifyStateCommitment SUCCEEDED (chain confirms local state)", {
+                  proposalId,
+                  verify,
+                  vaultBalances_fromCachedAccount: fallbackConfig?.vaultBalances,
+                  cachedAccountVault: rawVaultSnapshot(multisig.account),
+                  liveAccountVault: liveSnapshot,
+                });
+                setDetectedConfig(fallbackConfig);
+              } catch (verifyErr) {
+                debugLog("handleExecuteProposal: verifyStateCommitment FAILED (chain not yet confirmed)", {
+                  proposalId,
+                  error: verifyErr instanceof Error ? verifyErr.message : String(verifyErr),
+                });
+              }
+            }
             if (message.includes("account nonce is too low to import")) {
               setPendingCandidateWarning(
                 "Sync warning: local state is ahead of the on-chain state. " +
