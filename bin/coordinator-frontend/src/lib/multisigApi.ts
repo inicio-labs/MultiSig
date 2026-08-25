@@ -13,7 +13,7 @@ import {
   type SignatureScheme,
 } from '@openzeppelin/miden-multisig-client';
 import type { Signer } from '@openzeppelin/guardian-client';
-import { AccountId, NoteTag, type MidenClient } from '@miden-sdk/miden-sdk';
+import { AccountId, NoteTag, TransactionSummary, type Note, type MidenClient } from '@miden-sdk/miden-sdk';
 import type { SignerInfo } from '@/types/psm';
 import type { WalletSource } from '@/wallets/types';
 import { normalizeCommitment } from '@/lib/helpers';
@@ -22,7 +22,7 @@ import { MIDEN_RPC_URL, GUARDIAN_ENDPOINT } from '@/config/psm';
 export interface ExternalSignerParams {
   walletSource: WalletSource;
   paraContext?: { para: ParaSigningContext; walletId: string; commitment: string; publicKey: string };
-  midenWalletContext?: { wallet: WalletSigningContext; commitment: string; scheme: SignatureScheme };
+  midenWalletContext?: { wallet: WalletSigningContext; commitment: string; scheme: SignatureScheme; publicKey?: string };
 }
 
 export function createSigner(
@@ -37,17 +37,56 @@ export function createSigner(
 
   if (external?.walletSource === 'miden-wallet' && external.midenWalletContext) {
     const ctx = external.midenWalletContext;
-    if (ctx.scheme === 'ecdsa') {
-      const localSigner = new EcdsaSigner(signerInfo.ecdsa.secretKey);
-      return new MidenWalletSigner(ctx.wallet, ctx.commitment, ctx.scheme, localSigner);
-    }
-    return new MidenWalletSigner(ctx.wallet, ctx.commitment, ctx.scheme);
+    return new MidenWalletSigner(ctx.wallet, ctx.commitment, ctx.scheme, undefined, ctx.publicKey);
   }
 
   const activeSigner = signatureScheme === 'ecdsa' ? signerInfo.ecdsa : signerInfo.falcon;
   return signatureScheme === 'ecdsa'
     ? new EcdsaSigner(activeSigner.secretKey)
     : new FalconSigner(activeSigner.secretKey);
+}
+
+function base64ToBytes(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+/**
+ * Extracts the full output notes a proposal's transaction will create, by
+ * deserializing its own `txSummary` — no Guardian call, no chain sync, no
+ * ambiguity between proposals. Same reconstruction `verifyProposalMetadataBinding`
+ * already runs internally on every syncProposals().
+ *
+ * Returns full `Note` objects, not just IDs: sendPrivate() only skips its
+ * local-database lookup when given an object with real `.id()`/`.assets()`
+ * methods (checked via duck typing in the SDK's own sendPrivate wrapper). A
+ * plain ID string or NoteId falls through to that lookup instead — which
+ * fails here, because the note hasn't been executed yet, so it was never
+ * written to the local database in the first place.
+ */
+export function getOutputNotesFromTxSummary(txSummaryBase64: string): Note[] {
+  const summary = TransactionSummary.deserialize(base64ToBytes(txSummaryBase64));
+  return summary
+    .outputNotes()
+    .notes()
+    .map((note) => note.intoFull())
+    .filter((note): note is Note => note !== undefined);
+}
+
+/**
+ * Relays a private note's contents to its recipient via the note transport
+ * service. Call this as soon as the proposal exists — before execution, not
+ * after — so the block hint sendPrivate captures (the client's current sync
+ * height) stays at or before the note's eventual on-chain commitment.
+ */
+export async function relayPrivateNote(
+  midenClient: MidenClient,
+  note: Note,
+  recipientId: string,
+): Promise<void> {
+  await midenClient.notes.sendPrivate({ note, to: recipientId });
 }
 
 export async function registerAccountNoteTag(

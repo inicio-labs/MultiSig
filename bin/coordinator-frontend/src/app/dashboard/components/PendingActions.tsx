@@ -19,7 +19,6 @@ const PendingActions: React.FC<PendingActionsProps> = ({ threshold, fixedHeight 
     signingProposal,
     executingProposal,
     syncingState,
-    error: contextError,
   } = useMultisig();
 
   const [notification, setNotification] = useState<{
@@ -65,15 +64,15 @@ const PendingActions: React.FC<PendingActionsProps> = ({ threshold, fixedHeight 
   };
 
   return (
-    <div className="flex flex-col gap-2 border-[0.5px] border-[#00000033] p-4 font-dmmono w-full">
+    <div className="flex flex-col gap-2 rounded-[10px] border border-[rgba(0,0,0,0.08)] p-4 w-full">
       <div className="flex justify-between items-center">
-        <div className="#00000099 font-[500] text-[#00000099] text-[16px]">
+        <div className="font-[500] text-[#00000099] text-[16px]">
           PENDING ACTIONS
         </div>
         {fixedHeight && (
           <button
             onClick={handleViewAll}
-            className="font-dmmono font-[500] text-[#000000] text-[10px] italic hover:text-[#FF5500] transition-colors cursor-pointer"
+            className="font-[500] text-[#000000] text-[10px] italic hover:text-[#FF5500] transition-colors cursor-pointer"
           >
             VIEW ALL
           </button>
@@ -94,14 +93,18 @@ const PendingActions: React.FC<PendingActionsProps> = ({ threshold, fixedHeight 
           <div className="flex items-center justify-center py-8">
             <div className="flex flex-col items-center gap-3">
               <div className="animate-spin rounded-full h-8 w-8 border-2 border-[#00000033] border-t-[#FF5500]"></div>
-              <p className="text-[#00000099] font-dmmono text-sm font-[400]">
+              <p className="text-[#00000099] text-sm font-[400]">
                 Syncing proposals...
               </p>
             </div>
           </div>
         ) : pendingProposals.length > 0 ? (
           pendingProposals.map((proposal) => {
-            const propThreshold = getEffectiveThreshold(
+            // Prefer the threshold snapshot frozen on the proposal at creation time
+            // (metadata.requiredSignatures) over recomputing it from the account's
+            // *current* threshold — otherwise an already-signed/executed proposal
+            // can appear to need more signatures after the threshold later changes.
+            const propThreshold = proposal.metadata?.requiredSignatures ?? getEffectiveThreshold(
               proposal.metadata?.proposalType,
               effectiveThreshold,
               detectedConfig?.procedureThresholds
@@ -115,14 +118,14 @@ const PendingActions: React.FC<PendingActionsProps> = ({ threshold, fixedHeight 
             return (
               <div
                 key={proposal.id}
-                className="flex h-[64px] w-full flex-row items-center border-[0.5px] border-[#00000033] flex-shrink-0"
+                className="flex h-[64px] w-full flex-row items-center border border-[rgba(0,0,0,0.08)] rounded-[8px] flex-shrink-0 overflow-hidden"
               >
-                <div className="font-dmmono w-[10%] text-center text-[12px] font-[400]">
+                <div className="w-[10%] text-center text-[12px] font-[400]">
                   {proposal.id.slice(0, 8)}...
                 </div>
                 <div className="h-full w-[0.5px] bg-[#00000033]"></div>
-                <div className="font-dmmono w-[45%] pl-6 text-[12px] font-[400]">
-                  <span className="font-dmmono text-[12px] font-[500]">
+                <div className="w-[45%] pl-6 text-[12px] font-[400]">
+                  <span className="text-[12px] font-[500]">
                     {proposal.metadata?.proposalType === 'p2id' ? 'SEND' :
                      proposal.metadata?.proposalType === 'consume_notes' ? 'RECEIVE' :
                      proposal.metadata?.proposalType === 'add_signer' ? 'ADD SIGNER' :
@@ -143,18 +146,18 @@ const PendingActions: React.FC<PendingActionsProps> = ({ threshold, fixedHeight 
                 </div>
                 <div className="h-full w-[0.5px] bg-[#00000033]"></div>
                 <div className="flex w-[15%] space-x-1 flex-row items-center justify-center">
-                  <span className="text-[12px] font-dmmono font-[400]">
+                  <span className="text-[12px] font-[400]">
                     {sigCount}/{propThreshold} signed
                   </span>
                 </div>
                 <div className="h-full w-[0.5px] bg-[#00000033]"></div>
                 <div className="flex items-center justify-center w-[10%]">
                   {isReady ? (
-                    <div className="bg-[#28A857] text-white p-1.5 text-[8px] font-dmmono font-[400]">
+                    <div className="bg-[#28A857] text-white p-1.5 text-[8px] font-[400] rounded-full px-2">
                       READY
                     </div>
                   ) : (
-                    <div className="bg-[#FF5500] text-white p-1.5 text-[8px] font-dmmono font-[400]">
+                    <div className="bg-[#FF5500] text-white p-1.5 text-[8px] font-[400] rounded-full px-2">
                       {propThreshold - sigCount} NEEDED
                     </div>
                   )}
@@ -164,7 +167,7 @@ const PendingActions: React.FC<PendingActionsProps> = ({ threshold, fixedHeight 
                   <button
                     onClick={() => handleExecute(proposal.id)}
                     disabled={isExecuting}
-                    className={`w-[10%] text-center text-[12px] font-dmmono font-[400] ${
+                    className={`w-[10%] text-center text-[12px] font-[400] ${
                       isExecuting ? "opacity-50 cursor-not-allowed" : "hover:bg-green-50 text-green-700"
                     }`}
                   >
@@ -181,7 +184,7 @@ const PendingActions: React.FC<PendingActionsProps> = ({ threshold, fixedHeight 
                   <button
                     onClick={() => handleSign(proposal.id)}
                     disabled={isSigning}
-                    className={`w-[10%] text-center text-[12px] font-dmmono font-[400] ${
+                    className={`w-[10%] text-center text-[12px] font-[400] ${
                       isSigning ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-100"
                     }`}
                   >
@@ -215,10 +218,10 @@ const PendingActions: React.FC<PendingActionsProps> = ({ threshold, fixedHeight 
                 />
               </svg>
             </div>
-            <p className="text-gray-500 font-dmmono text-sm font-[400]">
+            <p className="text-gray-500 text-sm font-[400]">
               No pending proposals
             </p>
-            <p className="text-gray-400 font-dmmono text-xs font-[400] mt-1">
+            <p className="text-gray-400 text-xs font-[400] mt-1">
               All proposals have been processed
             </p>
           </div>
