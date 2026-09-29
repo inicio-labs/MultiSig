@@ -69,7 +69,12 @@ import {
 // Temporary debug instrumentation for the receive-funds vault investigation.
 // Logs fully-expanded JSON (via a BigInt-safe replacer) instead of console's
 // collapsed "Array(1)" previews, which hid the actual data in prior sessions.
+// Development builds only: the payloads include vault balances and note IDs,
+// private notes among them.
+const DEBUG_LOGS = process.env.NODE_ENV === "development";
+
 function debugLog(tag: string, data: unknown): void {
+  if (!DEBUG_LOGS) return;
   try {
     const json = JSON.stringify(
       data,
@@ -107,6 +112,8 @@ function rawVaultSnapshot(account: {
 async function getLiveAccountSnapshot(
   multisig: Multisig,
 ): Promise<ReturnType<typeof rawVaultSnapshot> | { error: string }> {
+  // Only feeds debugLog; skip the extra store read when logging is off.
+  if (!DEBUG_LOGS) return { error: "debug logging disabled" };
   try {
     const rawClient = await (
       multisig as unknown as {
