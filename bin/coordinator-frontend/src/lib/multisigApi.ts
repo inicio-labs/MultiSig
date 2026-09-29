@@ -29,6 +29,7 @@ import { MIDEN_REGISTRATION_CODE, MIDEN_RPC_URL } from '@/config/psm';
 import { diagnosticError, diagnosticLog, instrumentMultisig } from './midenDiagnostics';
 import { registerDevnetAccount } from './devnetRegistration';
 import { configureProverWorkflow } from './proverFallback';
+import { markExecutionPushed } from './pendingCandidate';
 import { toast } from 'sonner';
 
 const registrationRequests = new Map<string, Promise<void>>();
@@ -169,6 +170,9 @@ export async function registerAccountNoteTag(
 /** Syncs before executing and falls back to local proving (see proverFallback.ts). */
 function withProverFallback(multisig: Multisig): Multisig {
   configureProverWorkflow(multisig, {
+    onPushed() {
+      markExecutionPushed(multisig.accountId);
+    },
     onFallback(error) {
       console.warn('Remote prover failed; proving on this device instead.', error);
       toast.info('The remote prover did not respond, so this transaction is being proved on this device. This can take a minute or two; keep this tab open.');

@@ -21,6 +21,12 @@ interface ProverWorkflowLike {
 }
 
 export interface ProverWorkflowHooks {
+  /**
+   * Called when proving starts. The SDK reaches this step only after Guardian
+   * accepted the execute's push, so it proves the account's lock is this
+   * execute's own.
+   */
+  onPushed?(): void;
   /** Called when the remote prover failed and this device takes over. */
   onFallback?(error: unknown): void;
   createLocalProver?(): TransactionProver;
@@ -74,6 +80,7 @@ export function configureProverWorkflow(multisig: object, hooks: ProverWorkflowH
   };
 
   workflow.submit = async (accountId, request) => {
+    hooks.onPushed?.();
     let proof;
     const execution = await executeAtTip(accountId, request);
     const prover = config.createProver();

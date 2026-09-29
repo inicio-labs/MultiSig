@@ -73,6 +73,13 @@ describe('configureProverWorkflow', () => {
     expect(onFallback).not.toHaveBeenCalled();
   });
 
+  it('reports that Guardian accepted the push before proving starts', async () => {
+    const { multisig, order } = setup(async () => {});
+    configureProverWorkflow(multisig, { onPushed: () => order.push('pushed'), createLocalProver: () => local });
+    await multisig.proverWorkflow.submit(accountId, request);
+    expect(order[0]).toBe('pushed');
+  });
+
   it('leaves unexpected shapes untouched', () => {
     expect(configureProverWorkflow({})).toBe(false);
     expect(configureProverWorkflow({ proverWorkflow: { submit() {} } })).toBe(false);
