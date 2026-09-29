@@ -28,6 +28,8 @@ import { normalizeCommitment } from '@/lib/helpers';
 import { MIDEN_REGISTRATION_CODE, MIDEN_RPC_URL } from '@/config/psm';
 import { diagnosticError, diagnosticLog, instrumentMultisig } from './midenDiagnostics';
 import { registerDevnetAccount } from './devnetRegistration';
+import { configureProverWorkflow } from './proverFallback';
+import { toast } from 'sonner';
 
 const registrationRequests = new Map<string, Promise<void>>();
 
@@ -164,6 +166,17 @@ export async function registerAccountNoteTag(
   await midenClient.tags.add(tag.asU32());
 }
 
+/** Syncs before executing and falls back to local proving (see proverFallback.ts). */
+function withProverFallback(multisig: Multisig): Multisig {
+  configureProverWorkflow(multisig, {
+    onFallback(error) {
+      console.warn('Remote prover failed; proving on this device instead.', error);
+      toast.info('The remote prover did not respond, so this transaction is being proved on this device. This can take a minute or two; keep this tab open.');
+    },
+  });
+  return multisig;
+}
+
 export async function initMultisigClient(
   midenClient: MidenClient,
   guardianEndpoint: string,
@@ -200,7 +213,7 @@ export async function createMultisigAccount(
   };
   const multisig = await multisigClient.create(config, signer);
   instrumentMultisig(multisig, multisigClient);
-  return multisig;
+  return withProverFallback(multisig);
 }
 
 export async function loadMultisigAccount(
@@ -210,7 +223,7 @@ export async function loadMultisigAccount(
 ): Promise<Multisig> {
   const multisig = await multisigClient.load(accountId, signer);
   instrumentMultisig(multisig, multisigClient);
-  return multisig;
+  return withProverFallback(multisig);
 }
 
 /** Restore an unused local account after Guardian registration was interrupted. */
@@ -246,5 +259,5 @@ export async function loadPendingMultisigAccount(
   guardian.setSigner(signer);
   const multisig = new Multisig(account, config, guardian, signer, midenClient, accountId, MIDEN_RPC_URL);
   instrumentMultisig(multisig, multisigClient);
-  return multisig;
+  return withProverFallback(multisig);
 }
