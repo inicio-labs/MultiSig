@@ -381,8 +381,14 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     if (ledger.signer) setWalletSource("ledger");
   }, [ledger.signer, setWalletSource]);
 
+  // A loaded account is bound to the Ledger signer it was loaded with. Unload
+  // it when that signer goes away or is swapped for another address.
+  const boundLedgerSigner = useRef(ledger.signer);
   useEffect(() => {
-    if (walletSource === "ledger" && !ledger.signer) {
+    const previous = boundLedgerSigner.current;
+    boundLedgerSigner.current = ledger.signer;
+    const swapped = previous !== null && ledger.signer !== null && previous !== ledger.signer;
+    if (walletSource === "ledger" && (!ledger.signer || swapped)) {
       setMultisig(null); setGuardianState(null); setDetectedConfig(null);
       setGuardianRegistrationRequired(false);
       setProposals([]); setConsumableNotes([]);
