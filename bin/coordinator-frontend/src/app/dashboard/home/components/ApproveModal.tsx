@@ -1,4 +1,5 @@
 "use client";
+import { ProposalDetails } from "@/components/ProposalDetails";
 import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useMultisig } from "@/contexts/MultisigContext";
@@ -161,6 +162,7 @@ const ApproveModal = ({ open, onClose }: ApproveModalProps) => {
                         <div className="text-[13px] font-[500] text-[#111]">
                           {proposalLabel(proposal.metadata?.proposalType)}
                         </div>
+                        <ProposalDetails proposal={proposal} />
                         <div className="text-[11px] font-mono text-[rgba(0,0,0,0.35)] mt-0.5 truncate">
                           {proposal.id.slice(0, 20)}…
                         </div>
