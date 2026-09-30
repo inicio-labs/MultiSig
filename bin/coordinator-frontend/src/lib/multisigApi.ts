@@ -25,7 +25,7 @@ import {
 import type { SignerInfo } from '@/types/psm';
 import type { WalletSource } from '@/wallets/types';
 import { normalizeCommitment } from '@/lib/helpers';
-import { MIDEN_REGISTRATION_CODE, MIDEN_RPC_URL } from '@/config/psm';
+import { LOCAL_KEYS_ENABLED, MIDEN_REGISTRATION_CODE, MIDEN_RPC_URL } from '@/config/psm';
 import { diagnosticError, diagnosticLog, instrumentMultisig } from './midenDiagnostics';
 import { registerDevnetAccount } from './devnetRegistration';
 import { configureProverWorkflow } from './proverFallback';
@@ -86,7 +86,7 @@ export interface ExternalSignerParams {
 }
 
 export function createSigner(
-  signerInfo: SignerInfo,
+  signerInfo: SignerInfo | null,
   signatureScheme: SignatureScheme,
   external?: ExternalSignerParams,
 ): Signer {
@@ -105,6 +105,12 @@ export function createSigner(
     return new MidenWalletSigner(ctx.wallet, ctx.commitment, ctx.scheme, undefined, ctx.publicKey);
   }
 
+  // Only the explicit "local keys" source reaches this point; every external
+  // source either returned above or was refused by the caller.
+  if (!LOCAL_KEYS_ENABLED) {
+    throw new Error('Connect a wallet (Ledger, Para or the Miden Wallet) first.');
+  }
+  if (!signerInfo) throw new Error('Local keys are still being generated. Try again in a moment.');
   const activeSigner = signatureScheme === 'ecdsa' ? signerInfo.ecdsa : signerInfo.falcon;
   return signatureScheme === 'ecdsa'
     ? new EcdsaSigner(activeSigner.secretKey)
