@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { formatTokenAmount, parseTokenAmount } from '../../src/lib/tokenAmounts';
 
 describe('parseTokenAmount (review C3)', () => {
@@ -34,5 +34,29 @@ describe('formatTokenAmount (review C4)', () => {
     expect(formatTokenAmount(10_000n, 6)).toBe('0.01');
     expect(formatTokenAmount(7n, 0)).toBe('7');
     expect(parseTokenAmount(formatTokenAmount(123_456_789n, 8), 8)).toBe(123_456_789n);
+  });
+});
+
+describe('getFaucetDecimals timeout (review finding 22)', () => {
+  it('gives up on a stalled lookup and does not cache the failure', async () => {
+    vi.resetModules();
+    let calls = 0;
+    // Stub every SDK piece the lookup touches: a reset module graph has no
+    // initialised WASM, and the node's stall is what is under test.
+    vi.doMock('@miden-sdk/miden-sdk', () => ({
+      AccountId: { fromHex: (hex: string) => hex },
+      BasicFungibleFaucetComponent: { fromAccount: () => ({ decimals: () => 6 }) },
+      Endpoint: class {},
+      RpcClient: class {
+        getAccountDetails() { calls += 1; return new Promise(() => {}); }
+        free() {}
+      },
+    }));
+    const { getFaucetDecimals } = await import('../../src/lib/tokenAmounts');
+    const faucet = '0x7cf0a4456218bfb111c55a10d5435a';
+    await expect(getFaucetDecimals(faucet, 20)).rejects.toThrow('did not respond in time');
+    await expect(getFaucetDecimals(faucet, 20)).rejects.toThrow('did not respond in time');
+    expect(calls).toBe(2);
+    vi.doUnmock('@miden-sdk/miden-sdk');
   });
 });

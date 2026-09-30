@@ -37,16 +37,36 @@ export function formatTokenAmount(units: bigint | string, decimals: number): str
 
 const decimalsCache = new Map<string, Promise<number>>();
 
+/** Upper bound on the metadata lookup; the SDK's RPC transport has no deadline of its own. */
+export const DECIMALS_LOOKUP_TIMEOUT_MS = 15_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error: unknown) => { clearTimeout(timer); reject(error); },
+    );
+  });
+}
+
 /**
  * Decimals of a fungible faucet, read from its on-chain metadata without
  * importing the faucet into the local store. Throws when the faucet is not a
  * readable public fungible faucet, so callers fail closed instead of guessing.
  */
-export function getFaucetDecimals(faucetId: string): Promise<number> {
+export function getFaucetDecimals(
+  faucetId: string,
+  timeoutMs: number = DECIMALS_LOOKUP_TIMEOUT_MS,
+): Promise<number> {
   const key = faucetId.trim().toLowerCase();
   let pending = decimalsCache.get(key);
   if (!pending) {
-    pending = fetchFaucetDecimals(key);
+    pending = withTimeout(
+      fetchFaucetDecimals(key),
+      timeoutMs,
+      `Could not read token details for ${key}: the Miden node did not respond in time.`,
+    );
     decimalsCache.set(key, pending);
     // Do not cache failures: a transient RPC error must not stick.
     pending.catch(() => decimalsCache.delete(key));

@@ -223,7 +223,14 @@ const SendModal = ({ open, onClose }: SendModalProps) => {
                     {token.status === "ready"
                       ? `Available: ${formatTokenAmount(selectedBalance, token.decimals)}`
                       : token.status === "error"
-                        ? token.error
+                        ? (
+                          <>
+                            {token.error}{" "}
+                            <button type="button" onClick={token.retry} className="underline underline-offset-2">
+                              Retry
+                            </button>
+                          </>
+                        )
                         : "Loading token details…"}
                   </div>
                 )}
