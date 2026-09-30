@@ -45,7 +45,7 @@ describe('getFaucetDecimals timeout (review finding 22)', () => {
     // initialised WASM, and the node's stall is what is under test.
     vi.doMock('@miden-sdk/miden-sdk', () => ({
       AccountId: { fromHex: (hex: string) => hex },
-      BasicFungibleFaucetComponent: { fromAccount: () => ({ decimals: () => 6 }) },
+      BasicFungibleFaucetComponent: { fromAccount: () => ({ decimals: () => 6, symbol: () => ({ toString: () => 'TST' }) }) },
       Endpoint: class {},
       RpcClient: class {
         getAccountDetails() { calls += 1; return new Promise(() => {}); }
@@ -57,6 +57,34 @@ describe('getFaucetDecimals timeout (review finding 22)', () => {
     await expect(getFaucetDecimals(faucet, 20)).rejects.toThrow('did not respond in time');
     await expect(getFaucetDecimals(faucet, 20)).rejects.toThrow('did not respond in time');
     expect(calls).toBe(2);
+    vi.doUnmock('@miden-sdk/miden-sdk');
+  });
+});
+
+describe('getTokenInfo (review finding 3)', () => {
+  async function load(symbol: string, decimals = 8) {
+    vi.resetModules();
+    vi.doMock('@miden-sdk/miden-sdk', () => ({
+      AccountId: { fromHex: (hex: string) => hex },
+      BasicFungibleFaucetComponent: { fromAccount: () => ({ decimals: () => decimals, symbol: () => ({ toString: () => symbol }) }) },
+      Endpoint: class {},
+      RpcClient: class {
+        async getAccountDetails() { return { account: () => ({}) }; }
+        free() {}
+      },
+    }));
+    return import('../../src/lib/tokenAmounts');
+  }
+
+  it("reads each token's own decimals and symbol", async () => {
+    const { getTokenInfo } = await load('USDCX', 6);
+    await expect(getTokenInfo('0x7cf0a4456218bfb111c55a10d5435a')).resolves.toEqual({ decimals: 6, symbol: 'USDCX' });
+    vi.doUnmock('@miden-sdk/miden-sdk');
+  });
+
+  it('labels a token without a symbol by its faucet id, never by a well-known name', async () => {
+    const { getTokenInfo } = await load('   ');
+    await expect(getTokenInfo('0x1234567890abcdef1234567890abcd')).resolves.toEqual({ decimals: 8, symbol: '0x123456…abcd' });
     vi.doUnmock('@miden-sdk/miden-sdk');
   });
 });
