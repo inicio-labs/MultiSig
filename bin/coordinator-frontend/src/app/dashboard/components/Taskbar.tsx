@@ -10,7 +10,6 @@ import { TaskBarProps } from "@/types";
 const TaskBar: React.FC<TaskBarProps> = () => {
   const {
     guardianUrl,
-    setGuardianUrl,
     guardianStatus,
     connectToGuardian,
     activeCommitment,
@@ -32,6 +31,8 @@ const TaskBar: React.FC<TaskBarProps> = () => {
   const [isBech32Copied, setIsBech32Copied] = useState(false);
   const [showGuardianEditor, setShowGuardianEditor] = useState(false);
   const [guardianUrlDraft, setGuardianUrlDraft] = useState(guardianUrl);
+  const [guardianEditorError, setGuardianEditorError] = useState<string | null>(null);
+  const [guardianConnecting, setGuardianConnecting] = useState(false);
   const [showSignerKeys, setShowSignerKeys] = useState(false);
 
   const walletName = useMemo(() => {
@@ -71,8 +72,16 @@ const TaskBar: React.FC<TaskBarProps> = () => {
   };
 
   const handleGuardianReconnect = async () => {
-    setGuardianUrl(guardianUrlDraft);
-    await connectToGuardian(guardianUrlDraft);
+    setGuardianEditorError(null);
+    setGuardianConnecting(true);
+    // The URL is committed by connectToGuardian only once it is actually in use.
+    const result = await connectToGuardian(guardianUrlDraft.trim());
+    setGuardianConnecting(false);
+    if (!result.ok) {
+      setGuardianEditorError(result.error);
+      toast.error("Guardian not changed");
+      return;
+    }
     setShowGuardianEditor(false);
     toast.success("Reconnected to Guardian");
   };
@@ -138,7 +147,7 @@ const TaskBar: React.FC<TaskBarProps> = () => {
           {/* Guardian Status Badge */}
           <div className="relative">
             <button
-              onClick={() => { setShowGuardianEditor(!showGuardianEditor); setGuardianUrlDraft(guardianUrl); }}
+              onClick={() => { setShowGuardianEditor(!showGuardianEditor); setGuardianUrlDraft(guardianUrl); setGuardianEditorError(null); }}
               className={`flex items-center gap-1.5 h-8 px-3 rounded-[8px] text-[11px] font-[500] transition-colors ${
                 guardianStatus === 'connected'
                   ? 'bg-[rgba(46,161,80,0.08)] text-[rgba(46,161,80,1)] hover:bg-[rgba(46,161,80,0.12)]'
@@ -163,12 +172,16 @@ const TaskBar: React.FC<TaskBarProps> = () => {
                   onChange={(e) => setGuardianUrlDraft(e.target.value)}
                   className="w-full text-[11px] border border-gray-200 rounded-sm px-2 py-1 mb-2 focus:outline-hidden focus:ring-1 focus:ring-[#FF5500]"
                 />
+                {guardianEditorError && (
+                  <p role="alert" className="text-[10px] text-red-600 mb-2 wrap-break-word">{guardianEditorError}</p>
+                )}
                 <div className="flex gap-2">
                   <button
                     onClick={handleGuardianReconnect}
-                    className="flex-1 bg-[#FF5500] text-white text-[10px] px-2 py-1 rounded-sm hover:bg-[#E04A00] transition-colors"
+                    disabled={guardianConnecting}
+                    className="flex-1 bg-[#FF5500] text-white text-[10px] px-2 py-1 rounded-sm hover:bg-[#E04A00] transition-colors disabled:opacity-60"
                   >
-                    RECONNECT
+                    {guardianConnecting ? "CONNECTING…" : "RECONNECT"}
                   </button>
                   <button
                     onClick={() => setShowGuardianEditor(false)}
