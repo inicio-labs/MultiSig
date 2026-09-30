@@ -156,6 +156,27 @@ export interface AccountFundingState {
   message?: string;
 }
 
+/**
+ * Track the account's note tag. Re-adding a tracked tag succeeds, so a failure
+ * is real and incoming notes can go unseen: warn instead of hiding it.
+ */
+async function watchAccountNotes(midenClient: MidenClient, accountId: string): Promise<void> {
+  try {
+    await registerAccountNoteTag(midenClient, accountId);
+  } catch (err) {
+    toast.warning(`Could not watch this account's note tag: ${formatError(err)}. Incoming notes may not appear.`, { id: "note-tag" });
+  }
+}
+
+/** Fetch private notes; having none is not an error, failing to reach the transport is. */
+async function fetchPrivateNotes(midenClient: MidenClient): Promise<void> {
+  try {
+    await midenClient.notes.fetchPrivate();
+  } catch (err) {
+    toast.warning(`Could not fetch private notes: ${formatError(err)}. Private deposits may be missing until the next sync.`, { id: "private-fetch" });
+  }
+}
+
 export type GuardianConnectResult = { ok: true } | { ok: false; error: string };
 
 export interface MultisigContextValue {
@@ -806,11 +827,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
           registeredOnGuardian = true;
           setGuardianRegistrationRequired(false);
           if (midenClient && ms.accountId) {
-            try {
-              await registerAccountNoteTag(midenClient, ms.accountId);
-            } catch {
-              /* tag may already exist */
-            }
+            await watchAccountNotes(midenClient, ms.accountId);
             try {
               await requestAccountFunding(ms);
             } catch {
@@ -821,11 +838,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
             } catch {
               /* non-fatal */
             }
-            try {
-              await midenClient.notes.fetchPrivate();
-            } catch {
-              /* no private notes or transport unavailable */
-            }
+            await fetchPrivateNotes(midenClient);
           }
           const state = await ms.syncState();
           const [synced, notes] = await Promise.all([
@@ -938,21 +951,13 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (midenClient && ms.accountId) {
-          try {
-            await registerAccountNoteTag(midenClient, ms.accountId);
-          } catch {
-            /* tag may already exist */
-          }
+          await watchAccountNotes(midenClient, ms.accountId);
           try {
             await midenClient.sync();
           } catch {
             /* non-fatal */
           }
-          try {
-            await midenClient.notes.fetchPrivate();
-          } catch {
-            /* no private notes or transport unavailable */
-          }
+          await fetchPrivateNotes(midenClient);
         }
 
         const state = await ms.syncState();
@@ -1039,12 +1044,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     setPendingCandidateWarning(null);
     try {
       if (multisig.accountId) {
-        try {
-          await registerAccountNoteTag(midenClient, multisig.accountId);
-        } catch (tagErr) {
-          // Re-adding a tracked tag succeeds, so a failure here is real: incoming notes can go unseen.
-          toast.warning(`Could not watch this account's note tag: ${formatError(tagErr)}. Incoming notes may not appear.`, { id: "note-tag" });
-        }
+        await watchAccountNotes(midenClient, multisig.accountId);
       }
       try {
         await midenClient.sync();
@@ -1052,12 +1052,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
         await new Promise((resolve) => setTimeout(resolve, 500));
         await midenClient.sync();
       }
-      try {
-        await midenClient.notes.fetchPrivate();
-      } catch (fetchErr) {
-        // Having no private notes is not an error; failing to reach the transport is.
-        toast.warning(`Could not fetch private notes: ${formatError(fetchErr)}. Private deposits may be missing until the next sync.`, { id: "private-fetch" });
-      }
+      await fetchPrivateNotes(midenClient);
 
       const state = await multisig.syncState().catch((err: unknown) => {
         if (err instanceof GuardianHttpError && err.code === "account_not_found") {
