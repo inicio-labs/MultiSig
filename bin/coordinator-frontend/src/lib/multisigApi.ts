@@ -152,9 +152,9 @@ export function getOutputNotesFromTxSummary(txSummaryBase64: string): Note[] {
 
 /**
  * Relays a private note's contents to its recipient via the note transport
- * service. Call this as soon as the proposal exists — before execution, not
- * after — so the block hint sendPrivate captures (the client's current sync
- * height) stays at or before the note's eventual on-chain commitment.
+ * service. Call this before execution, never after, so the block hint
+ * (`scanAfterBlockNum`, the client's current sync height) is at or before the
+ * note's on-chain commitment.
  */
 export async function relayPrivateNote(
   midenClient: MidenClient,
@@ -163,6 +163,29 @@ export async function relayPrivateNote(
   scanAfterBlockNum: number,
 ): Promise<void> {
   await midenClient.notes.sendPrivate({ note, to: recipientId, scanAfterBlockNum });
+}
+
+/**
+ * Delivers every private note a proposal will create to its recipient, from
+ * the proposal's own transaction summary, so any cosigner can run it right
+ * before executing. Throws if the summary holds no private note: executing
+ * then would commit a note nobody can reconstruct.
+ */
+export async function relayProposalNotes(
+  midenClient: MidenClient,
+  txSummaryBase64: string,
+  recipientId: string,
+  extractNotes: (txSummaryBase64: string) => Note[] = getOutputNotesFromTxSummary,
+): Promise<number> {
+  const notes = extractNotes(txSummaryBase64);
+  if (notes.length === 0) {
+    throw new Error('This private send has no private note to deliver, so it cannot be executed safely.');
+  }
+  const scanAfterBlockNum = await midenClient.getSyncHeight();
+  for (const note of notes) {
+    await relayPrivateNote(midenClient, note, recipientId, scanAfterBlockNum);
+  }
+  return notes.length;
 }
 
 export async function registerAccountNoteTag(
