@@ -58,7 +58,6 @@ const ReceiveModal = ({ open, onClose }: ReceiveModalProps) => {
     if (selectedNoteIds.length === 0) { toast.error("Select at least one note"); return; }
     try {
       await handleCreateConsumeNotesProposal(selectedNoteIds);
-      toast.success("Consume notes proposal created!");
       setSelectedNoteIds([]);
       onClose();
     } catch (error) {

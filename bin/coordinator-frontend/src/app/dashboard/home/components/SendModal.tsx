@@ -3,7 +3,6 @@ import { useState, useMemo, useEffect, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useMultisig } from "@/contexts/MultisigContext";
 import { toHexAccountId } from "@/lib/helpers";
-import { toast } from "sonner";
 import { useDashboardUI } from "@/contexts/DashboardUIContext";
 import { useFaucetDecimals } from "@/hooks/useFaucetDecimals";
 import { formatTokenAmount, parseTokenAmount } from "@/lib/tokenAmounts";
@@ -95,7 +94,6 @@ const SendModal = ({ open, onClose }: SendModalProps) => {
       }
       await handleCreateP2idProposal(recipientHex, formData.faucetId.trim(), amount);
       setSuccess(true);
-      toast.success("Send proposal created!");
       setTimeout(() => { setSuccess(false); setFormData({ recipientId: "", amount: "", faucetId: "" }); onClose(); }, 1500);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create send proposal");

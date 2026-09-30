@@ -49,7 +49,11 @@ const Signers = () => {
       setValidationError("Please enter a signer commitment");
       return;
     }
-    await handleCreateAddSignerProposal(newCommitment.trim(), increaseThreshold);
+    try {
+      await handleCreateAddSignerProposal(newCommitment.trim(), increaseThreshold);
+    } catch {
+      return; // reported by the context; keep the input so it can be retried
+    }
     setNewCommitment("");
     setIncreaseThreshold(false);
   };
@@ -59,7 +63,9 @@ const Signers = () => {
     setCommitmentToRemove(null);
     setValidationError(null);
     const plan = planRemoveSigner(currentThreshold, numSigners, detectedConfig?.procedureThresholds);
-    await handleCreateRemoveSignerProposal(commitmentToRemove, plan.newThreshold);
+    await handleCreateRemoveSignerProposal(commitmentToRemove, plan.newThreshold).catch(() => {
+      /* reported by the context */
+    });
   };
 
   const handleChangeThreshold = async () => {
@@ -69,7 +75,11 @@ const Signers = () => {
       setValidationError(`Threshold must be between 1 and ${numSigners}`);
       return;
     }
-    await handleCreateChangeThresholdProposal(newThreshold);
+    try {
+      await handleCreateChangeThresholdProposal(newThreshold);
+    } catch {
+      return; // reported by the context; keep the value so it can be retried
+    }
     setNewThreshold(null);
   };
 

@@ -30,6 +30,7 @@ import { diagnosticError, diagnosticLog, instrumentMultisig } from './midenDiagn
 import { registerDevnetAccount } from './devnetRegistration';
 import { configureProverWorkflow } from './proverFallback';
 import { markExecutionPushed } from './pendingCandidate';
+import { retryProposalSubmission } from './proposalSubmission';
 import { toast } from 'sonner';
 
 const registrationRequests = new Map<string, Promise<void>>();
@@ -173,8 +174,17 @@ export async function registerAccountNoteTag(
   await midenClient.tags.add(tag.asU32());
 }
 
-/** Syncs before executing and falls back to local proving (see proverFallback.ts). */
-function withProverFallback(multisig: Multisig): Multisig {
+/**
+ * Wires each multisig for the app: sync before executing with a local-proving
+ * fallback (proverFallback.ts), and re-submission of a built proposal when the
+ * Guardian push fails transiently (proposalSubmission.ts).
+ */
+function prepareMultisig(multisig: Multisig): Multisig {
+  retryProposalSubmission(multisig, {
+    onRetry(attempt, error) {
+      console.warn(`Guardian did not accept the proposal (attempt ${attempt}); retrying with the same data.`, error);
+    },
+  });
   configureProverWorkflow(multisig, {
     onPushed() {
       markExecutionPushed(multisig.accountId);
@@ -223,7 +233,7 @@ export async function createMultisigAccount(
   };
   const multisig = await multisigClient.create(config, signer);
   instrumentMultisig(multisig, multisigClient);
-  return withProverFallback(multisig);
+  return prepareMultisig(multisig);
 }
 
 export async function loadMultisigAccount(
@@ -233,7 +243,7 @@ export async function loadMultisigAccount(
 ): Promise<Multisig> {
   const multisig = await multisigClient.load(accountId, signer);
   instrumentMultisig(multisig, multisigClient);
-  return withProverFallback(multisig);
+  return prepareMultisig(multisig);
 }
 
 /** Restore an unused local account after Guardian registration was interrupted. */
@@ -269,5 +279,5 @@ export async function loadPendingMultisigAccount(
   guardian.setSigner(signer);
   const multisig = new Multisig(account, config, guardian, signer, midenClient, accountId, MIDEN_RPC_URL);
   instrumentMultisig(multisig, multisigClient);
-  return withProverFallback(multisig);
+  return prepareMultisig(multisig);
 }

@@ -1178,171 +1178,131 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     void handleSync();
   }, [handleSync, proposals, syncingState, walletSource]);
 
+  /** On a 409, ask Guardian which open proposal holds the lock and since when. */
+  const inspectAccountLock = useCallback(async (ms: Multisig) => {
+    const stillCurrent = () => multisigRef.current === ms;
+    let proposals: Proposal[];
+    try {
+      proposals = await ms.syncProposals();
+    } catch {
+      proposals = ms.listProposals();
+    }
+    const lookup = await findLockedCandidate(ms, proposals);
+    if (!stillCurrent()) return;
+    if (lookup.kind === "found") {
+      setLockedCandidate({ ...lookup.candidate, accountId: ms.accountId });
+      setPendingCandidateWarning(null);
+    } else if (lookup.kind === "none") {
+      setLockedCandidate(null);
+      setPendingCandidateWarning(
+        "Guardian reported a pending execution for this account that is no longer pending. Sync and try again.",
+      );
+    } else {
+      setLockedCandidate(null);
+      setPendingCandidateWarning(
+        "Another execution holds this account's lock and Guardian could not be asked which one. " +
+          "Guardian releases stale locks automatically within about 20 minutes; try again then.",
+      );
+    }
+  }, []);
+
+  /**
+   * The one contract every proposal handler follows: resolves with the created
+   * proposal, or rejects after reporting why. Success UI must only run after it
+   * resolves. A transient Guardian failure while submitting is retried with the
+   * same data (see proposalSubmission.ts); a 409 shows the account's lock.
+   */
+  const runProposalCreation = useCallback(
+    async <T,>(label: string, create: (ms: Multisig) => Promise<T>): Promise<T> => {
+      const ms = multisig;
+      if (!ms) throw new Error("Load an account first");
+      setCreatingProposal(true);
+      setError(null);
+      setPendingCandidateWarning(null);
+      try {
+        const created = await create(ms);
+        if (multisigRef.current === ms) setProposals(ms.listProposals());
+        toast.success(`${label} proposal created`);
+        return created;
+      } catch (err) {
+        if (multisigRef.current === ms) {
+          if (isPendingCandidateError(err)) {
+            await inspectAccountLock(ms);
+          } else {
+            setError(describeExecutionError(err, `Failed to create the ${label.toLowerCase()} proposal`));
+          }
+        }
+        throw err;
+      } finally {
+        setCreatingProposal(false);
+      }
+    },
+    [multisig, inspectAccountLock],
+  );
+
   const handleCreateAddSignerProposal = useCallback(
     async (commitment: string, increaseThreshold: boolean) => {
-      if (!multisig) return;
-
       let normalizedCommitment: string;
       try {
         normalizedCommitment = normalizeCommitment(commitment);
       } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : "Invalid commitment");
-        return;
+        const message = e instanceof Error ? e.message : "Invalid commitment";
+        setError(message);
+        throw new Error(message);
       }
-
-      setCreatingProposal(true);
-      setError(null);
-      setPendingCandidateWarning(null);
-      try {
-        const newThreshold = increaseThreshold
-          ? multisig.threshold + 1
-          : undefined;
-        await multisig.createAddSignerProposal(normalizedCommitment, { newThreshold });
-        setProposals(multisig.listProposals());
-        toast.success("Add signer proposal created");
-      } catch (err) {
-        if (isPendingCandidateError(err)) {
-          setPendingCandidateWarning(
-            "A previous transaction is still being processed on-chain. " +
-              "Please wait for it to be confirmed before creating new proposals.",
-          );
-        } else {
-          setError(
-            `Failed to create proposal: ${err instanceof Error ? err.message : "Unknown"}`,
-          );
-        }
-      } finally {
-        setCreatingProposal(false);
-      }
+      await runProposalCreation("Add signer", (ms) =>
+        ms.createAddSignerProposal(normalizedCommitment, {
+          newThreshold: increaseThreshold ? ms.threshold + 1 : undefined,
+        }),
+      );
     },
-    [multisig],
+    [runProposalCreation],
   );
 
   const handleCreateRemoveSignerProposal = useCallback(
     async (signerToRemove: string, newThreshold?: number) => {
-      if (!multisig) return;
-
-      setCreatingProposal(true);
-      setError(null);
-      setPendingCandidateWarning(null);
-      try {
-        await multisig.createRemoveSignerProposal(signerToRemove, { newThreshold });
-        setProposals(multisig.listProposals());
-        toast.success("Remove signer proposal created");
-      } catch (err) {
-        if (isPendingCandidateError(err)) {
-          setPendingCandidateWarning(
-            "A previous transaction is still being processed on-chain. " +
-              "Please wait for it to be confirmed before creating new proposals.",
-          );
-        } else {
-          setError(
-            `Failed to create proposal: ${err instanceof Error ? err.message : "Unknown"}`,
-          );
-        }
-      } finally {
-        setCreatingProposal(false);
-      }
+      await runProposalCreation("Remove signer", (ms) =>
+        ms.createRemoveSignerProposal(signerToRemove, { newThreshold }),
+      );
     },
-    [multisig],
+    [runProposalCreation],
   );
 
   const handleCreateChangeThresholdProposal = useCallback(
     async (newThreshold: number) => {
-      if (!multisig) return;
-
-      setCreatingProposal(true);
-      setError(null);
-      setPendingCandidateWarning(null);
-      try {
-        await multisig.createChangeThresholdProposal(newThreshold);
-        setProposals(multisig.listProposals());
-        toast.success("Change threshold proposal created");
-      } catch (err) {
-        if (isPendingCandidateError(err)) {
-          setPendingCandidateWarning(
-            "A previous transaction is still being processed on-chain. " +
-              "Please wait for it to be confirmed before creating new proposals.",
-          );
-        } else {
-          setError(
-            `Failed to create proposal: ${err instanceof Error ? err.message : "Unknown"}`,
-          );
-        }
-      } finally {
-        setCreatingProposal(false);
-      }
+      await runProposalCreation("Change threshold", (ms) => ms.createChangeThresholdProposal(newThreshold));
     },
-    [multisig],
+    [runProposalCreation],
   );
 
   const handleCreateConsumeNotesProposal = useCallback(
     async (noteIds: string[]) => {
-      if (!multisig) return;
-
       const selectedNotes = consumableNotes.filter((n) => noteIds.includes(n.id));
       debugLog("handleCreateConsumeNotesProposal: notes about to be consumed", {
         noteIds,
         selectedNotes,
       });
-
-      setCreatingProposal(true);
-      setError(null);
-      setPendingCandidateWarning(null);
       try {
-        if (midenClient) await logReceiveFunding(midenClient, multisig, selectedNotes);
-        await multisig.createConsumeNotesProposal(noteIds);
-        setProposals(multisig.listProposals());
-        if (accountFunding.phase === "funding-available") {
-          setAccountFunding({ phase: "idle" });
-        }
-        toast.success("Consume notes proposal created");
+        await runProposalCreation("Receive", async (ms) => {
+          if (midenClient) await logReceiveFunding(midenClient, ms, selectedNotes);
+          return ms.createConsumeNotesProposal(noteIds);
+        });
       } catch (err) {
-        diagnosticLog('receive.FAIL', { accountId: multisig.accountId, noteIds, error: diagnosticError(err) });
-        if (isPendingCandidateError(err)) {
-          setPendingCandidateWarning(
-            "A previous transaction is still being processed on-chain. " +
-              "Please wait for it to be confirmed before creating new proposals.",
-          );
-        } else {
-          setError(
-            `Failed to create proposal: ${err instanceof Error ? err.message : "Unknown"}`,
-          );
-        }
-      } finally {
-        setCreatingProposal(false);
+        diagnosticLog('receive.FAIL', { accountId: multisig?.accountId, noteIds, error: diagnosticError(err) });
+        throw err;
+      }
+      if (accountFunding.phase === "funding-available") {
+        setAccountFunding({ phase: "idle" });
       }
     },
-    [accountFunding.phase, multisig, consumableNotes, midenClient],
+    [accountFunding.phase, multisig, consumableNotes, midenClient, runProposalCreation],
   );
 
   const handleCreateP2idProposal = useCallback(
     async (recipientId: string, faucetId: string, amount: bigint) => {
-      if (!multisig) return;
-
-      setCreatingProposal(true);
-      setError(null);
-      setPendingCandidateWarning(null);
-      try {
-        await multisig.createP2idProposal(recipientId, faucetId, amount);
-        setProposals(multisig.listProposals());
-        toast.success("Send payment proposal created");
-      } catch (err) {
-        if (isPendingCandidateError(err)) {
-          setPendingCandidateWarning(
-            "A previous transaction is still being processed on-chain. " +
-              "Please wait for it to be confirmed before creating new proposals.",
-          );
-        } else {
-          setError(
-            `Failed to create proposal: ${err instanceof Error ? err.message : "Unknown"}`,
-          );
-        }
-      } finally {
-        setCreatingProposal(false);
-      }
+      await runProposalCreation("Send", (ms) => ms.createP2idProposal(recipientId, faucetId, amount));
     },
-    [multisig],
+    [runProposalCreation],
   );
 
   // Relays before the note is executed, not after: a crash between execute
@@ -1412,31 +1372,9 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
 
   const handleCreateSwitchGuardianProposal = useCallback(
     async (newEndpoint: string, newPubkey: string) => {
-      if (!multisig) return;
-
-      setCreatingProposal(true);
-      setError(null);
-      setPendingCandidateWarning(null);
-      try {
-        await multisig.createSwitchGuardianProposal(newEndpoint, newPubkey);
-        setProposals(multisig.listProposals());
-        toast.success("Switch Guardian proposal created");
-      } catch (err) {
-        if (isPendingCandidateError(err)) {
-          setPendingCandidateWarning(
-            "A previous transaction is still being processed on-chain. " +
-              "Please wait for it to be confirmed before creating new proposals.",
-          );
-        } else {
-          setError(
-            `Failed to create proposal: ${err instanceof Error ? err.message : "Unknown"}`,
-          );
-        }
-      } finally {
-        setCreatingProposal(false);
-      }
+      await runProposalCreation("Switch Guardian", (ms) => ms.createSwitchGuardianProposal(newEndpoint, newPubkey));
     },
-    [multisig],
+    [runProposalCreation],
   );
 
   const handleSignProposal = useCallback(
@@ -1566,34 +1504,6 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     },
     [handleSync],
   );
-
-  /** On a 409, ask Guardian which open proposal holds the lock and since when. */
-  const inspectAccountLock = useCallback(async (ms: Multisig) => {
-    const stillCurrent = () => multisigRef.current === ms;
-    let proposals: Proposal[];
-    try {
-      proposals = await ms.syncProposals();
-    } catch {
-      proposals = ms.listProposals();
-    }
-    const lookup = await findLockedCandidate(ms, proposals);
-    if (!stillCurrent()) return;
-    if (lookup.kind === "found") {
-      setLockedCandidate({ ...lookup.candidate, accountId: ms.accountId });
-      setPendingCandidateWarning(null);
-    } else if (lookup.kind === "none") {
-      setLockedCandidate(null);
-      setPendingCandidateWarning(
-        "Guardian reported a pending execution for this account that is no longer pending. Sync and try again.",
-      );
-    } else {
-      setLockedCandidate(null);
-      setPendingCandidateWarning(
-        "Another execution holds this account's lock and Guardian could not be asked which one. " +
-          "Guardian releases stale locks automatically within about 20 minutes; try again then.",
-      );
-    }
-  }, []);
 
   const handleExecuteProposal = useCallback(
     async (proposalId: string) => {
