@@ -154,7 +154,7 @@ export interface AccountFundingState {
   message?: string;
 }
 
-interface MultisigContextValue {
+export interface MultisigContextValue {
   // Core state
   midenClient: MidenClient | null;
   multisigClient: MultisigClient | null;
