@@ -272,28 +272,6 @@ export interface MultisigContextValue {
   paraModalOpen: boolean;
   closeParaModal: () => void;
 
-  // Deprecated aliases for backwards compatibility
-  /** @deprecated Use guardianUrl */
-  psmUrl: string;
-  /** @deprecated Use guardianStatus */
-  psmStatus: "connected" | "connecting" | "error";
-  /** @deprecated Use connectToGuardian */
-  connectToPsm: (url: string) => Promise<GuardianConnectResult>;
-  /** @deprecated Use setGuardianUrl */
-  setPsmUrl: (url: string) => void;
-  /** @deprecated Use handleCreateP2idProposal */
-  handleCreateSendProposal: (
-    recipientId: string,
-    faucetId: string,
-    amount: bigint,
-  ) => Promise<void>;
-  /** @deprecated Use handleCreateSwitchGuardianProposal */
-  handleCreateSwitchPsmProposal: (
-    newEndpoint: string,
-    newPubkey: string,
-  ) => Promise<void>;
-  /** @deprecated Use registeringOnGuardian */
-  registeringOnPsm: boolean;
 }
 
 const MultisigContext = createContext<MultisigContextValue | null>(null);
@@ -1063,8 +1041,9 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       if (multisig.accountId) {
         try {
           await registerAccountNoteTag(midenClient, multisig.accountId);
-        } catch {
-          /* tag may already exist */
+        } catch (tagErr) {
+          // Re-adding a tracked tag succeeds, so a failure here is real: incoming notes can go unseen.
+          toast.warning(`Could not watch this account's note tag: ${formatError(tagErr)}. Incoming notes may not appear.`, { id: "note-tag" });
         }
       }
       try {
@@ -1073,10 +1052,11 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
         await new Promise((resolve) => setTimeout(resolve, 500));
         await midenClient.sync();
       }
-        try {
-          await midenClient.notes.fetchPrivate();
-      } catch {
-        /* no private notes or transport unavailable */
+      try {
+        await midenClient.notes.fetchPrivate();
+      } catch (fetchErr) {
+        // Having no private notes is not an error; failing to reach the transport is.
+        toast.warning(`Could not fetch private notes: ${formatError(fetchErr)}. Private deposits may be missing until the next sync.`, { id: "private-fetch" });
       }
 
       const state = await multisig.syncState().catch((err: unknown) => {
@@ -1169,11 +1149,21 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     }
   }, [multisig, midenClient, guardianRegistrationRequired, walletSource, ledger.signer, requestAccountFunding, handleSync]);
 
+  // Re-sync (which re-verifies every proposal), then report this proposal's result.
   const retryProposalVerification = useCallback(
-    async () => {
+    async (proposalId: string) => {
+      if (!multisig) return;
       await handleSync();
+      const proposal = multisig.listProposals().find((item) => item.id === proposalId);
+      if (!proposal) {
+        toast.info("The proposal is no longer on Guardian.");
+      } else if (proposal.verification.status === "failed") {
+        toast.error(`Still not verified: ${proposal.verification.message}`);
+      } else if (proposal.verification.status === "verified") {
+        toast.success("Proposal verified");
+      }
     },
-    [handleSync],
+    [handleSync, multisig],
   );
 
   const automaticVerificationRetries = useRef(new Set<string>());
@@ -1827,14 +1817,6 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       paraModalOpen,
       closeParaModal: () => setParaModalOpen(false),
 
-      // Deprecated aliases
-      psmUrl: guardianUrl,
-      psmStatus: guardianStatus,
-      connectToPsm: connectToGuardian,
-      setPsmUrl: setGuardianUrl,
-      handleCreateSendProposal: handleCreateP2idProposal,
-      handleCreateSwitchPsmProposal: handleCreateSwitchGuardianProposal,
-      registeringOnPsm: registeringOnGuardian,
     }),
     [
       ledger,
