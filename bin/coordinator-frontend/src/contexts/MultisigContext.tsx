@@ -217,6 +217,8 @@ export interface MultisigContextValue {
   handleImportProposal: (json: string) => Promise<void>;
   handleDisconnect: () => void;
   setWalletSource: (source: WalletSource) => void;
+  /** True while any account operation runs; wallet and Guardian changes wait for it. */
+  accountOperationBusy: boolean;
   setGuardianUrl: (url: string) => void;
   /** Resolves (never rejects) with whether the app is now using this Guardian. */
   connectToGuardian: (url: string) => Promise<GuardianConnectResult>;
@@ -314,10 +316,46 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
   const disconnectLedger = ledger.disconnect;
   const latestLedgerSigner = useRef(ledger.signer);
   latestLedgerSigner.current = ledger.signer;
+  // Pull Guardian state (unless the caller already has it), proposals and notes
+  // for a multisig, and publish them with the account's config.
+  const refreshAccount = useCallback(async (ms: Multisig, knownState?: AccountState) => {
+    const state = knownState ?? await ms.syncState();
+    const [synced, notes] = await Promise.all([ms.syncProposals(), ms.getConsumableNotes()]);
+    setGuardianState(state);
+    setDetectedConfig(AccountInspector.fromAccount(ms.account));
+    setProposals(synced);
+    setConsumableNotes(notes);
+  }, []);
+
+  // Any account operation in flight: wallets and Guardian must not change under it.
+  const accountOperationBusy = creating || loadingAccount || creatingProposal || Boolean(signingProposal)
+    || Boolean(executingProposal) || releasingCandidate || syncingState || registeringOnGuardian
+    || privateSendProgress.step === "creating-proposal";
+
+  // A sync that fails on the nonce right after execute usually means Guardian
+  // has not caught up. If the chain confirms the local state, show its config;
+  // returns true when the failure is that benign "local is ahead" case.
+  const handleLocalStateAhead = useCallback(async (ms: Multisig, message: string): Promise<boolean> => {
+    if (message.includes("nonce")) {
+      try {
+        await ms.verifyStateCommitment();
+        setDetectedConfig(AccountInspector.fromAccount(ms.account));
+      } catch {
+        /* the chain has not confirmed the local state yet */
+      }
+    }
+    if (!message.includes("account nonce is too low to import")) return false;
+    setPendingCandidateWarning(
+      "Sync warning: local state is ahead of the on-chain state. " +
+        "This can happen right after executing a transaction. Please wait a moment and sync again.",
+    );
+    return true;
+  }, []);
+
   const setWalletSource = useCallback((source: WalletSource) => {
     if (source === walletSource) return;
     if (source === "local" && !LOCAL_KEYS_ENABLED) return;
-    if (creating || loadingAccount || creatingProposal || signingProposal || executingProposal || releasingCandidate || syncingState || registeringOnGuardian || privateSendProgress.step === "creating-proposal") {
+    if (accountOperationBusy) {
       toast.error("Finish or cancel the current account operation before switching wallets.");
       return;
     }
@@ -328,8 +366,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     setProposals([]); setConsumableNotes([]);
     localStorage.setItem("currentWalletSource", source);
     setWalletSourceState(source);
-  }, [walletSource, disconnectLedger, creating, loadingAccount, creatingProposal,
-    signingProposal, executingProposal, releasingCandidate, syncingState, registeringOnGuardian, privateSendProgress.step]);
+  }, [walletSource, disconnectLedger, accountOperationBusy]);
 
   useEffect(() => {
     if (ledger.signer) setWalletSource("ledger");
@@ -535,16 +572,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
             if (walletSource === "ledger" && clientSigner !== latestLedgerSigner.current) throw new Error("Ledger session changed; load the account again.");
             setMultisig(reloadedMs);
 
-            const state = await reloadedMs.syncState();
-            const [synced, notes] = await Promise.all([
-              reloadedMs.syncProposals(),
-              reloadedMs.getConsumableNotes(),
-            ]);
-            const config = AccountInspector.fromAccount(reloadedMs.account);
-            setGuardianState(state);
-            setDetectedConfig(config);
-            setProposals(synced);
-            setConsumableNotes(notes);
+            await refreshAccount(reloadedMs);
             toast.success("Account loaded from Guardian");
           } catch (loadErr) {
             const isNotFound =
@@ -562,16 +590,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
                 await multisig.preservePreSwitchProposalNotes();
                 multisig.setGuardianClient(msClient.guardianClient);
                 await multisig.registerOnGuardian();
-                const state = await multisig.syncState();
-                const [synced, notes] = await Promise.all([
-                  multisig.syncProposals(),
-                  multisig.getConsumableNotes(),
-                ]);
-                const config = AccountInspector.fromAccount(multisig.account);
-                setGuardianState(state);
-                setDetectedConfig(config);
-                setProposals(synced);
-                setConsumableNotes(notes);
+                await refreshAccount(multisig);
                 toast.success("Account registered on new Guardian");
               } catch (registerErr) {
                 return fail(`Failed to register account on new Guardian: ${formatError(registerErr)}`);
@@ -597,7 +616,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
         return fail(`Failed to connect to Guardian: ${msg}`);
       }
     },
-    [midenClient, multisig, multisigClient, guardianUrl, signer, guardianState, buildExternalParams, walletSource, activeScheme],
+    [midenClient, multisig, multisigClient, guardianUrl, signer, guardianState, buildExternalParams, walletSource, activeScheme, refreshAccount],
   );
 
   // Initialization
@@ -777,16 +796,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
             }
             await fetchPrivateNotes(midenClient);
           }
-          const state = await ms.syncState();
-          const [synced, notes] = await Promise.all([
-            ms.syncProposals(),
-            ms.getConsumableNotes(),
-          ]);
-          const config = AccountInspector.fromAccount(ms.account);
-          setDetectedConfig(config);
-          setGuardianState(state);
-          setProposals(synced);
-          setConsumableNotes(notes);
+          await refreshAccount(ms);
         } catch (guardianErr) {
           setError(
             `${registeredOnGuardian ? "Registered on Guardian but failed to sync" : "Created but failed to register on Guardian"}: ${guardianErr instanceof Error ? guardianErr.message : "Unknown"}`,
@@ -806,6 +816,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       }
     },
     [
+      refreshAccount,
       multisigClient,
       signer,
       guardianUrl,
@@ -897,16 +908,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
           await fetchPrivateNotes(midenClient);
         }
 
-        const state = await ms.syncState();
-        const [synced, notes] = await Promise.all([
-          ms.syncProposals(),
-          ms.getConsumableNotes(),
-        ]);
-        const config = AccountInspector.fromAccount(ms.account);
-        setDetectedConfig(config);
-        setGuardianState(state);
-        setProposals(synced);
-        setConsumableNotes(notes);
+        await refreshAccount(ms);
       } catch (err) {
         const message = err instanceof Error ? err.message : "Unknown";
         if (err instanceof GuardianHttpError && err.code === "account_not_found") {
@@ -923,6 +925,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       }
     },
     [
+      refreshAccount,
       multisigClient,
       signer,
       guardianUrl,
@@ -998,31 +1001,10 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
         throw err;
       });
       setGuardianRegistrationRequired(false);
-      const [synced, notes] = await Promise.all([
-        multisig.syncProposals(),
-        multisig.getConsumableNotes(),
-      ]);
-      const config = AccountInspector.fromAccount(multisig.account);
-      setGuardianState(state);
-      setDetectedConfig(config);
-      setProposals(synced);
-      setConsumableNotes(notes);
+      await refreshAccount(multisig, state);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      if (message.includes("nonce")) {
-        try {
-          await multisig.verifyStateCommitment();
-          const fallbackConfig = AccountInspector.fromAccount(multisig.account);
-          setDetectedConfig(fallbackConfig);
-        } catch {
-          /* the chain has not confirmed the local state yet */
-        }
-      }
-      if (message.includes("account nonce is too low to import")) {
-        setPendingCandidateWarning(
-          "Sync warning: local state is ahead of the on-chain state. " +
-            "This can happen right after executing a transaction. Please wait a moment and sync again.",
-        );
+      if (await handleLocalStateAhead(multisig, message)) {
         setError(null);
       } else {
         setError(formatError(err, "Sync failed"));
@@ -1030,7 +1012,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setSyncingState(false);
     }
-  }, [multisig, midenClient]);
+  }, [multisig, midenClient, refreshAccount, handleLocalStateAhead]);
 
   const retryGuardianRegistration = useCallback(async () => {
     if (!multisig || !midenClient || !guardianRegistrationRequired || registrationRetryInProgress.current) return;
@@ -1448,34 +1430,11 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
               await new Promise((resolve) => setTimeout(resolve, 500));
               await midenClient.sync();
             }
-            const state = await multisig.syncState();
-            const [synced, notes] = await Promise.all([
-              multisig.syncProposals(),
-              multisig.getConsumableNotes(),
-            ]);
-            const config = AccountInspector.fromAccount(multisig.account);
-            setGuardianState(state);
-            setDetectedConfig(config);
-            setProposals(synced);
-            setConsumableNotes(notes);
+            await refreshAccount(multisig);
           } catch (syncErr) {
             const message =
               syncErr instanceof Error ? syncErr.message : String(syncErr);
-            if (message.includes("nonce")) {
-              try {
-                await multisig.verifyStateCommitment();
-                const fallbackConfig = AccountInspector.fromAccount(multisig.account);
-                setDetectedConfig(fallbackConfig);
-              } catch {
-                /* the chain has not confirmed the local state yet */
-              }
-            }
-            if (message.includes("account nonce is too low to import")) {
-              setPendingCandidateWarning(
-                "Sync warning: local state is ahead of the on-chain state. " +
-                  "This can happen right after executing a transaction. Please wait a moment and sync again.",
-              );
-            }
+            await handleLocalStateAhead(multisig, message);
           } finally {
             setSyncingState(false);
           }
@@ -1503,7 +1462,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
         if (accountOpInFlight.current === ms.accountId) accountOpInFlight.current = null;
       }
     },
-    [multisig, midenClient, inspectAccountLock, releaseLock],
+    [multisig, midenClient, inspectAccountLock, releaseLock, refreshAccount, handleLocalStateAhead],
   );
 
   /** Lets any signer release a lock that has outlived every live execution. */
@@ -1671,6 +1630,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       handleImportProposal,
       handleDisconnect,
       setWalletSource,
+      accountOperationBusy,
       setGuardianUrl,
       connectToGuardian,
       dismissWarning: () => setPendingCandidateWarning(null),
@@ -1684,6 +1644,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
 
     }),
     [
+      accountOperationBusy,
       ledger,
       setWalletSource,
       midenClient,
