@@ -14,7 +14,8 @@
     "test:ledger": "vitest run --config vitest.ledger.config.ts",
     "test:ledger:ui": "playwright test --config playwright.ledger.config.ts",
     "test:ledger:services": "LEDGER_SERVICE_TEST=1 playwright test --config playwright.ledger.config.ts",
-    "test:ledger:app": "playwright test --config playwright.ledger-app.config.ts"
+    "test:ledger:app": "playwright test --config playwright.ledger-app.config.ts",
+    "audit:gate": "node scripts/audit-gate.mjs"
   },
   "dependencies": {
     "@getpara/react-sdk-lite": "3.20.0",
