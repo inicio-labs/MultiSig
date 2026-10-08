@@ -10,7 +10,8 @@ The versions are pinned together because Guardian proposal serialization must ma
 | --- | --- |
 | `@openzeppelin/guardian-client` | `0.18.0` |
 | `@openzeppelin/miden-multisig-client` | `0.18.0` |
-| `@miden-sdk/*` | `0.17.0` (exactly the version `miden-multisig-client` 0.18.0 depends on; a second copy of the SDK breaks the shared WASM objects) |
+| `@miden-sdk/miden-sdk` | `0.17.1`, forced for every package via `overrides` (one SDK copy: the app and the multisig client share WASM objects). `miden-multisig-client` 0.18.0 pins 0.17.0, but 0.17.1 fixes consuming/sending V2 faucet assets such as testnet USDCX ("procedure root could not be found"). `tests/ledger/procedure-roots.test.ts` checks the client's hard-coded procedure roots still match. |
+| other `@miden-sdk/*` | `0.17.0` |
 | `@getpara/*` | `3.20.0` |
 
 Keep the installed versions in `package-lock.json` together; do not independently upgrade the Miden or Guardian packages.
