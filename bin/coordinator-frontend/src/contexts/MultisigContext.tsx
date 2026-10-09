@@ -47,7 +47,7 @@ import {
   registerAccountOnNode,
 } from "@/lib/multisigApi";
 import type { ExternalSignerParams } from "@/lib/multisigApi";
-import { GUARDIAN_ENDPOINT, LOCAL_KEYS_ENABLED, MIDEN_DB_NAME, MIDEN_NETWORK } from "@/config/psm";
+import { GUARDIAN_ENDPOINT, LOCAL_KEYS_ENABLED, MIDEN_DB_NAME } from "@/config/psm";
 import { deleteDatabase, startWithStoreReset, waitForClientParts, type StartupState } from "@/lib/clientStartup";
 import type { SignerInfo } from "@/types/psm";
 import type { WalletSource } from "@/wallets/types";
@@ -127,6 +127,10 @@ async function fetchPrivateNotes(midenClient: MidenClient): Promise<void> {
 }
 
 export interface UndeliveredNote { proposalId: string; recipientId: string; error: string }
+
+/** How long to wait for the funding note after registration (testnet can take minutes). */
+const FUNDING_WAIT_MS = 10 * 60_000;
+const FUNDING_POLL_MS = 5_000;
 
 export type GuardianConnectResult = { ok: true } | { ok: false; error: string };
 
@@ -718,7 +722,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const requestAccountFunding = useCallback(
-    async (targetMultisig?: Multisig): Promise<void> => {
+    async (targetMultisig?: Multisig, { waitInBackground = false } = {}): Promise<void> => {
       const account = targetMultisig ?? multisig;
       // The latest client: this may run from a click made during start-up.
       const liveClient = clientPartsRef.current?.midenClient ?? midenClient;
@@ -735,33 +739,39 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       try {
         await registerAccountOnNode(liveClient, account.accountId);
         if (!stillCurrent()) return;
-        // Only devnet sends a funding note on registration; elsewhere the account
-        // is funded like any other (e.g. from the network's faucet).
-        if (MIDEN_NETWORK !== "devnet") {
-          setAccountFunding({ phase: "idle" });
+        // Registration funds a new account (devnet and testnet); the funding
+        // note can take a few minutes to arrive on testnet. Wait for it in the
+        // background when asked, so account creation is not held up.
+        const waitForNote = async () => {
+          setAccountFunding({ phase: "waiting-for-note" });
+          const deadline = Date.now() + FUNDING_WAIT_MS;
+          while (Date.now() < deadline) {
+            await liveClient.sync();
+            const notes = await account.getConsumableNotes();
+            if (!stillCurrent()) return;
+            setConsumableNotes(notes);
+            const feeFaucet = await liveClient.feeFaucetId();
+            const feeFaucetHex = feeFaucet.toString().toLowerCase();
+            feeFaucet.free();
+            if (notes.some(note => note.assets.some(asset =>
+              asset.faucetId.toLowerCase() === feeFaucetHex && asset.amount > 0n))) {
+              setAccountFunding({ phase: "funding-available" });
+              return;
+            }
+            await new Promise((resolve) => setTimeout(resolve, FUNDING_POLL_MS));
+          }
+          throw new Error(
+            "The account is registered, but its funding note has not arrived yet. Sync, or retry funding in a few minutes.",
+          );
+        };
+        if (!waitInBackground) {
+          await waitForNote();
           return;
         }
-
-        setAccountFunding({ phase: "waiting-for-note" });
-        for (let attempt = 0; attempt < 8; attempt += 1) {
-          await liveClient.sync();
-          const notes = await account.getConsumableNotes();
+        void waitForNote().catch((waitError) => {
           if (!stillCurrent()) return;
-          setConsumableNotes(notes);
-          const feeFaucet = await liveClient.feeFaucetId();
-          const feeFaucetHex = feeFaucet.toString().toLowerCase();
-          feeFaucet.free();
-          if (notes.some(note => note.assets.some(asset =>
-            asset.faucetId.toLowerCase() === feeFaucetHex && asset.amount > 0n))) {
-            setAccountFunding({ phase: "funding-available" });
-            return;
-          }
-          await new Promise((resolve) => setTimeout(resolve, 2500));
-        }
-
-        throw new Error(
-          "Registration completed, but the funding note has not appeared yet. Sync and retry funding shortly.",
-        );
+          setAccountFunding({ phase: "error", message: formatError(waitError, "Account funding failed") });
+        });
       } catch (fundingError) {
         if (!stillCurrent()) return;
         const message = formatError(fundingError, "Account funding failed");
@@ -869,7 +879,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
           if (midenClient && ms.accountId) {
             await watchAccountNotes(midenClient, ms.accountId);
             try {
-              await requestAccountFunding(ms);
+              await requestAccountFunding(ms, { waitInBackground: true });
             } catch {
               // Keep the newly-created account available so funding can be retried.
             }
@@ -1023,6 +1033,12 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
 
     const savedId = localStorage.getItem("currentWalletId");
     if (!savedId) return;
+    // Just created or loaded in this session: reloading would replace the
+    // account (and cancel work bound to it, such as the funding wait).
+    if (multisigRef.current?.accountId.toLowerCase() === savedId.toLowerCase()) {
+      autoLoadAttemptedRef.current = true;
+      return;
+    }
 
     const savedSource = localStorage.getItem(
       "currentWalletSource",

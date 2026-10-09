@@ -222,7 +222,7 @@ Proposal rows show `signed/required` directly. Actions are derived from Guardian
 
 - **Guardian connection fails:** confirm `NEXT_PUBLIC_GUARDIAN_ENDPOINT` points to a Guardian `0.18` on the same network as `NEXT_PUBLIC_MIDEN_RPC_URL`. Restart Next.js after changing `.env.local`.
 - **Old account or decoding errors:** the app resets an incompatible local store on start-up; if it persists, clear this origin's site data and reload.
-- **No funds on testnet:** testnet does not fund new accounts; request tokens from the testnet faucet (https://faucet.testnet.miden.io) to the account's `mtst1…` address.
+- **Funding note does not arrive (testnet):** registration funds a new account with 1 USDCX, which can take a few minutes; the banner waits up to 10 minutes, then offers **Retry funding**. Accounts that already existed are not funded again; use the testnet faucet (https://faucet.testnet.miden.io) with the account's `mtst1…` address.
 - **Funding note does not appear (devnet):** use **Retry funding**. Confirm the invitation code is accepted by that node.
 - **Miden Wallet does not connect:** confirm the extension is installed and unlocked, then reconnect using the app's wallet controls.
 - **Para does not appear:** set `NEXT_PUBLIC_PARA_API_KEY` and restart the development server.
