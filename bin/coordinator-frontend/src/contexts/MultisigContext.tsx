@@ -47,9 +47,9 @@ import {
   registerAccountOnNode,
 } from "@/lib/multisigApi";
 import type { ExternalSignerParams } from "@/lib/multisigApi";
-import { GUARDIAN_ENDPOINT, LOCAL_KEYS_ENABLED, MIDEN_DB_NAME, MIDEN_NETWORK } from "@/config/psm";
+import { CONFIG_ERRORS, GUARDIAN_ENDPOINT, LOCAL_KEYS_ENABLED, MIDEN_DB_NAME, MIDEN_NETWORK } from "@/config/psm";
 import { invitationCodeRequired } from "@/lib/midenNetwork";
-import { deleteDatabase, startWithStoreReset, waitForClientParts, type StartupState } from "@/lib/clientStartup";
+import { assertConfigured, deleteDatabase, startWithStoreReset, waitForClientParts, type StartupState } from "@/lib/clientStartup";
 import type { SignerInfo } from "@/types/psm";
 import type { WalletSource } from "@/wallets/types";
 import { getProposalActionState } from "@/lib/proposalActions";
@@ -686,6 +686,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     try {
       // A local store left by an older SDK (e.g. a previous deployment on this
       // domain) can stop the client from starting: reset it once and retry.
+      assertConfigured(CONFIG_ERRORS);
       const client = await startWithStoreReset(
         () => createMidenClient(),
         () => deleteDatabase(MIDEN_DB_NAME),

@@ -7,26 +7,15 @@ export type MidenNetwork = 'devnet' | 'testnet' | 'mainnet' | 'local' | 'custom'
 
 const NETWORKS: readonly MidenNetwork[] = ['devnet', 'testnet', 'mainnet', 'local', 'custom'];
 
-/**
- * NEXT_PUBLIC_MIDEN_NETWORK when set; otherwise inferred from the RPC setting
- * the way miden-client maps endpoints: the devnet/testnet shorthands or hosts,
- * localhost as `local`, anything else as `custom`.
- */
-export function resolveMidenNetwork(explicit: string | undefined, rpc: string): MidenNetwork {
-  const named = explicit?.trim().toLowerCase();
-  if (named) {
-    if ((NETWORKS as readonly string[]).includes(named)) return named as MidenNetwork;
-    throw new Error(`NEXT_PUBLIC_MIDEN_NETWORK must be one of ${NETWORKS.join(', ')}; got "${explicit}".`);
-  }
-  const value = rpc.trim().toLowerCase();
-  if (value === 'devnet' || value === 'testnet') return value;
-  if (value === 'local' || value === 'localhost') return 'local';
-  let host: string;
-  try { host = new URL(value).hostname; } catch { return 'custom'; }
-  if (host === 'rpc.devnet.miden.io') return 'devnet';
-  if (host === 'rpc.testnet.miden.io') return 'testnet';
-  if (host === 'localhost' || host === '127.0.0.1' || host === '[::1]') return 'local';
-  return 'custom';
+/** NEXT_PUBLIC_MIDEN_NETWORK: required, one of the names above. */
+export function parseMidenNetwork(value: string | undefined): MidenNetwork {
+  const named = value?.trim().toLowerCase();
+  if (named && (NETWORKS as readonly string[]).includes(named)) return named as MidenNetwork;
+  throw new Error(
+    named
+      ? `NEXT_PUBLIC_MIDEN_NETWORK must be one of ${NETWORKS.join(', ')}; got "${value}".`
+      : `NEXT_PUBLIC_MIDEN_NETWORK is not set (one of ${NETWORKS.join(', ')}).`,
+  );
 }
 
 /** Bech32 human-readable prefix per network, as in miden-protocol / miden-client. */

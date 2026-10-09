@@ -16,7 +16,7 @@ export interface CspConfig {
   extraConnectSrc: string;
 }
 
-// Miden SDK shorthands (`devnet`, `testnet`) resolve to *.miden.io services.
+// Miden-run services; the configured RPC, transport and prover origins are added below.
 const MIDEN_SERVICES = 'https://*.miden.io';
 // Guardian deployments run by OpenZeppelin; the Guardian URL can be changed at runtime.
 export const OPENZEPPELIN_GUARDIANS = 'https://*.openzeppelin.com';

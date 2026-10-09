@@ -31,21 +31,24 @@ Copy `.env.example` to `.env.local`, then provide the Guardian endpoint:
 
 ```bash
 NEXT_PUBLIC_GUARDIAN_ENDPOINT=https://your-guardian.example
-NEXT_PUBLIC_MIDEN_RPC_URL=devnet
-NEXT_PUBLIC_MIDEN_NOTE_TRANSPORT_URL=devnet
+NEXT_PUBLIC_MIDEN_NETWORK=testnet
+NEXT_PUBLIC_MIDEN_RPC_URL=https://rpc.testnet.miden.io
+NEXT_PUBLIC_MIDEN_NOTE_TRANSPORT_URL=https://transport.miden.io
 NEXT_PUBLIC_MIDEN_REGISTRATION_CODE=guardian
 ```
 
 | Variable | Description | Default |
 | --- | --- | --- |
 | `NEXT_PUBLIC_GUARDIAN_ENDPOINT` | Required Guardian `0.18` base URL | none |
-| `NEXT_PUBLIC_MIDEN_RPC_URL` | Miden RPC URL or SDK network shorthand | `devnet` |
-| `NEXT_PUBLIC_MIDEN_NOTE_TRANSPORT_URL` | Note transport URL or SDK network shorthand | `devnet` |
+| `NEXT_PUBLIC_MIDEN_NETWORK` | Network name: `devnet`, `testnet`, `mainnet`, `local` or `custom` (wallet network, address prefix, invitation-code rule) | none (required) |
+| `NEXT_PUBLIC_MIDEN_RPC_URL` | Full Miden RPC URL, e.g. `https://rpc.testnet.miden.io` | none (required) |
+| `NEXT_PUBLIC_MIDEN_NOTE_TRANSPORT_URL` | Full note transport URL, e.g. `https://transport.miden.io` | none (required) |
+| `NEXT_PUBLIC_MIDEN_PROVER_URL` | Full remote prover URL, or `local` to prove in the browser | `local` |
 | `NEXT_PUBLIC_MIDEN_REGISTRATION_CODE` | Devnet account-registration invitation code | `guardian` |
 | `NEXT_PUBLIC_PARA_API_KEY` | Enables Para signing | none |
 | `NEXT_PUBLIC_PARA_ENVIRONMENT` | Para environment (`development` or `production`) | `development` |
 
-The app deliberately has no fallback Guardian URL. This prevents an RC/devnet browser client from silently connecting to the previous public deployment.
+The app has no built-in network endpoints: RPC, note transport and prover come from these variables as full `http(s)` URLs (SDK shorthands such as `testnet` are rejected), and a missing or invalid value stops the app at start-up with a message naming the variable. Likewise there is no fallback Guardian URL. This prevents an RC/devnet browser client from silently connecting to the previous public deployment.
 
 ## Install and run
 
@@ -192,7 +195,7 @@ When a new multisig account is created, the app:
 
 1. registers it with Guardian;
 2. registers its note tag locally;
-3. calls the devnet node's account-registration endpoint with the configured invitation code;
+3. calls the node's account-registration endpoint with the invitation code from the create page;
 4. syncs until the initial funding note is available;
 5. exposes that note in **Receive Funds**, where the normal multisig proposal/sign/execute flow deploys and funds the account.
 
