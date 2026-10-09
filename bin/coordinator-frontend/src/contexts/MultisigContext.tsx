@@ -47,7 +47,8 @@ import {
   registerAccountOnNode,
 } from "@/lib/multisigApi";
 import type { ExternalSignerParams } from "@/lib/multisigApi";
-import { GUARDIAN_ENDPOINT, LOCAL_KEYS_ENABLED, MIDEN_DB_NAME } from "@/config/psm";
+import { GUARDIAN_ENDPOINT, LOCAL_KEYS_ENABLED, MIDEN_DB_NAME, MIDEN_NETWORK } from "@/config/psm";
+import { invitationCodeSource } from "@/lib/midenNetwork";
 import { deleteDatabase, startWithStoreReset, waitForClientParts, type StartupState } from "@/lib/clientStartup";
 import type { SignerInfo } from "@/types/psm";
 import type { WalletSource } from "@/wallets/types";
@@ -128,9 +129,8 @@ async function fetchPrivateNotes(midenClient: MidenClient): Promise<void> {
 
 export interface UndeliveredNote { proposalId: string; recipientId: string; error: string }
 
-/** How long to wait for the funding note after registration (testnet can take minutes). */
-const FUNDING_WAIT_MS = 10 * 60_000;
-const FUNDING_POLL_MS = 5_000;
+/** How often to check for the funding note after registration, until it arrives. */
+const FUNDING_POLL_MS = 1_000;
 
 export type GuardianConnectResult = { ok: true } | { ok: false; error: string };
 
@@ -192,6 +192,8 @@ export interface MultisigContextValue {
     threshold: number,
     procedureThresholds?: ProcedureThreshold[],
     signatureScheme?: SignatureScheme,
+    /** Node-registration invitation code from the creator (mainnet); ignored where the network needs none. */
+    options?: { invitationCode?: string },
   ) => Promise<void>;
   handleLoad: (
     accountId: string,
@@ -289,6 +291,8 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
   // Long-running work checks this after every await and stops touching state
   // once the user has moved to another account.
   const multisigRef = useRef<Multisig | null>(null);
+  // Invitation codes entered at creation, per account, so Retry funding reuses them.
+  const invitationCodes = useRef(new Map<string, string>());
   multisigRef.current = multisig;
   const fundingAccountId = useRef<string | null>(null);
   const [accountFunding, setAccountFunding] = useState<AccountFundingState>({
@@ -737,15 +741,15 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
         multisigRef.current?.accountId === account.accountId;
       setAccountFunding({ phase: "registering" });
       try {
-        await registerAccountOnNode(liveClient, account.accountId);
+        await registerAccountOnNode(liveClient, account.accountId, invitationCodes.current.get(account.accountId));
         if (!stillCurrent()) return;
         // Registration funds a new account (devnet and testnet); the funding
         // note can take a few minutes to arrive on testnet. Wait for it in the
         // background when asked, so account creation is not held up.
         const waitForNote = async () => {
           setAccountFunding({ phase: "waiting-for-note" });
-          const deadline = Date.now() + FUNDING_WAIT_MS;
-          while (Date.now() < deadline) {
+          // Check every second until the note arrives; stops on account switch.
+          for (;;) {
             await liveClient.sync();
             const notes = await account.getConsumableNotes();
             if (!stillCurrent()) return;
@@ -760,9 +764,6 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
             }
             await new Promise((resolve) => setTimeout(resolve, FUNDING_POLL_MS));
           }
-          throw new Error(
-            "The account is registered, but its funding note has not arrived yet. Sync, or retry funding in a few minutes.",
-          );
         };
         if (!waitInBackground) {
           await waitForNote();
@@ -797,7 +798,13 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       threshold: number,
       procedureThresholds?: ProcedureThreshold[],
       signatureScheme: SignatureScheme = walletSource === "ledger" ? "ecdsa" : "falcon",
+      options?: { invitationCode?: string },
     ) => {
+      if (invitationCodeSource(MIDEN_NETWORK) === "user" && !options?.invitationCode?.trim()) {
+        const msg = "Enter the invitation code to register the account on this network.";
+        setError(msg);
+        throw new Error(msg);
+      }
       if (!guardianUrl.trim()) {
         const msg = "Set NEXT_PUBLIC_GUARDIAN_ENDPOINT to a Guardian 0.18 endpoint on the same Miden network.";
         setError(msg);
@@ -860,6 +867,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
         );
         if (walletSource === "ledger" && clientSigner !== latestLedgerSigner.current) throw new Error("Ledger session changed; load the account again.");
         setMultisig(ms);
+        if (options?.invitationCode?.trim()) invitationCodes.current.set(ms.accountId, options.invitationCode.trim());
 
         // Persist account ID so middleware allows dashboard access
         if (ms.accountId) {

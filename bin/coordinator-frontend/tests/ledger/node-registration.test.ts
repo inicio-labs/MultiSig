@@ -3,11 +3,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 // The RPC setting goes through the real config/psm.ts (so devnet/testnet are
 // the resolved URLs and network identity, as in production). The direct RPC is
 // mocked and records the URL and invitation code it was called with.
-async function setup({ rpc = 'devnet', allowed = true, rpcError }: {
-  rpc?: string; allowed?: boolean; rpcError?: Error;
+async function setup({ rpc = 'devnet', network, allowed = true, rpcError, userCode }: {
+  rpc?: string; network?: string; allowed?: boolean; rpcError?: Error; userCode?: string;
 } = {}) {
   vi.resetModules();
   vi.stubEnv('NEXT_PUBLIC_MIDEN_RPC_URL', rpc);
+  if (network) vi.stubEnv('NEXT_PUBLIC_MIDEN_NETWORK', network);
   vi.stubEnv('NEXT_PUBLIC_MIDEN_REGISTRATION_CODE', 'guardian');
   const calls = { register: [] as Array<{ url: string; code: string }>, isAllowed: 0 };
   vi.doMock('../../src/lib/nodeRegistration', () => ({
@@ -18,7 +19,7 @@ async function setup({ rpc = 'devnet', allowed = true, rpcError }: {
   }));
   const client = { accounts: { isAllowed: async () => { calls.isAllowed++; return allowed; } } };
   const { registerAccountOnNode } = await import('../../src/lib/multisigApi');
-  return { run: () => registerAccountOnNode(client as never, '0x1234'), calls };
+  return { run: () => registerAccountOnNode(client as never, '0x1234', userCode), calls };
 }
 
 afterEach(() => {
@@ -48,6 +49,21 @@ describe('registerAccountOnNode', () => {
       expect(calls.isAllowed).toBe(0);
     },
   );
+
+  it('mainnet registers with the code the account creator entered, and refuses without one', async () => {
+    const withCode = await setup({ rpc: 'https://rpc.mainnet.example', network: 'mainnet', userCode: ' INVITE-123 ' });
+    await withCode.run();
+    expect(withCode.calls.register).toEqual([{ url: 'https://rpc.mainnet.example', code: 'INVITE-123' }]);
+    const withoutCode = await setup({ rpc: 'https://rpc.mainnet.example', network: 'mainnet' });
+    await expect(withoutCode.run()).rejects.toThrow(/invitation code is required/);
+    expect(withoutCode.calls.register).toEqual([]);
+  });
+
+  it('testnet ignores a code the creator entered: it takes none', async () => {
+    const { run, calls } = await setup({ rpc: 'testnet', userCode: 'something' });
+    await run();
+    expect(calls.register).toEqual([{ url: 'https://rpc.testnet.miden.io', code: '' }]);
+  });
 
   it.each(['ALREADY_REGISTERED', 'account is already registered', 'ACCOUNT_ALREADY_ALLOWED'])(
     'accepts an existing registration (%s) only once the node allows the account',

@@ -37,3 +37,30 @@ export const BECH32_PREFIX: Record<MidenNetwork, string> = {
   local: 'mlcl',
   custom: 'mcst',
 };
+
+/**
+ * Where the node-registration invitation code comes from on each network:
+ * testnet takes none, devnet uses the deployment's code
+ * (NEXT_PUBLIC_MIDEN_REGISTRATION_CODE), and mainnet needs one from the
+ * account creator.
+ */
+export type InvitationCodeSource = 'none' | 'configured' | 'user';
+
+export function invitationCodeSource(network: MidenNetwork): InvitationCodeSource {
+  if (network === 'mainnet') return 'user';
+  if (network === 'devnet') return 'configured';
+  return 'none';
+}
+
+/** The code to send when registering, or an error if the creator must provide one. */
+export function registrationInvitationCode(network: MidenNetwork, configured: string, provided?: string): string {
+  switch (invitationCodeSource(network)) {
+    case 'none': return '';
+    case 'configured': return configured;
+    case 'user': {
+      const code = provided?.trim() ?? '';
+      if (!code) throw new Error('An invitation code is required to register an account on this network.');
+      return code;
+    }
+  }
+}

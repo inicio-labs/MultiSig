@@ -32,6 +32,7 @@ import { normalizeCommitment } from '@/lib/helpers';
 import { LOCAL_KEYS_ENABLED, MIDEN_NETWORK, MIDEN_REGISTRATION_CODE, MIDEN_RPC_URL } from '@/config/psm';
 import { diagnosticError, diagnosticLog, instrumentMultisig } from './midenDiagnostics';
 import { registerNodeAccount } from './nodeRegistration';
+import { registrationInvitationCode } from './midenNetwork';
 import { configureProverWorkflow } from './proverFallback';
 import { markExecutionPushed } from './pendingCandidate';
 import { retryProposalSubmission } from './proposalSubmission';
@@ -42,20 +43,26 @@ const registrationRequests = new Map<string, Promise<void>>();
 /**
  * Registers a new account with the Miden node, on every network. The direct
  * RPC (nodeRegistration.ts) is used because the SDK's own path skips the call
- * when the node already allows the account. Devnet takes an invitation code
- * and funds the account on registration; testnet takes no code (the faucet
- * funds accounts there).
+ * when the node already allows the account. Registration funds a new account
+ * (devnet and testnet). The invitation code depends on the network (see
+ * invitationCodeSource): none on testnet, the deployment's on devnet, the
+ * creator's on mainnet.
  */
 export function registerAccountOnNode(
   midenClient: MidenClient,
   accountId: string,
-  invitationCode = MIDEN_REGISTRATION_CODE,
+  userInvitationCode?: string,
 ): Promise<void> {
   const key = `${MIDEN_RPC_URL}:${accountId.toLowerCase()}`;
   const existing = registrationRequests.get(key);
   if (existing) return existing;
 
-  const code = MIDEN_NETWORK === 'devnet' ? invitationCode : '';
+  let code: string;
+  try {
+    code = registrationInvitationCode(MIDEN_NETWORK, MIDEN_REGISTRATION_CODE, userInvitationCode);
+  } catch (error) {
+    return Promise.reject(error);
+  }
   const request = (async () => {
     diagnosticLog('registration.START', { accountId, network: MIDEN_NETWORK, withInvitation: Boolean(code) });
     try {

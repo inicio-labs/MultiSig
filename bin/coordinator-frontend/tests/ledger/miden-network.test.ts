@@ -15,3 +15,16 @@ describe('resolveMidenNetwork', () => {
     expect(() => resolveMidenNetwork('moonnet', 'devnet')).toThrow(/NEXT_PUBLIC_MIDEN_NETWORK/);
   });
 });
+
+describe('registration invitation code per network', () => {
+  it('testnet takes none, devnet the configured one, mainnet the creator\'s', async () => {
+    const { invitationCodeSource, registrationInvitationCode } = await import('../../src/lib/midenNetwork');
+    expect(invitationCodeSource('testnet')).toBe('none');
+    expect(invitationCodeSource('devnet')).toBe('configured');
+    expect(invitationCodeSource('mainnet')).toBe('user');
+    expect(registrationInvitationCode('testnet', 'guardian', 'typed')).toBe('');
+    expect(registrationInvitationCode('devnet', 'guardian', 'typed')).toBe('guardian');
+    expect(registrationInvitationCode('mainnet', 'guardian', ' typed ')).toBe('typed');
+    expect(() => registrationInvitationCode('mainnet', 'guardian', '  ')).toThrow(/invitation code is required/);
+  });
+});
