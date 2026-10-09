@@ -17,13 +17,16 @@ describe('resolveMidenNetwork', () => {
 });
 
 describe('registration invitation code per network', () => {
-  it('testnet takes none, devnet the configured one, mainnet the creator\'s', async () => {
-    const { invitationCodeSource, registrationInvitationCode } = await import('../../src/lib/midenNetwork');
-    expect(invitationCodeSource('testnet')).toBe('none');
-    expect(invitationCodeSource('devnet')).toBe('configured');
-    expect(invitationCodeSource('mainnet')).toBe('user');
-    expect(registrationInvitationCode('testnet', 'guardian', 'typed')).toBe('');
-    expect(registrationInvitationCode('devnet', 'guardian', 'typed')).toBe('guardian');
+  it('defaults: testnet 00000, devnet the configured code, mainnet none (required)', async () => {
+    const { defaultInvitationCode, invitationCodeRequired, registrationInvitationCode } = await import('../../src/lib/midenNetwork');
+    expect(defaultInvitationCode('testnet', 'guardian')).toBe('00000');
+    expect(defaultInvitationCode('devnet', 'guardian')).toBe('guardian');
+    expect(defaultInvitationCode('mainnet', 'guardian')).toBe('');
+    expect(invitationCodeRequired('mainnet')).toBe(true);
+    expect(invitationCodeRequired('testnet')).toBe(false);
+    // What the creator typed wins; otherwise the default.
+    expect(registrationInvitationCode('testnet', 'guardian', ' mine ')).toBe('mine');
+    expect(registrationInvitationCode('testnet', 'guardian', '')).toBe('00000');
     expect(registrationInvitationCode('mainnet', 'guardian', ' typed ')).toBe('typed');
     expect(() => registrationInvitationCode('mainnet', 'guardian', '  ')).toThrow(/invitation code is required/);
   });

@@ -48,7 +48,7 @@ import {
 } from "@/lib/multisigApi";
 import type { ExternalSignerParams } from "@/lib/multisigApi";
 import { GUARDIAN_ENDPOINT, LOCAL_KEYS_ENABLED, MIDEN_DB_NAME, MIDEN_NETWORK } from "@/config/psm";
-import { invitationCodeSource } from "@/lib/midenNetwork";
+import { invitationCodeRequired } from "@/lib/midenNetwork";
 import { deleteDatabase, startWithStoreReset, waitForClientParts, type StartupState } from "@/lib/clientStartup";
 import type { SignerInfo } from "@/types/psm";
 import type { WalletSource } from "@/wallets/types";
@@ -800,7 +800,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       signatureScheme: SignatureScheme = walletSource === "ledger" ? "ecdsa" : "falcon",
       options?: { invitationCode?: string },
     ) => {
-      if (invitationCodeSource(MIDEN_NETWORK) === "user" && !options?.invitationCode?.trim()) {
+      if (invitationCodeRequired(MIDEN_NETWORK) && !options?.invitationCode?.trim()) {
         const msg = "Enter the invitation code to register the account on this network.";
         setError(msg);
         throw new Error(msg);

@@ -44,9 +44,8 @@ const registrationRequests = new Map<string, Promise<void>>();
  * Registers a new account with the Miden node, on every network. The direct
  * RPC (nodeRegistration.ts) is used because the SDK's own path skips the call
  * when the node already allows the account. Registration funds a new account
- * (devnet and testnet). The invitation code depends on the network (see
- * invitationCodeSource): none on testnet, the deployment's on devnet, the
- * creator's on mainnet.
+ * (devnet and testnet). The invitation code is the one the creator confirmed on
+ * the create page, else the network default (see defaultInvitationCode).
  */
 export function registerAccountOnNode(
   midenClient: MidenClient,

@@ -39,28 +39,29 @@ export const BECH32_PREFIX: Record<MidenNetwork, string> = {
 };
 
 /**
- * Where the node-registration invitation code comes from on each network:
- * testnet takes none, devnet uses the deployment's code
- * (NEXT_PUBLIC_MIDEN_REGISTRATION_CODE), and mainnet needs one from the
- * account creator.
+ * Node-registration invitation code: the create page shows it pre-filled with
+ * this default, and the creator can change it. Testnet accepts any code except
+ * devnet's ("guardian" is refused by its funding service), so it gets a neutral
+ * one; devnet uses the deployment's code; mainnet has none and requires the
+ * creator's.
  */
-export type InvitationCodeSource = 'none' | 'configured' | 'user';
+export const TESTNET_INVITATION_CODE = '00000';
 
-export function invitationCodeSource(network: MidenNetwork): InvitationCodeSource {
-  if (network === 'mainnet') return 'user';
-  if (network === 'devnet') return 'configured';
-  return 'none';
+export function defaultInvitationCode(network: MidenNetwork, configured: string): string {
+  if (network === 'testnet') return TESTNET_INVITATION_CODE;
+  if (network === 'mainnet') return '';
+  return configured;
 }
 
-/** The code to send when registering, or an error if the creator must provide one. */
+export function invitationCodeRequired(network: MidenNetwork): boolean {
+  return network === 'mainnet';
+}
+
+/** The code to send: the creator's if given, else the network default; an error if one is required and missing. */
 export function registrationInvitationCode(network: MidenNetwork, configured: string, provided?: string): string {
-  switch (invitationCodeSource(network)) {
-    case 'none': return '';
-    case 'configured': return configured;
-    case 'user': {
-      const code = provided?.trim() ?? '';
-      if (!code) throw new Error('An invitation code is required to register an account on this network.');
-      return code;
-    }
+  const code = provided?.trim() || defaultInvitationCode(network, configured);
+  if (!code && invitationCodeRequired(network)) {
+    throw new Error('An invitation code is required to register an account on this network.');
   }
+  return code;
 }

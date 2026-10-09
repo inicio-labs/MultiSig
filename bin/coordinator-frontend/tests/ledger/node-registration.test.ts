@@ -41,11 +41,11 @@ describe('registerAccountOnNode', () => {
   );
 
   it.each(['testnet', 'https://rpc.testnet.miden.io'])(
-    'testnet (%s) always registers, without an invitation code, even when the node allows every account',
+    'testnet (%s) always registers, with the testnet default code, even when the node allows every account',
     async (rpc) => {
       const { run, calls } = await setup({ rpc, allowed: true });
       await run();
-      expect(calls.register).toEqual([{ url: 'https://rpc.testnet.miden.io', code: '' }]);
+      expect(calls.register).toEqual([{ url: 'https://rpc.testnet.miden.io', code: '00000' }]);
       expect(calls.isAllowed).toBe(0);
     },
   );
@@ -59,10 +59,10 @@ describe('registerAccountOnNode', () => {
     expect(withoutCode.calls.register).toEqual([]);
   });
 
-  it('testnet ignores a code the creator entered: it takes none', async () => {
-    const { run, calls } = await setup({ rpc: 'testnet', userCode: 'something' });
+  it('sends the code the creator entered on the create page', async () => {
+    const { run, calls } = await setup({ rpc: 'testnet', userCode: ' something ' });
     await run();
-    expect(calls.register).toEqual([{ url: 'https://rpc.testnet.miden.io', code: '' }]);
+    expect(calls.register).toEqual([{ url: 'https://rpc.testnet.miden.io', code: 'something' }]);
   });
 
   it.each(['ALREADY_REGISTERED', 'account is already registered', 'ACCOUNT_ALREADY_ALLOWED'])(
