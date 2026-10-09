@@ -66,6 +66,19 @@ describe('network configuration from env', () => {
     },
   );
 
+  it('allows the default Guardian plus NEXT_PUBLIC_GUARDIAN_ENDPOINTS, and reports bad entries', async () => {
+    const c = await config({
+      ...FULL,
+      NEXT_PUBLIC_GUARDIAN_ENDPOINT: 'https://guardian-a.example',
+      NEXT_PUBLIC_GUARDIAN_ENDPOINTS: ' https://guardian-b.example, https://guardian-a.example  https://guardian-c.example/api ',
+    });
+    expect(c.GUARDIAN_ENDPOINTS).toEqual(['https://guardian-a.example', 'https://guardian-b.example', 'https://guardian-c.example/api']);
+    expect(c.CONFIG_ERRORS).toEqual([]);
+    const bad = await config({ ...FULL, NEXT_PUBLIC_GUARDIAN_ENDPOINT: '', NEXT_PUBLIC_GUARDIAN_ENDPOINTS: 'guardian-b.example' });
+    expect(bad.GUARDIAN_ENDPOINTS).toEqual([]);
+    expect(bad.CONFIG_ERRORS).toEqual(['NEXT_PUBLIC_GUARDIAN_ENDPOINTS entry must be a full http(s) URL; got "guardian-b.example".']);
+  });
+
   it('reports an unknown network name', async () => {
     const c = await config({ ...FULL, NEXT_PUBLIC_MIDEN_NETWORK: 'moonnet' });
     expect(c.CONFIG_ERRORS).toEqual([expect.stringMatching(/NEXT_PUBLIC_MIDEN_NETWORK must be one of .*"moonnet"/)]);

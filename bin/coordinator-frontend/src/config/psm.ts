@@ -47,6 +47,17 @@ export const MIDEN_NOTE_TRANSPORT_URL = endpoint(
 export const MIDEN_PROVER_URL = process.env.NEXT_PUBLIC_MIDEN_PROVER_URL?.trim()
   ? endpoint('NEXT_PUBLIC_MIDEN_PROVER_URL', process.env.NEXT_PUBLIC_MIDEN_PROVER_URL, { allowLocal: true })
   : 'local';
+// Guardians a user may switch to at runtime (header > Guardian), besides the
+// default one: full URLs, comma- or space-separated. Only these (and the
+// default) are reachable under the page's Content-Security-Policy.
+export const GUARDIAN_ENDPOINTS: readonly string[] = (() => {
+  const urls = [GUARDIAN_ENDPOINT.trim()].filter(Boolean);
+  for (const entry of (process.env.NEXT_PUBLIC_GUARDIAN_ENDPOINTS ?? '').split(/[\s,]+/).filter(Boolean)) {
+    const url = endpoint('NEXT_PUBLIC_GUARDIAN_ENDPOINTS entry', entry);
+    if (url && !urls.includes(url)) urls.push(url);
+  }
+  return urls;
+})();
 /** Configuration problems; the app refuses to start the Miden client while any remain. */
 export const CONFIG_ERRORS: readonly string[] = configErrors;
 export const MIDEN_REGISTRATION_CODE = process.env.NEXT_PUBLIC_MIDEN_REGISTRATION_CODE || 'guardian';

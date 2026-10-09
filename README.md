@@ -282,6 +282,7 @@ The frontend is configured via `NEXT_PUBLIC_*` environment variables, set at bui
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `NEXT_PUBLIC_GUARDIAN_ENDPOINT` | Guardian service URL for proposal coordination | _(required)_ |
+| `NEXT_PUBLIC_GUARDIAN_ENDPOINTS` | Other Guardians users may switch to at runtime (full URLs, comma-separated); the only other Guardians the app can reach | _(empty)_ |
 | `NEXT_PUBLIC_MIDEN_NETWORK` | Network name: `devnet`, `testnet`, `mainnet`, `local` or `custom` | _(required)_ |
 | `NEXT_PUBLIC_MIDEN_RPC_URL` | Full Miden node RPC URL, e.g. `https://rpc.testnet.miden.io` | _(required)_ |
 | `NEXT_PUBLIC_MIDEN_NOTE_TRANSPORT_URL` | Full note transport URL, e.g. `https://transport.miden.io` | _(required)_ |

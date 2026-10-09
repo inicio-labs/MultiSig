@@ -47,7 +47,7 @@ import {
   registerAccountOnNode,
 } from "@/lib/multisigApi";
 import type { ExternalSignerParams } from "@/lib/multisigApi";
-import { CONFIG_ERRORS, GUARDIAN_ENDPOINT, LOCAL_KEYS_ENABLED, MIDEN_DB_NAME, MIDEN_NETWORK } from "@/config/psm";
+import { CONFIG_ERRORS, GUARDIAN_ENDPOINT, GUARDIAN_ENDPOINTS, LOCAL_KEYS_ENABLED, MIDEN_DB_NAME, MIDEN_NETWORK } from "@/config/psm";
 import { invitationCodeRequired } from "@/lib/midenNetwork";
 import { assertConfigured, deleteDatabase, startWithStoreReset, waitForClientParts, type StartupState } from "@/lib/clientStartup";
 import type { SignerInfo } from "@/types/psm";
@@ -579,7 +579,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       // A URL the CSP blocks would only fail as an opaque network error; keep
       // the current Guardian and say why instead.
       const blocked = guardianUrlProblem(url, {
-        configured: GUARDIAN_ENDPOINT,
+        guardians: GUARDIAN_ENDPOINTS,
         extra: process.env.NEXT_PUBLIC_CSP_CONNECT_SRC ?? "",
         self: window.location.origin,
       });

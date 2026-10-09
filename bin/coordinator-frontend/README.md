@@ -40,6 +40,7 @@ NEXT_PUBLIC_MIDEN_REGISTRATION_CODE=guardian
 | Variable | Description | Default |
 | --- | --- | --- |
 | `NEXT_PUBLIC_GUARDIAN_ENDPOINT` | Required Guardian `0.18` base URL | none |
+| `NEXT_PUBLIC_GUARDIAN_ENDPOINTS` | Other Guardians users may switch to at runtime, full URLs, comma-separated. The app's security policy admits only these and the default | none |
 | `NEXT_PUBLIC_MIDEN_NETWORK` | Network name: `devnet`, `testnet`, `mainnet`, `local` or `custom` (wallet network, address prefix, invitation-code rule) | none (required) |
 | `NEXT_PUBLIC_MIDEN_RPC_URL` | Full Miden RPC URL, e.g. `https://rpc.testnet.miden.io` | none (required) |
 | `NEXT_PUBLIC_MIDEN_NOTE_TRANSPORT_URL` | Full note transport URL, e.g. `https://transport.miden.io` | none (required) |
