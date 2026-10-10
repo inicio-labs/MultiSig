@@ -96,9 +96,9 @@ function setup(opts: FakeOptions & { existing?: Array<{ accountId: string; updat
     storage: { get: (k) => store.get(k) ?? null, set: (k, v) => { store.set(k, v); } },
     waitForFunding: async ({ check }) => {
       log.push('waitForFunding');
-      if (opts.fundingArrives === false) return 'timeout';
+      if (opts.fundingArrives === false) throw new Error('The funding note has not arrived after 10 minutes.');
       ms.setNotes([funding]);
-      return (await check()) ? 'found' : 'timeout';
+      return (await check()) ? 'found' : 'stopped';
     },
     release,
   };
@@ -125,6 +125,13 @@ describe('WalletEngine.start', () => {
     ]);
     expect(store.get('miden-tg-wallet:last-account')).toBe(engine.getSnapshot().accountId);
     expect(engine.getSnapshot().balances).toEqual([{ faucetId: FEE, amount: 5n }]);
+  });
+
+  it('shares one start between concurrent calls, so one key never creates two accounts', async () => {
+    const { engine, log } = setup();
+    await Promise.all([engine.start(), engine.start()]);
+    expect(log.filter((entry) => entry === 'createAccount')).toHaveLength(1);
+    expect(engine.getSnapshot().phase).toEqual({ kind: 'ready' });
   });
 
   it('loads the existing account of a returning user without registering or transacting', async () => {
@@ -159,7 +166,7 @@ describe('WalletEngine.start', () => {
   it('reports a funding timeout, and a retry resumes the same account', async () => {
     const { engine, log } = setup({ fundingArrives: false });
     await engine.start();
-    expect(engine.getSnapshot().phase).toMatchObject({ kind: 'error', message: expect.stringContaining('not funded') });
+    expect(engine.getSnapshot().phase).toMatchObject({ kind: 'error', message: expect.stringContaining('funding note has not arrived') });
 
     await engine.start();
     expect(log.filter((entry) => entry === 'createAccount')).toHaveLength(1);
@@ -220,6 +227,16 @@ describe('WalletEngine transactions', () => {
     await expect(engine.claimAll()).resolves.toBeUndefined(); // nothing to claim: no-op
     await expect(engine.send(RECIPIENT, TOKEN, 2n)).rejects.toThrow('still in progress');
     await first;
+  });
+
+  it('queues a refresh behind a running transaction instead of overlapping its Guardian requests', async () => {
+    const { engine, log } = await ready();
+    const sending = engine.send(RECIPIENT, TOKEN, 1n);
+    const refreshing = engine.refresh();
+    await Promise.all([sending, refreshing]);
+    const executeAt = log.indexOf('execute:p-send');
+    expect(log.lastIndexOf('syncState')).toBeGreaterThan(executeAt);
+    expect(log.slice(0, executeAt)).not.toContain('syncState');
   });
 
   it('refuses a zero amount', async () => {

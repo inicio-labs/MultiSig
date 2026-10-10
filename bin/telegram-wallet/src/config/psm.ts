@@ -48,7 +48,9 @@ export const MIDEN_REGISTRATION_CODE = process.env.NEXT_PUBLIC_MIDEN_REGISTRATIO
 export const MIDEN_DB_NAME = 'MidenTelegramWalletDB';
 
 export const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID?.trim() ?? '';
-if (!PRIVY_APP_ID) configErrors.push('NEXT_PUBLIC_PRIVY_APP_ID is not set.');
+// Not needed with the development signer (src/lib/devSigner.ts), which replaces Privy.
+const devLocalSigner = process.env.NODE_ENV !== 'production' && process.env.NEXT_PUBLIC_DEV_LOCAL_SIGNER === '1';
+if (!PRIVY_APP_ID && !devLocalSigner) configErrors.push('NEXT_PUBLIC_PRIVY_APP_ID is not set.');
 // Optional: Privy app client ID, for apps with more than one client configured.
 export const PRIVY_CLIENT_ID = process.env.NEXT_PUBLIC_PRIVY_CLIENT_ID?.trim() || undefined;
 

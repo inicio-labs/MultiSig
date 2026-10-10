@@ -102,6 +102,13 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
   private midenClient: C | null = null;
   private multisig: Multisig | null = null;
   private busy = false;
+  private starting: Promise<void> | null = null;
+  /**
+   * Refreshes and transactions run one at a time: Guardian requires each
+   * signed request's timestamp to be newer than the last, so overlapping
+   * requests (slower with remote signing) get replay-rejected and retried.
+   */
+  private queue: Promise<unknown> = Promise.resolve();
   private readonly hooks: MultisigHooks = {
     onProverFallback: () => this.update({
       notice: 'The remote prover did not respond, so this phone is proving the transaction. This can take a few minutes; keep the app open.',
@@ -122,24 +129,34 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
     for (const listener of this.listeners) listener();
   }
 
-  async start(): Promise<void> {
+  /** Concurrent calls (e.g. React running an effect twice) share one start. */
+  start(): Promise<void> {
+    this.starting ??= this.run().finally(() => { this.starting = null; });
+    return this.starting;
+  }
+
+  private async run(): Promise<void> {
     try {
       this.update({ phase: { kind: 'starting' }, notice: null });
       const midenClient = this.midenClient ?? await this.deps.startMidenClient();
       this.midenClient = midenClient;
       const multisigClient = this.deps.createMultisigClient(midenClient);
-      const feeFaucet = await midenClient.feeFaucetId();
-      const feeFaucetId = feeFaucet.toString().toLowerCase();
-      feeFaucet.free?.();
-      this.update({ feeFaucetId, phase: { kind: 'finding' } });
+      this.update({ phase: { kind: 'finding' } });
 
       const multisig = this.multisig ?? await this.findOrCreate(multisigClient);
       this.multisig = multisig;
       this.deps.storage?.set(LAST_ACCOUNT_KEY, multisig.accountId);
       this.update({ accountId: multisig.accountId });
 
+      // The account's note tag before the first sync: a sync without it moves
+      // the client past notes that were sent to the account earlier.
       await this.deps.registerNoteTag(midenClient, multisig.accountId);
       await this.refresh();
+      // Known only once a sync brought the node's protocol configuration.
+      const feeFaucet = await midenClient.feeFaucetId();
+      const feeFaucetId = feeFaucet.toString().toLowerCase();
+      feeFaucet.free?.();
+      this.update({ feeFaucetId });
       if (multisig.account.nonce().asInt() === 0n) await this.activate(midenClient, multisig, feeFaucetId);
       this.update({ phase: { kind: 'ready' } });
     } catch (error) {
@@ -188,8 +205,18 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
     await this.runTransaction('claim', (ms) => ms.createConsumeNotesProposal(this.snapshot.incoming.map((note) => note.id)));
   }
 
+  private exclusive<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.queue.then(task, task);
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
   /** Bring account, balances and incoming notes up to date. */
-  async refresh(): Promise<void> {
+  refresh(): Promise<void> {
+    return this.exclusive(() => this.syncAccount());
+  }
+
+  private async syncAccount(): Promise<void> {
     const { midenClient, multisig } = this;
     if (!midenClient || !multisig) return;
     try {
@@ -208,7 +235,7 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
     } catch (error) {
       // Right after an execute the local account is ahead of what Guardian has
       // seen on chain; the local state is the current one then.
-      if (!formatError(error).includes('nonce')) throw error;
+      if (!/nonce is too low/i.test(formatError(error))) throw error;
     }
     const incoming = await multisig.getConsumableNotes();
     const balances = AccountInspector.fromAccount(multisig.account).vaultBalances.filter((b) => b.amount > 0n);
@@ -231,6 +258,19 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
     if (!midenClient || !multisig) throw new Error('The wallet is not ready yet.');
     if (this.busy) throw new Error('Another transaction is still in progress.');
     this.busy = true;
+    try {
+      await this.exclusive(() => this.transact(midenClient, multisig, kind, create));
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  private async transact(
+    midenClient: C,
+    multisig: Multisig,
+    kind: WalletActivity['kind'],
+    create: (ms: Multisig) => Promise<Proposal>,
+  ): Promise<void> {
     const step = (s: ActivityStep) => this.update({ activity: { kind, step: s } });
     const label = kind === 'send' ? 'Send failed' : 'Claim failed';
     clearExecutionPushed(multisig.accountId);
@@ -256,7 +296,7 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
       await multisig.executeProposal(proposal.id);
       executed = true;
       step('syncing');
-      await this.refresh().catch((error) => {
+      await this.syncAccount().catch((error) => {
         console.warn('Refresh after the transaction failed', error);
         this.update({ notice: 'Done. The balance may take a moment to update.' });
       });
@@ -275,7 +315,6 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
       throw new Error(message);
     } finally {
       clearExecutionPushed(multisig.accountId);
-      this.busy = false;
       this.update({ activity: null });
     }
   }
@@ -283,7 +322,7 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
   private async releaseLock(multisig: Multisig, nonce: number): Promise<ReleaseOutcome | 'failed'> {
     try {
       const outcome = await (this.deps.release ?? releasePendingCandidate)(multisig, nonce);
-      await this.refresh().catch(() => undefined);
+      await this.syncAccount().catch(() => undefined);
       return outcome;
     } catch (error) {
       console.warn('Could not release the account lock', error);

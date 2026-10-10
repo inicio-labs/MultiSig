@@ -1,0 +1,109 @@
+/* Telegram sets --tg-theme-* and the safe-area insets on <html>; the fallbacks
+   apply in a normal browser. */
+:root {
+  --bg: var(--tg-theme-bg-color, #ffffff);
+  --card: var(--tg-theme-secondary-bg-color, #f2f3f5);
+  --text: var(--tg-theme-text-color, #111317);
+  --hint: var(--tg-theme-hint-color, #80858f);
+  --accent: var(--tg-theme-button-color, #ff5500);
+  --accent-text: var(--tg-theme-button-text-color, #ffffff);
+  --link: var(--tg-theme-link-color, #ff5500);
+  --danger: var(--tg-theme-destructive-text-color, #e5484d);
+  --border: color-mix(in srgb, var(--text) 10%, transparent);
+  --sa-top: calc(var(--tg-safe-area-inset-top, 0px) + var(--tg-content-safe-area-inset-top, 0px));
+  --sa-bottom: calc(var(--tg-safe-area-inset-bottom, 0px) + var(--tg-content-safe-area-inset-bottom, 0px));
+  --radius: 14px;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: var(--tg-theme-bg-color, #111317);
+    --card: var(--tg-theme-secondary-bg-color, #1c1f24);
+    --text: var(--tg-theme-text-color, #f2f3f5);
+    --hint: var(--tg-theme-hint-color, #8b919b);
+  }
+}
+
+* { box-sizing: border-box; }
+
+/* On <html>, not <body>: page overscroll must not become Telegram's
+   pull-to-close, and on <body> it blocks wheel scrolling in Chromium. */
+html { overscroll-behavior-y: contain; background: var(--bg); }
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button, input { font: inherit; color: inherit; }
+
+.screen {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100dvh;
+  padding: calc(var(--sa-top) + 16px) 16px calc(var(--sa-bottom) + 24px);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 12px; }
+.hint { color: var(--hint); font-size: 14px; }
+.error { color: var(--danger); font-size: 14px; }
+.title { font-size: 20px; font-weight: 600; margin: 0; }
+
+.card { background: var(--card); border-radius: var(--radius); padding: 16px; }
+
+.btn {
+  appearance: none;
+  border: 0;
+  border-radius: 12px;
+  min-height: 50px;
+  padding: 0 18px;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--accent);
+  color: var(--accent-text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+}
+.btn:disabled { opacity: 0.45; cursor: default; }
+.btn.secondary { background: var(--card); color: var(--text); }
+.btn.small { min-height: 36px; width: auto; padding: 0 14px; font-size: 14px; }
+
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label { font-size: 13px; color: var(--hint); }
+.input {
+  width: 100%;
+  min-height: 50px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  padding: 0 14px;
+  outline: none;
+}
+.input:focus { border-color: var(--accent); }
+.input-row { display: flex; gap: 8px; align-items: center; }
+
+.spinner {
+  width: 28px; height: 28px; border-radius: 50%;
+  border: 3px solid var(--border); border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; word-break: break-all; }
+
+.balance-main { font-size: 30px; font-weight: 700; letter-spacing: -0.01em; }
+.balance-other { font-size: 16px; color: var(--hint); }

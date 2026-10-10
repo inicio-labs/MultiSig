@@ -38,6 +38,9 @@ export interface PrivySigner {
  * (`secp256k1_sign`) to that context and keeps the digest and signature
  * handling on the same code path as Para. `personal_sign` would prefix the
  * message and never verify.
+ *
+ * The commitment comes from the Miden SDK's WASM, which loads lazily: in the
+ * browser, await `getWasmOrThrow()` first.
  */
 export async function createPrivySigner({ address, provider, publicKey }: PrivySignerOptions): Promise<PrivySigner> {
   const signHash = (hash: Hex) => signRawHash(provider, hash);
