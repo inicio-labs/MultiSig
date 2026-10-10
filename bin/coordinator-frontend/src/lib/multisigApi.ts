@@ -31,6 +31,7 @@ import type { SignerInfo } from '@/types/psm';
 import type { WalletSource } from '@/wallets/types';
 import { normalizeCommitment } from '@/lib/helpers';
 import { LOCAL_KEYS_ENABLED, MIDEN_NETWORK, MIDEN_REGISTRATION_CODE, MIDEN_RPC_URL } from '@/config/psm';
+import { base64ToBytes } from './base64';
 import { diagnosticError, diagnosticLog, instrumentMultisig } from './midenDiagnostics';
 import { registerNodeAccount } from './nodeRegistration';
 import { registrationInvitationCode } from './midenNetwork';
@@ -127,13 +128,6 @@ export function createSigner(
   return signatureScheme === 'ecdsa'
     ? new EcdsaSigner(activeSigner.secretKey)
     : new FalconSigner(activeSigner.secretKey);
-}
-
-function base64ToBytes(base64: string): Uint8Array {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
 }
 
 /**
@@ -238,16 +232,18 @@ export async function latestCanonicalPrivateNotes(
  */
 export function noteChainChecks(rpcUrl: string = MIDEN_RPC_URL) {
   const rpc = new RpcClient(new Endpoint(rpcUrl));
-  const fetchProof = async (note: Note): Promise<NoteInclusionProof | undefined> => {
-    const fetched = await rpc.getNotesById([note.id()]);
+  const fetchProofById = async (noteId: NoteId): Promise<NoteInclusionProof | undefined> => {
+    const fetched = await rpc.getNotesById([noteId]);
     try {
       return fetched[0]?.inclusionProof;
     } finally {
       for (const entry of fetched) entry.free();
     }
   };
+  const fetchProof = (note: Note) => fetchProofById(note.id());
   return {
     fetchProof,
+    fetchProofById,
     async committedAt(note: Note): Promise<number | undefined> {
       const proof = await fetchProof(note);
       if (!proof) return undefined;
