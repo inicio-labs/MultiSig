@@ -17,6 +17,13 @@ bin/coordinator-frontend/tsconfig.tsbuildinfo
 bin/coordinator-frontend/public/_next/
 bin/coordinator-frontend/public/static/
 
+# Node.js / Next.js (telegram-wallet)
+bin/telegram-wallet/node_modules/
+bin/telegram-wallet/.next/
+bin/telegram-wallet/.env*.local
+bin/telegram-wallet/tsconfig.tsbuildinfo
+bin/telegram-wallet/next-env.d.ts
+
 # OS specific
 .DS_Store
 *.swp
