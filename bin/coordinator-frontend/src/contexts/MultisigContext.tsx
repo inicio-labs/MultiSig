@@ -1458,10 +1458,13 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
   // reason the account is blocked, or null when it may be used.
   const privateNoteCheck = useRef<{ accountId: string; run: Promise<string | null> } | null>(null);
   const checkPrivateNotes = useCallback(
-    (ms: Multisig, localWaitMs = 60_000): Promise<string | null> => {
+    (ms: Multisig, localWaitMs = 60_000, { fresh = false } = {}): Promise<string | null> => {
       const inFlight = privateNoteCheck.current;
-      if (inFlight?.accountId === ms.accountId) return inFlight.run;
-      const run = (async (): Promise<string | null> => {
+      // A caller that needs the current state (after an execution) must not
+      // join a check that started before it: run a new one after it instead.
+      if (inFlight?.accountId === ms.accountId && !fresh) return inFlight.run;
+      const previous = inFlight?.accountId === ms.accountId ? inFlight.run.catch(() => null) : Promise.resolve(null);
+      const run = previous.then(async (): Promise<string | null> => {
         const stillCurrent = () => multisigRef.current?.accountId === ms.accountId;
         const report = (error: string | null) => {
           if (!stillCurrent()) return error;
@@ -1500,7 +1503,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
         } finally {
           checks.free();
         }
-      })();
+      });
       privateNoteCheck.current = { accountId: ms.accountId, run };
       void run.finally(() => {
         if (privateNoteCheck.current?.run === run) privateNoteCheck.current = null;
@@ -1672,7 +1675,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
         setProposals(multisig.listProposals());
         toast.success("Proposal executed successfully");
         // Deliver the new private note (if any) and re-check the account.
-        void checkPrivateNotes(ms, privateDelivery ? 180_000 : 15_000);
+        void checkPrivateNotes(ms, privateDelivery ? 180_000 : 15_000, { fresh: true });
 
         // Sync after execution
         if (midenClient) {
