@@ -1596,6 +1596,12 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
           case "abandoned": {
             // Guardian confirmed the transaction did not land and discarded it.
             setLockedCandidate(null);
+            // So its private note will never exist: drop the pending delivery,
+            // which would otherwise lock the account (privateNoteGuard) until
+            // the record expires, and re-check the account.
+            removePendingDelivery(candidate.proposalId);
+            setUndeliveredNotes((all) => all.filter((n) => n.proposalId !== candidate.proposalId));
+            void checkPrivateNotes(ms, 15_000, { fresh: true });
             let proposalSurvived: boolean;
             try {
               const synced = await ms.syncProposals();
@@ -1648,7 +1654,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
         if (stillCurrent()) setReleasingCandidate(false);
       }
     },
-    [handleSync],
+    [handleSync, checkPrivateNotes],
   );
 
   const handleExecuteProposal = useCallback(
