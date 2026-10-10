@@ -45,6 +45,9 @@ import {
   fetchNoteInclusionProof,
   getOutputNotesFromTxSummary,
   registerAccountOnNode,
+  latestCanonicalPrivateNotes,
+  noteChainChecks,
+  type LatestPrivateNote,
 } from "@/lib/multisigApi";
 import type { ExternalSignerParams } from "@/lib/multisigApi";
 import { CONFIG_ERRORS, GUARDIAN_ENDPOINT, GUARDIAN_ENDPOINTS, LOCAL_KEYS_ENABLED, MIDEN_DB_NAME, MIDEN_NETWORK } from "@/config/psm";
@@ -67,6 +70,7 @@ import {
 } from "@/lib/privateDelivery";
 import { setWalletCookie } from "@/lib/walletCookie";
 import { waitForFundingNote } from "@/lib/fundingWait";
+import { ensureLatestPrivateNotesDelivered } from "@/lib/privateNoteGuard";
 import { useMidenWallet } from "@/hooks/useMidenWallet";
 import { MidenWalletAdapter } from "@miden-sdk/miden-wallet-adapter-miden";
 import { diagnosticError, diagnosticLog, logReceiveFunding } from '@/lib/midenDiagnostics';
@@ -129,6 +133,18 @@ async function fetchPrivateNotes(midenClient: MidenClient): Promise<void> {
 }
 
 export interface UndeliveredNote { proposalId: string; recipientId: string; error: string }
+
+/**
+ * Whether the account may be used: no operation runs while a private note of
+ * its latest transaction is neither delivered nor consumed (privateNoteGuard.ts).
+ */
+const BLOCKED_BY_PRIVATE_NOTE = "Blocked until an earlier private note reaches its recipient.";
+
+export type PrivateNoteGuardState =
+  | { phase: "idle" }
+  | { phase: "checking" }
+  | { phase: "clear" }
+  | { phase: "blocked"; error: string };
 
 export type GuardianConnectResult = { ok: true } | { ok: false; error: string };
 
@@ -239,6 +255,8 @@ export interface MultisigContextValue {
   undeliveredNotes: UndeliveredNote[];
   /** Try again to deliver this account's undelivered private notes. */
   retryPrivateDeliveries: () => Promise<void>;
+  /** Whether earlier private notes have reached their recipients; operations wait for "clear". */
+  privateNoteGuard: PrivateNoteGuardState;
   /** Start-up of the in-browser Miden client (downloads and compiles the SDK). */
   clientStartup: StartupState;
   /** Start the Miden client again after a failed start-up. */
@@ -306,6 +324,10 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
   const [guardianCommitment, setGuardianCommitment] = useState("");
   const [clientStartup, setClientStartup] = useState<StartupState>({ phase: "starting" });
   const [undeliveredNotes, setUndeliveredNotes] = useState<UndeliveredNote[]>([]);
+  const [privateNoteGuard, setPrivateNoteGuard] = useState<PrivateNoteGuardState>({ phase: "idle" });
+  // Action handlers are defined before the delivery code; they reach the guard
+  // through this ref (assigned below, next to checkPrivateNotes).
+  const ensurePrivateNotesClearRef = useRef<(ms: Multisig) => Promise<void>>(async () => {});
   const [guardianPublicKey, setGuardianPublicKey] = useState<
     string | undefined
   >(undefined);
@@ -1232,6 +1254,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       setError(null);
       setPendingCandidateWarning(null);
       try {
+        await ensurePrivateNotesClearRef.current(ms);
         // Bring the client to the chain tip first. Building a proposal executes
         // the transaction, which loads foreign accounts (the fee faucet) at the
         // store's sync height, and the node prunes that state after about 50
@@ -1360,6 +1383,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       setSigningProposal(proposalId);
       setError(null);
       try {
+        await ensurePrivateNotesClearRef.current(multisig);
         const synced = await multisig.syncProposals();
         setProposals(synced);
         const fresh = synced.find((proposal) => proposal.id === proposalId);
@@ -1393,6 +1417,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     setPendingCandidateWarning(null);
     setReleasingCandidate(false);
     setUndeliveredNotes([]);
+    setPrivateNoteGuard({ phase: "idle" });
     if (fundingAccountId.current && fundingAccountId.current !== loadedAccountId) {
       fundingAccountId.current = null;
       setAccountFunding({ phase: "idle" });
@@ -1428,13 +1453,84 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // The guard (see privateNoteGuard.ts). One check per account at a time;
+  // callers that arrive while it runs share its result. Resolves with the
+  // reason the account is blocked, or null when it may be used.
+  const privateNoteCheck = useRef<{ accountId: string; run: Promise<string | null> } | null>(null);
+  const checkPrivateNotes = useCallback(
+    (ms: Multisig, localWaitMs = 60_000, { fresh = false } = {}): Promise<string | null> => {
+      const inFlight = privateNoteCheck.current;
+      // A caller that needs the current state (after an execution) must not
+      // join a check that started before it: run a new one after it instead.
+      if (inFlight?.accountId === ms.accountId && !fresh) return inFlight.run;
+      const previous = inFlight?.accountId === ms.accountId ? inFlight.run.catch(() => null) : Promise.resolve(null);
+      const run = previous.then(async (): Promise<string | null> => {
+        const stillCurrent = () => multisigRef.current?.accountId === ms.accountId;
+        const report = (error: string | null) => {
+          if (!stillCurrent()) return error;
+          setPrivateNoteGuard(error === null ? { phase: "clear" } : { phase: "blocked", error });
+          // An operation refused while blocked left its error up; unlocking clears it.
+          if (error === null) setError((current) => (current?.includes(BLOCKED_BY_PRIVATE_NOTE) ? null : current));
+          return error;
+        };
+        // Once clear, stay shown as clear while re-checking (it runs before
+        // every operation); only a failed check changes what the user sees.
+        if (stillCurrent()) setPrivateNoteGuard((g) => (g.phase === "clear" ? g : { phase: "checking" }));
+        const parts = clientPartsRef.current;
+        if (!parts) return report("Not connected to Guardian, so earlier private notes cannot be checked.");
+        // A private send executed in this browser that may not be canonical yet.
+        await deliverPendingNotes(ms.accountId, localWaitMs);
+        if (pendingDeliveries(ms.accountId).length > 0) {
+          return report("A private note from the last send has not reached its recipient yet.");
+        }
+        // The latest canonical transaction, as Guardian keeps it: covers sends
+        // executed by another signer or on another device.
+        const checks = noteChainChecks();
+        try {
+          await ensureLatestPrivateNotesDelivered<LatestPrivateNote>({
+            latestPrivateNotes: () => latestCanonicalPrivateNotes(ms),
+            committedAt: (n) => checks.committedAt(n.note),
+            isConsumed: (n, block) => checks.isConsumed(n.note, block),
+            deliver: async (n, to) => {
+              const inclusionProof = await checks.fetchProof(n.note);
+              if (!inclusionProof) throw new Error("its inclusion proof is not available yet");
+              await parts.midenClient.notes.sendPrivate({ note: n.note, to, inclusionProof });
+            },
+          });
+          return report(null);
+        } catch (err) {
+          return report(formatError(err));
+        } finally {
+          checks.free();
+        }
+      });
+      privateNoteCheck.current = { accountId: ms.accountId, run };
+      void run.finally(() => {
+        if (privateNoteCheck.current?.run === run) privateNoteCheck.current = null;
+      });
+      return run;
+    },
+    [deliverPendingNotes],
+  );
+  // Before every operation, not only on load: another signer may have
+  // executed a private send from another device meanwhile.
+  ensurePrivateNotesClearRef.current = async (ms: Multisig) => {
+    const blocked = await checkPrivateNotes(ms);
+    if (blocked !== null) {
+      throw new Error(`${BLOCKED_BY_PRIVATE_NOTE} ${blocked}`);
+    }
+  };
+
   useEffect(() => {
-    if (loadedAccountId && clientStartup.phase === "ready") void deliverPendingNotes(loadedAccountId, 15_000);
-  }, [loadedAccountId, clientStartup.phase, deliverPendingNotes]);
+    const ms = multisigRef.current;
+    if (loadedAccountId && clientStartup.phase === "ready" && ms?.accountId === loadedAccountId) {
+      void checkPrivateNotes(ms, 15_000);
+    }
+  }, [loadedAccountId, clientStartup.phase, checkPrivateNotes]);
 
   const retryPrivateDeliveries = useCallback(async () => {
-    if (multisigRef.current) await deliverPendingNotes(multisigRef.current.accountId, 60_000);
-  }, [deliverPendingNotes]);
+    if (multisigRef.current) await checkPrivateNotes(multisigRef.current, 60_000);
+  }, [checkPrivateNotes]);
 
   /**
    * Asks Guardian to abandon the candidate at `nonce` and reports the outcome.
@@ -1532,6 +1628,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       clearExecutionPushed(ms.accountId);
       let executing: { id: string; nonce: number } | undefined;
       try {
+        await ensurePrivateNotesClearRef.current(ms);
         // Align local proposal cache with Guardian before executing. After any
         // previous execute, Guardian's proposal state can diverge from the local
         // cache — re-syncing here ensures getDeltaProposal inside executeProposal
@@ -1577,7 +1674,8 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
         await multisig.executeProposal(proposalId);
         setProposals(multisig.listProposals());
         toast.success("Proposal executed successfully");
-        if (privateDelivery) void deliverPendingNotes(ms.accountId, 180_000);
+        // Deliver the new private note (if any) and re-check the account.
+        void checkPrivateNotes(ms, privateDelivery ? 180_000 : 15_000, { fresh: true });
 
         // Sync after execution
         if (midenClient) {
@@ -1623,7 +1721,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
         if (accountOpInFlight.current === ms.accountId) accountOpInFlight.current = null;
       }
     },
-    [multisig, midenClient, inspectAccountLock, releaseLock, refreshAccount, handleLocalStateAhead, deliverPendingNotes],
+    [multisig, midenClient, inspectAccountLock, releaseLock, refreshAccount, handleLocalStateAhead, checkPrivateNotes],
   );
 
   /** Lets any signer release a lock that has outlived every live execution. */
@@ -1664,6 +1762,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       if (!multisig) return;
 
       try {
+        await ensurePrivateNotesClearRef.current(multisig);
         const json = await multisig.signProposalOffline(proposalId);
         navigator.clipboard.writeText(json);
         setProposals(multisig.listProposals());
@@ -1682,6 +1781,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       if (!multisig || !json.trim()) return;
 
       try {
+        await ensurePrivateNotesClearRef.current(multisig);
         const proposal = await multisig.importProposal(json.trim());
         setProposals(multisig.listProposals());
         toast.success(`Proposal imported: ${proposal.id.slice(0, 12)}...`);
@@ -1795,6 +1895,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       retryClientStartup: startClient,
       undeliveredNotes,
       retryPrivateDeliveries,
+      privateNoteGuard,
       accountOperationBusy,
       setGuardianUrl,
       connectToGuardian,
@@ -1811,6 +1912,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     [
       undeliveredNotes,
       retryPrivateDeliveries,
+      privateNoteGuard,
       clientStartup,
       startClient,
       accountOperationBusy,
