@@ -1,12 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type MouseEvent } from 'react';
 import QRCode from 'qrcode';
 import { accountAddress, shortAddress } from '@/lib/address';
 import { formatError } from '@/lib/errors';
 import { payLink } from '@/lib/payLink';
 import { haptic, shareLink } from '@/lib/telegram';
-import { getTokenInfo, formatTokenAmount } from '@/lib/tokenAmounts';
 import { Icon } from './Icon';
 import { Sheet } from './Sheet';
 import { TokenAmount } from './TokenAmount';
@@ -22,7 +21,20 @@ function totals(notes: { assets: { faucetId: string; amount: bigint }[] }[]): Ma
   return sum;
 }
 
-export function ReceiveSheet({ open, onClose }: { open: boolean; onClose(): void }) {
+export interface Collected {
+  faucetId: string;
+  amount: bigint;
+  /** Where the Collect button was, for the coins to fly from. */
+  from: { x: number; y: number };
+}
+
+export function ReceiveSheet({ open, onClose, hidden, onCollected }: {
+  open: boolean;
+  onClose(): void;
+  /** Amounts blurred (hide amounts, or the app was in the background). */
+  hidden: boolean;
+  onCollected(collected: Collected): void;
+}) {
   const { engine, snapshot } = useWallet();
   const toast = useToast();
   const address = snapshot.accountId ? accountAddress(snapshot.accountId) : '';
@@ -51,20 +63,16 @@ export function ReceiveSheet({ open, onClose }: { open: boolean; onClose(): void
     void shareLink(link ?? address, link ? 'Pay me on Miden' : 'My Miden address').catch(() => undefined);
   };
 
-  const collect = () => {
-    const sum = totals(waiting);
+  const collect = (e: MouseEvent<HTMLButtonElement>) => {
+    const [first] = totals(waiting);
+    const rect = e.currentTarget.getBoundingClientRect();
+    const from = { x: rect.left + rect.width / 2, y: rect.top };
     setCollecting(true);
     setError(null);
     haptic('medium');
     engine.claimAll().then(
-      async () => {
-        haptic('success');
-        const parts = await Promise.all([...sum].map(async ([faucetId, amount]) => {
-          const info = await getTokenInfo(faucetId).catch(() => null);
-          return info ? `${formatTokenAmount(amount, info.decimals)} ${info.symbol}` : null;
-        }));
-        const named = parts.filter((part): part is string => part !== null);
-        toast(named.length === parts.length && named.length > 0 ? `Added ${named.join(' and ')}` : 'Payments added', 'check');
+      () => {
+        if (first) onCollected({ faucetId: first[0], amount: first[1], from });
         onClose();
       },
       (e: unknown) => {
@@ -89,10 +97,10 @@ export function ReceiveSheet({ open, onClose }: { open: boolean; onClose(): void
           <div className="cells">
             <div className="cells-head">Waiting for you · {waiting.length}</div>
             {waiting.map((note) => note.assets.map((asset, i) => (
-              <div key={`${note.id}-${i}`} className="cell">
+              <div key={`${note.id}-${i}`} className={`cell${hidden ? ' amounts-hidden' : ''}`}>
                 <span className="avatar"><Icon name="receive" /></span>
                 <span className="cell-main">
-                  <span className="cell-title">+<TokenAmount faucetId={asset.faucetId} amount={asset.amount} /></span>
+                  <span className="cell-title amount-value">+<TokenAmount faucetId={asset.faucetId} amount={asset.amount} /></span>
                   <span className="cell-sub">Ready to collect</span>
                 </span>
               </div>
@@ -100,7 +108,7 @@ export function ReceiveSheet({ open, onClose }: { open: boolean; onClose(): void
           </div>
           <p className="error">{error}</p>
           <button className="btn" onClick={collect} disabled={collecting || snapshot.activity !== null}>
-            {collecting ? 'Collecting…' : 'Collect all'}
+            {collecting ? 'Collecting…' : 'Collect'}
           </button>
         </>
       ) : (

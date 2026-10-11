@@ -39,7 +39,7 @@ function fakeMultisig(log: string[], opts: FakeOptions = {}) {
   };
   const ms = {
     accountId,
-    account: { nonce: () => ({ asInt: () => nonce }), balances: [{ faucetId: FEE, amount: 5n }, { faucetId: TOKEN, amount: 0n }] },
+    account: { nonce: () => ({ asInt: () => nonce }), balances: [{ faucetId: FEE, amount: 5n }, { faucetId: TOKEN, amount: 9n }] },
     guardian: {
       getDelta: async () => ({ status: { status: 'candidate', timestamp: new Date(Date.now() - 10 * 60_000).toISOString() } }),
     },
@@ -131,6 +131,17 @@ describe('WalletEngine.start', () => {
     ]);
     expect(store.get('miden-tg-wallet:last-account')).toBe(engine.getSnapshot().accountId);
     expect(engine.getSnapshot().balances).toEqual([{ faucetId: FEE, amount: 5n }]);
+  });
+
+  it('holds only the network fee token (USDCX): other tokens are never shown or collected', async () => {
+    const other = { id: '0xnote-other', assets: [{ faucetId: TOKEN, amount: 3n }] };
+    const { engine, log } = setup({ nonce: 1n, notes: [funding, other], existing: [{ accountId: '0xacc', updatedAt: '2026-10-01T00:00:00Z' }] });
+    await engine.start();
+    expect(engine.getSnapshot().balances).toEqual([{ faucetId: FEE, amount: 5n }]);
+    expect(engine.getSnapshot().incoming).toEqual([funding]);
+    log.length = 0;
+    await engine.claimAll();
+    expect(log).toContain('consume:0xnote-funding');
   });
 
   it('leaves what the network sends a new account as an ordinary incoming payment', async () => {

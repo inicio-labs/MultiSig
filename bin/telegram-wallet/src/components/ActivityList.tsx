@@ -34,7 +34,7 @@ export function ActivityList({ items }: { items: ActivityItem[] }) {
             <span className="cell-title">{item.direction === 'in' ? 'Received' : 'Sent'}</span>
             <span className="cell-sub">{who(item)}</span>
           </span>
-          <span className={`cell-value${item.direction === 'in' ? ' in' : ''}`}>
+          <span className={`cell-value amount-value${item.direction === 'in' ? ' in' : ''}`}>
             {item.direction === 'in' ? '+' : '−'}
             <TokenAmount faucetId={item.faucetId} amount={item.amount} />
           </span>

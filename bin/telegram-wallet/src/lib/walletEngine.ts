@@ -198,11 +198,6 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
       // the client past notes that were sent to the account earlier.
       await this.deps.registerNoteTag(midenClient, multisig.accountId);
       await this.refresh();
-      // Known only once a sync brought the node's protocol configuration.
-      const feeFaucet = await midenClient.feeFaucetId();
-      const feeFaucetId = feeFaucet.toString().toLowerCase();
-      feeFaucet.free?.();
-      this.update({ feeFaucetId });
       if (multisig.account.nonce().asInt() === 0n) {
         // The node only accepts transactions from registered accounts. A new
         // account registers here; one whose first start was interrupted is
@@ -264,6 +259,16 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
     } catch (error) {
       console.warn('Could not fetch private notes; private deposits may show up on the next refresh.', error);
     }
+    // The wallet's one token is the network's fee token (USDCX on testnet),
+    // known only once a sync brought the node's protocol configuration.
+    let token = this.snapshot.feeFaucetId;
+    if (!token) {
+      const feeFaucet = await midenClient.feeFaucetId();
+      token = feeFaucet.toString().toLowerCase();
+      feeFaucet.free?.();
+      this.update({ feeFaucetId: token });
+    }
+    const isToken = (faucetId: string) => faucetId.toLowerCase() === token;
     try {
       await multisig.syncState();
     } catch (error) {
@@ -271,11 +276,15 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
       // seen on chain; the local state is the current one then.
       if (!/nonce is too low/i.test(formatError(error))) throw error;
     }
-    const incoming = await multisig.getConsumableNotes();
-    const balances = AccountInspector.fromAccount(multisig.account).vaultBalances.filter((b) => b.amount > 0n);
+    // Only the wallet's token: notes in other tokens are never shown or
+    // collected, and stay claimable should the wallet add tokens later.
+    const incoming = (await multisig.getConsumableNotes())
+      .filter((note) => note.assets.length > 0 && note.assets.every((asset) => isToken(asset.faucetId)));
+    const balances = AccountInspector.fromAccount(multisig.account).vaultBalances
+      .filter((b) => b.amount > 0n && isToken(b.faucetId));
     // History is a nicety: keep the last list if Guardian's feed fails.
     const history = await multisig.deltaHistory({ limit: 20 })
-      .then((page) => toActivity(page.entries))
+      .then((page) => toActivity(page.entries).filter((item) => isToken(item.faucetId)))
       .catch((error: unknown) => {
         console.warn('Could not load the account history', error);
         return this.snapshot.history;

@@ -14,6 +14,12 @@ interface TelegramWebApp {
   };
   onEvent?(event: string, handler: () => void): void;
   offEvent?(event: string, handler: () => void): void;
+  isActive?: boolean;
+  CloudStorage?: {
+    getItem(key: string, callback: (error: string | null, value?: string) => void): void;
+    setItem(key: string, value: string, callback?: (error: string | null, stored?: boolean) => void): void;
+  };
+  SettingsButton?: { show(): void; hide(): void; onClick(cb: () => void): void; offClick(cb: () => void): void };
   version: string;
   colorScheme?: 'light' | 'dark';
   isVersionAtLeast?(version: string): boolean;
@@ -78,7 +84,7 @@ function supports(app: TelegramWebApp, version: string): boolean {
 }
 
 /** The app's one theme (globals.css): Telegram's header and bars take its background. */
-const APP_BACKGROUND = '#fff7f1';
+const APP_BACKGROUND = '#fff8f3';
 
 /**
  * Full height, Telegram's header and bars in the app's colour, and no
@@ -257,4 +263,73 @@ export function watchDeviceTilt(onTilt: (x: number, y: number) => void): () => v
   };
   window.addEventListener('deviceorientation', handler);
   return () => window.removeEventListener('deviceorientation', handler);
+}
+
+/**
+ * Telegram's per-user cloud storage (Bot API 6.9): kept by Telegram and synced
+ * across the user's Telegram devices. Settings only, never anything secret.
+ * Null outside Telegram or on older clients.
+ */
+export function telegramCloud(): {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string): Promise<void>;
+} | null {
+  const app = webApp();
+  const cloud = app?.CloudStorage;
+  if (!app || !cloud || !supports(app, '6.9')) return null;
+  return {
+    get: (key) => new Promise((resolve) => {
+      cloud.getItem(key, (error, value) => resolve(error ? null : (value || null)));
+    }),
+    set: (key, value) => new Promise((resolve) => {
+      cloud.setItem(key, value, () => resolve());
+    }),
+  };
+}
+
+/** Telegram's own "Settings" item in the mini app's menu (Bot API 7.0) while `onOpen` is set. */
+export function useTelegramSettingsButton(onOpen: (() => void) | null): void {
+  const latest = useRef(onOpen);
+  latest.current = onOpen;
+  const visible = onOpen !== null;
+  useEffect(() => {
+    const app = webApp();
+    const button = app?.SettingsButton;
+    if (!app || !button || !supports(app, '7.0') || !visible) return;
+    const handler = () => latest.current?.();
+    button.onClick(handler);
+    button.show();
+    return () => {
+      button.offClick(handler);
+      button.hide();
+    };
+  }, [visible]);
+}
+
+export const hasTelegramSettingsButton = (): boolean => {
+  const app = webApp();
+  return Boolean(app?.SettingsButton && supports(app, '7.0'));
+};
+
+/**
+ * Calls `onChange(false)` when the app goes to the background (minimised in
+ * Telegram, another tab, app switcher) and `onChange(true)` when it is back.
+ * Telegram's activated/deactivated events (Bot API 8.0) plus the page's own
+ * visibility, whichever comes first.
+ */
+export function onAppActiveChange(onChange: (active: boolean) => void): () => void {
+  const app = webApp();
+  const activated = () => onChange(true);
+  const deactivated = () => onChange(false);
+  const visibility = () => onChange(document.visibilityState === 'visible');
+  app?.onEvent?.('activated', activated);
+  app?.onEvent?.('deactivated', deactivated);
+  document.addEventListener('visibilitychange', visibility);
+  window.addEventListener('pagehide', deactivated);
+  return () => {
+    app?.offEvent?.('activated', activated);
+    app?.offEvent?.('deactivated', deactivated);
+    document.removeEventListener('visibilitychange', visibility);
+    window.removeEventListener('pagehide', deactivated);
+  };
 }
