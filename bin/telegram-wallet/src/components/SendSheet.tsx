@@ -261,7 +261,7 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
       {step === 'sending' && (
         <div className="sending">
           <div className="page-title">Sending {sent}</div>
-          <ProgressSteps kind="send" isPrivate={isPrivate} step={snapshot.activity?.kind === 'send' ? snapshot.activity.step : 'preparing'} />
+          <ProgressSteps kind="send" step={snapshot.activity?.kind === 'send' ? snapshot.activity.step : 'preparing'} />
           {snapshot.notice && <div className="sub">{snapshot.notice}</div>}
         </div>
       )}
