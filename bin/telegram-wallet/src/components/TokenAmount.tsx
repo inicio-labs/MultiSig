@@ -16,3 +16,10 @@ export function TokenSymbol({ faucetId }: { faucetId: string }) {
   const token = useTokenInfo(faucetId);
   return <>{token.status === 'ready' ? token.info.symbol : shortFaucetId(faucetId)}</>;
 }
+
+/** The hero balance: big number, smaller symbol. */
+export function BigAmount({ faucetId, amount }: { faucetId: string; amount: bigint }) {
+  const token = useTokenInfo(faucetId);
+  if (token.status !== 'ready') return <span className="shim" />;
+  return <>{formatTokenAmount(amount, token.info.decimals)} <small>{token.info.symbol}</small></>;
+}

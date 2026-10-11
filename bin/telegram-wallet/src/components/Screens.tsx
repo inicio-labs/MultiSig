@@ -1,46 +1,162 @@
 'use client';
 
-import { useState } from 'react';
-import { insideTelegram, useTelegramBackButton } from '@/lib/telegram';
+import { useEffect, useRef, useState } from 'react';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
+import { accountAddress, shortAddress } from '@/lib/address';
+import { payLinkAddress } from '@/lib/payLink';
+import { haptic, setClosingConfirmation, telegramStartParam } from '@/lib/telegram';
+import { formatTokenAmount, getTokenInfo } from '@/lib/tokenAmounts';
+import { ActivityList } from './ActivityList';
+import { Icon } from './Icon';
+import { ReceiveSheet } from './ReceiveSheet';
+import { SendSheet } from './SendSheet';
+import { BigAmount, TokenAmount } from './TokenAmount';
+import { ToastProvider, useToast } from './Toast';
 import { useWallet } from './WalletProvider';
-import { Home } from './Home';
-import { Receive } from './Receive';
-import { Send } from './Send';
-import { Fatal } from './Splash';
-
-export type Screen = 'home' | 'send' | 'receive';
-
-const SETUP_LABEL = {
-  starting: 'Starting…',
-  finding: 'Looking for your account…',
-  creating: 'Creating your Miden account…',
-  funding: 'Getting test tokens from the network. This usually takes about 10 seconds.',
-  activating: 'Activating your account…',
-} as const;
 
 export function Screens() {
-  const { engine, snapshot } = useWallet();
-  const [screen, setScreen] = useState<Screen>('home');
-  const busy = snapshot.activity !== null;
-  useTelegramBackButton(screen !== 'home' && !busy ? () => setScreen('home') : null);
+  return (
+    <ToastProvider>
+      <WalletHome />
+    </ToastProvider>
+  );
+}
 
+/**
+ * The whole app is this one screen plus two sheets. Account setup (create,
+ * register, fund, deploy) runs behind it: the balance shimmers until the
+ * welcome gift lands, and only Send waits for it.
+ */
+function WalletHome() {
+  const { engine, snapshot } = useWallet();
+  const toast = useToast();
+  const [sheet, setSheet] = useState<'send' | 'receive' | null>(null);
+  const [prefill, setPrefill] = useState<string | null>(null);
+  const page = useRef<HTMLElement>(null);
+  const indicator = useRef<HTMLDivElement>(null);
   const { phase } = snapshot;
-  if (phase.kind === 'error') {
-    return <Fatal title="Wallet unavailable" message={phase.message} action={{ label: 'Try again', run: () => void engine.start() }} />;
-  }
-  if (phase.kind !== 'ready') {
-    return (
-      <main className="screen">
-        <div className="center">
-          <div className="spinner" aria-hidden />
-          <p className="hint" style={{ maxWidth: 280 }}>{SETUP_LABEL[phase.kind]}</p>
-        </div>
-      </main>
+  const ready = phase.kind === 'ready';
+  const address = snapshot.accountId ? accountAddress(snapshot.accountId) : '';
+  const waiting = ready ? snapshot.incoming.length : 0;
+
+  // The fee token (USDCX on testnet) leads: it is what everyone holds.
+  const fee = snapshot.feeFaucetId;
+  const [main, ...others] = [...snapshot.balances]
+    .sort((a, b) => Number(b.faucetId.toLowerCase() === fee) - Number(a.faucetId.toLowerCase() === fee));
+
+  usePullToRefresh(page, indicator, () => {
+    if (!ready) return;
+    engine.refresh().then(
+      () => toast('Up to date', 'refresh'),
+      () => toast('Couldn’t refresh. Check your connection.', 'alert'),
     );
-  }
-  // Inside Telegram the native back button (above) does this.
-  const back = insideTelegram || busy ? undefined : () => setScreen('home');
-  if (screen === 'send') return <Send onDone={() => setScreen('home')} onBack={back} />;
-  if (screen === 'receive') return <Receive onBack={back} />;
-  return <Home onNavigate={setScreen} />;
+  });
+
+  // The network's funding, collected during setup: the welcome gift.
+  const welcomed = useRef(false);
+  useEffect(() => {
+    const gift = snapshot.welcome;
+    if (!gift || welcomed.current) return;
+    welcomed.current = true;
+    haptic('success');
+    void getTokenInfo(gift.faucetId).then(
+      (info) => toast(`Welcome gift: ${formatTokenAmount(gift.amount, info.decimals)} ${info.symbol} added`, 'gift'),
+      () => toast('Welcome gift added', 'gift'),
+    );
+  }, [snapshot.welcome, toast]);
+
+  // A new payment: a tap on the wrist, and the bell's badge.
+  const lastWaiting = useRef(0);
+  useEffect(() => {
+    if (waiting > lastWaiting.current) haptic('light');
+    lastWaiting.current = waiting;
+  }, [waiting]);
+
+  // Telegram asks before closing while a transaction is in flight.
+  const busy = snapshot.activity !== null;
+  useEffect(() => setClosingConfirmation(busy), [busy]);
+
+  // Opened from someone's pay link: straight to Send, once the wallet is ready.
+  const linkHandled = useRef(false);
+  useEffect(() => {
+    if (!ready || linkHandled.current) return;
+    linkHandled.current = true;
+    const to = payLinkAddress(telegramStartParam());
+    if (to) {
+      setPrefill(to);
+      setSheet('send');
+    }
+  }, [ready]);
+
+  const openSend = () => {
+    if (!ready) {
+      haptic('warning');
+      toast('One moment, your wallet is getting ready', 'clock');
+      return;
+    }
+    haptic('light');
+    setPrefill(null);
+    setSheet('send');
+  };
+  const openReceive = () => {
+    haptic('light');
+    setSheet('receive');
+  };
+  const copy = () => {
+    if (!address) return;
+    void navigator.clipboard.writeText(address).then(() => {
+      haptic('light');
+      toast('Address copied', 'copy');
+    });
+  };
+
+  return (
+    <>
+      <div className="ptr" ref={indicator}><Icon name="refresh" /> Release to refresh</div>
+      <main className="home" ref={page}>
+        <header className="hdr">
+          <div className="logo"><b>m</b>iden</div>
+          <button className="bell" onClick={openReceive} aria-label={waiting ? `${waiting} payments waiting` : 'Receive'}>
+            <Icon name="bell" />
+            {waiting > 0 && <span key={waiting} className="badge">{waiting}</span>}
+          </button>
+        </header>
+
+        <section className="hero">
+          <div className="lbl">Your balance</div>
+          <div className="amt">
+            {main ? <BigAmount faucetId={main.faucetId} amount={main.amount} /> : ready ? '0' : <span className="shim" />}
+          </div>
+          {others.length > 0 && (
+            <div className="others">
+              {others.map((b) => <TokenAmount key={b.faucetId} faucetId={b.faucetId} amount={b.amount} />)}
+            </div>
+          )}
+          <button className="addr" onClick={copy} aria-label="Copy your address">
+            <Icon name="copy" />
+            {address ? shortAddress(address) : <span className="shim small" />}
+          </button>
+        </section>
+
+        {phase.kind === 'error' && (
+          <div className="card-msg">
+            <div><strong>Your wallet couldn’t start.</strong> <span className="hint">{phase.message}</span></div>
+            <button className="btn soft" onClick={() => void engine.start()}>Try again</button>
+          </div>
+        )}
+        {snapshot.notice && !busy && <div className="card-msg hint">{snapshot.notice}</div>}
+
+        <div className="sec">Recent</div>
+        <ActivityList items={snapshot.history} />
+      </main>
+
+      <nav className="bar">
+        <button className="btn soft" onClick={openReceive}><Icon name="receive" />Receive</button>
+        <button className="btn" onClick={openSend}><Icon name="send" />Send</button>
+      </nav>
+
+      <SendSheet open={sheet === 'send'} onClose={() => setSheet(null)} prefill={prefill} />
+      <ReceiveSheet open={sheet === 'receive'} onClose={() => setSheet(null)} />
+    </>
+  );
 }

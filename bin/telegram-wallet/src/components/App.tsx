@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { PrivyProvider } from '@privy-io/react-auth';
 import { CONFIG_ERRORS, PRIVY_APP_ID, PRIVY_CLIENT_ID } from '@/config/psm';
-import { initializeTelegramBridge, setupTelegramChrome, telegramColorScheme } from '@/lib/telegram';
+import { initializeTelegramBridge, setupTelegramChrome } from '@/lib/telegram';
 import { AuthGate, DEV_EMAIL_LOGIN } from './AuthGate';
 import { WalletProvider } from './WalletProvider';
 import { Screens } from './Screens';
@@ -36,7 +36,7 @@ export default function App() {
       clientId={PRIVY_CLIENT_ID}
       config={{
         loginMethods: DEV_EMAIL_LOGIN ? ['telegram', 'email'] : ['telegram'],
-        appearance: { theme: telegramColorScheme(), walletChainType: 'ethereum-only' },
+        appearance: { theme: 'light', accentColor: '#ff5a1f', walletChainType: 'ethereum-only' },
         // Created by AuthGate once the user is known (as in ProjectX: creation on
         // login does not reliably run for the seamless Telegram login).
         embeddedWallets: { ethereum: { createOnLogin: 'off' }, showWalletUIs: false },

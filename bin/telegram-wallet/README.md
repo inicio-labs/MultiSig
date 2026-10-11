@@ -28,6 +28,31 @@ with no EIP-191 prefix, so `personal_sign` would never verify.
 `tests/privy-signer.test.ts` checks the signatures byte-for-byte against the
 Miden SDK's own ECDSA signer.
 
+## Design
+
+One screen, two bottom sheets, one orange theme (Telegram's theme colours are
+ignored, and its header and bars are painted the app's background).
+
+- **Setup is invisible.** Home shows at once. The balance shimmers while the
+  account is created, funded and deployed in the background, then a "Welcome
+  gift" toast lands. Only Send waits; it says so if tapped early.
+- **Incoming payments** wait in Receive, with a count on the bell (top right).
+  One tap ("Collect all") claims them. The welcome gift is the only automatic
+  claim.
+- **Built for the thumb:**
+  - actions at the bottom;
+  - sheets that swipe down to close;
+  - a keypad for amounts (the system keyboard resizes Telegram's webview);
+  - slide-to-send, because signing is silent and this is the confirmation;
+  - pull-to-refresh, since Telegram's own swipe-to-close is turned off;
+  - Telegram haptics, QR scanner, back button, chat picker for sharing, and
+    a close confirmation while sending.
+- **Pay links:** with `NEXT_PUBLIC_TELEGRAM_APP_URL` set, Share sends
+  `…?startapp=pay_<address>`. That link opens the wallet with Send filled in.
+- **Recent** is Guardian's history of the account, so it is the same on every
+  device. Fee notes are hidden; the account's first transaction is the welcome
+  gift.
+
 ## Setup
 
 1. **Telegram bot.** Create it with @BotFather.

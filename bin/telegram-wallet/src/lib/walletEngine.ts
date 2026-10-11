@@ -7,6 +7,7 @@ import {
   type Signer,
   type VaultBalance,
 } from '@openzeppelin/miden-multisig-client';
+import type { HistoryEntry } from '@openzeppelin/guardian-client';
 import { describeExecutionError, formatError } from './errors';
 import { waitForFundingNote } from './fundingWait';
 import {
@@ -65,6 +66,54 @@ export interface WalletActivity {
   step: ActivityStep;
 }
 
+/** One line of the Recent list, from Guardian's history of the account's transactions. */
+export interface ActivityItem {
+  id: string;
+  direction: 'in' | 'out';
+  faucetId: string;
+  amount: bigint;
+  /** The other account (sender of a received note, recipient of a sent one), when known. */
+  counterparty?: string;
+  timestamp: string;
+  /** The network's funding of a new account, claimed by its first transaction. */
+  welcome: boolean;
+}
+
+/**
+ * Received and sent assets per transaction, newest first (Guardian's order).
+ * Output notes without a recipient are the transaction fee, not a payment.
+ * When the page reaches the start of the history (`complete`), its last entry
+ * is the account's first transaction: the claim of the network's funding,
+ * shown as the welcome gift.
+ */
+export function toActivity(entries: HistoryEntry[], { complete }: { complete: boolean }): ActivityItem[] {
+  const items: ActivityItem[] = [];
+  entries.forEach((entry, index) => {
+    const first = complete && index === entries.length - 1;
+    const notes = [
+      ...entry.inputNotes.map((note) => ({ note, direction: 'in' as const, counterparty: note.sender })),
+      ...entry.outputNotes
+        .filter((note) => note.recipient)
+        .map((note) => ({ note, direction: 'out' as const, counterparty: note.recipient })),
+    ];
+    for (const { note, direction, counterparty } of notes) {
+      note.assets.forEach((asset, i) => {
+        if (asset.kind !== 'fungible' || !asset.amount) return;
+        items.push({
+          id: `${entry.nonce}:${note.noteId}:${i}`,
+          direction,
+          faucetId: asset.assetId,
+          amount: BigInt(asset.amount),
+          counterparty,
+          timestamp: entry.timestamp,
+          welcome: first && direction === 'in',
+        });
+      });
+    }
+  });
+  return items;
+}
+
 export interface WalletSnapshot {
   phase: WalletPhase;
   accountId: string | null;
@@ -72,6 +121,10 @@ export interface WalletSnapshot {
   incoming: ConsumableNote[];
   feeFaucetId: string | null;
   activity: WalletActivity | null;
+  /** Recent transactions, newest first. */
+  history: ActivityItem[];
+  /** Set once when the network's funding was claimed on this start: the app's welcome gift. */
+  welcome: { faucetId: string; amount: bigint } | null;
   /** Something the user should know that is not an error (e.g. slow local proving). */
   notice: string | null;
 }
@@ -96,6 +149,8 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
     incoming: [],
     feeFaucetId: null,
     activity: null,
+    history: [],
+    welcome: null,
     notice: null,
   };
   private readonly listeners = new Set<() => void>();
@@ -202,7 +257,12 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
       if (outcome !== 'found') throw new Error('The network has not funded the new account yet. Try again in a few minutes.');
     }
     this.update({ phase: { kind: 'activating' } });
+    const funding = this.snapshot.incoming
+      .flatMap((note) => note.assets)
+      .filter((asset) => asset.faucetId.toLowerCase() === feeFaucetId)
+      .reduce((sum, asset) => sum + asset.amount, 0n);
     await this.runTransaction('claim', (ms) => ms.createConsumeNotesProposal(this.snapshot.incoming.map((note) => note.id)));
+    this.update({ welcome: { faucetId: feeFaucetId, amount: funding } });
   }
 
   private exclusive<T>(task: () => Promise<T>): Promise<T> {
@@ -239,7 +299,14 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
     }
     const incoming = await multisig.getConsumableNotes();
     const balances = AccountInspector.fromAccount(multisig.account).vaultBalances.filter((b) => b.amount > 0n);
-    if (this.multisig === multisig) this.update({ incoming, balances });
+    // History is a nicety: keep the last list if Guardian's feed fails.
+    const history = await multisig.deltaHistory({ limit: 20 })
+      .then((page) => toActivity(page.entries, { complete: !page.nextCursor }))
+      .catch((error: unknown) => {
+        console.warn('Could not load the account history', error);
+        return this.snapshot.history;
+      });
+    if (this.multisig === multisig) this.update({ incoming, balances, history });
   }
 
   async send(recipientId: string, faucetId: string, amount: bigint): Promise<void> {

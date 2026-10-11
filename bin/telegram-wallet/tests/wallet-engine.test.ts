@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Signer } from '@openzeppelin/miden-multisig-client';
 import { markExecutionPushed } from '../src/lib/pendingCandidate';
-import { WalletEngine, type WalletEngineDeps, type WalletMidenClient, type WalletMultisigClient } from '../src/lib/walletEngine';
+import { toActivity, WalletEngine, type WalletEngineDeps, type WalletMidenClient, type WalletMultisigClient } from '../src/lib/walletEngine';
 
 // Balances come from the account's vault; the fakes carry them directly.
 vi.mock('@openzeppelin/miden-multisig-client', async (importOriginal) => {
@@ -67,6 +67,7 @@ function fakeMultisig(log: string[], opts: FakeOptions = {}) {
       nonce += 1n;
       notes = [];
     },
+    deltaHistory: async () => ({ entries: [] }),
     setNotes: (next: Array<typeof funding>) => { notes = next; },
   };
   return ms;
@@ -125,6 +126,7 @@ describe('WalletEngine.start', () => {
     ]);
     expect(store.get('miden-tg-wallet:last-account')).toBe(engine.getSnapshot().accountId);
     expect(engine.getSnapshot().balances).toEqual([{ faucetId: FEE, amount: 5n }]);
+    expect(engine.getSnapshot().welcome).toEqual({ faucetId: FEE, amount: 1_000_000n });
   });
 
   it('shares one start between concurrent calls, so one key never creates two accounts', async () => {
@@ -242,5 +244,32 @@ describe('WalletEngine transactions', () => {
   it('refuses a zero amount', async () => {
     const { engine } = await ready();
     await expect(engine.send(RECIPIENT, TOKEN, 0n)).rejects.toThrow('greater than zero');
+  });
+});
+
+describe('toActivity', () => {
+  const note = (noteId: string, amount: string, extra: object = {}) => ({
+    noteId, tag: 'p2id' as const, noteType: 'public' as const, assets: [{ assetId: FEE, kind: 'fungible' as const, amount }], ...extra,
+  });
+  // Guardian's `nonce` here is a server sequence (e.g. 1791637467838), not the account nonce.
+  const fee = note('fee', '126', { tag: 'custom' });
+  const entries = [
+    { nonce: 1791637467838, status: 'canonical' as const, timestamp: 't3', inputNotes: [], outputNotes: [note('n3', '10', { recipient: RECIPIENT }), fee], decodeWarnings: [] },
+    { nonce: 1791637304354, status: 'canonical' as const, timestamp: 't2', inputNotes: [note('n2', '5', { sender: RECIPIENT })], outputNotes: [fee], decodeWarnings: [] },
+    { nonce: 1791637244235, status: 'canonical' as const, timestamp: 't1', inputNotes: [note('n1', '1000000', { sender: FEE })], outputNotes: [fee], decodeWarnings: [] },
+  ];
+  const view = (items: ReturnType<typeof toActivity>) =>
+    items.map(({ direction, amount, counterparty, welcome }) => ({ direction, amount, counterparty, welcome }));
+
+  it('lists payments per transaction without fee notes, the first claim as the welcome gift', () => {
+    expect(view(toActivity(entries, { complete: true }))).toEqual([
+      { direction: 'out', amount: 10n, counterparty: RECIPIENT, welcome: false },
+      { direction: 'in', amount: 5n, counterparty: RECIPIENT, welcome: false },
+      { direction: 'in', amount: 1_000_000n, counterparty: FEE, welcome: true },
+    ]);
+  });
+
+  it('marks no welcome gift on a page that does not reach the first transaction', () => {
+    expect(toActivity(entries, { complete: false }).some((item) => item.welcome)).toBe(false);
   });
 });

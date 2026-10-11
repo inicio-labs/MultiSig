@@ -4,14 +4,25 @@ import { useEffect, useRef } from 'react';
 
 interface TelegramWebApp {
   initData: string;
+  initDataUnsafe?: { start_param?: string };
   version: string;
   colorScheme?: 'light' | 'dark';
   isVersionAtLeast?(version: string): boolean;
   ready(): void;
   expand(): void;
   disableVerticalSwipes?(): void;
+  setHeaderColor?(color: string): void;
+  setBackgroundColor?(color: string): void;
+  setBottomBarColor?(color: string): void;
+  enableClosingConfirmation?(): void;
+  disableClosingConfirmation?(): void;
+  showScanQrPopup?(params: { text?: string }, callback: (text: string) => boolean | void): void;
   BackButton?: { show(): void; hide(): void; onClick(cb: () => void): void; offClick(cb: () => void): void };
-  HapticFeedback?: { notificationOccurred(type: 'error' | 'success' | 'warning'): void };
+  HapticFeedback?: {
+    impactOccurred(style: 'light' | 'medium' | 'heavy' | 'rigid' | 'soft'): void;
+    notificationOccurred(type: 'error' | 'success' | 'warning'): void;
+    selectionChanged(): void;
+  };
   openTelegramLink?(url: string): void;
 }
 
@@ -57,17 +68,64 @@ function supports(app: TelegramWebApp, version: string): boolean {
   return app.isVersionAtLeast?.(version) ?? false;
 }
 
-/** Full height, and no swipe-down-to-close while the user scrolls or types an amount. */
+/** The app's one theme (globals.css): Telegram's header and bars take its background. */
+const APP_BACKGROUND = '#fff7f1';
+
+/**
+ * Full height, Telegram's header and bars in the app's colour, and no
+ * swipe-down-to-close: the app uses that gesture for pull-to-refresh and
+ * for dismissing sheets.
+ */
 export function setupTelegramChrome(): void {
   const app = webApp();
   if (!app) return;
   app.ready();
   app.expand();
+  if (supports(app, '6.1')) {
+    app.setHeaderColor?.(APP_BACKGROUND);
+    app.setBackgroundColor?.(APP_BACKGROUND);
+  }
+  if (supports(app, '7.10')) app.setBottomBarColor?.(APP_BACKGROUND);
   if (supports(app, '7.7')) app.disableVerticalSwipes?.();
 }
 
-export function telegramColorScheme(): 'light' | 'dark' {
-  return webApp()?.colorScheme ?? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+/** The `startapp` parameter of the link that opened the app (t.me/bot/app?startapp=…). */
+export function telegramStartParam(): string | null {
+  return webApp()?.initDataUnsafe?.start_param
+    || new URLSearchParams(launchData).get('start_param')
+    || launchUrl.searchParams.get('tgWebAppStartParam')
+    || null;
+}
+
+/** Ask before closing while a transaction is in flight. */
+export function setClosingConfirmation(on: boolean): void {
+  const app = webApp();
+  if (!app || !supports(app, '6.2')) return;
+  if (on) app.enableClosingConfirmation?.();
+  else app.disableClosingConfirmation?.();
+}
+
+export const canScanQr = (): boolean => {
+  const app = webApp();
+  return Boolean(app?.showScanQrPopup && supports(app, '6.4'));
+};
+
+/** Telegram's own QR scanner; resolves with the first scanned text, or null if closed. */
+export function scanQr(prompt: string, accept: (text: string) => boolean): Promise<string | null> {
+  const app = webApp();
+  return new Promise((resolve) => {
+    if (!app?.showScanQrPopup) {
+      resolve(null);
+      return;
+    }
+    let done = false;
+    app.showScanQrPopup({ text: prompt }, (text) => {
+      if (done || !accept(text)) return false;
+      done = true;
+      resolve(text);
+      return true;
+    });
+  });
 }
 
 /**
@@ -106,20 +164,27 @@ export function useTelegramBackButton(onBack: (() => void) | null): void {
   }, [visible]);
 }
 
-export function haptic(type: 'error' | 'success' | 'warning'): void {
-  webApp()?.HapticFeedback?.notificationOccurred(type);
+type Haptic = 'light' | 'medium' | 'heavy' | 'soft' | 'selection' | 'success' | 'error' | 'warning';
+
+/** Telegram's haptics: impacts for touches, selection for keypad ticks, notifications for outcomes. */
+export function haptic(kind: Haptic): void {
+  const feedback = webApp()?.HapticFeedback;
+  if (!feedback) return;
+  if (kind === 'selection') feedback.selectionChanged();
+  else if (kind === 'success' || kind === 'error' || kind === 'warning') feedback.notificationOccurred(kind);
+  else feedback.impactOccurred(kind);
 }
 
-/** Share via Telegram's chat picker inside Telegram; the system share sheet elsewhere. */
-export async function shareText(text: string): Promise<void> {
+/** Share into a Telegram chat with the chat picker; the system share sheet elsewhere. */
+export async function shareLink(url: string, text: string): Promise<void> {
   const app = webApp();
   if (app?.openTelegramLink) {
-    app.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(text)}`);
+    app.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`);
     return;
   }
   if (navigator.share) {
-    await navigator.share({ text });
+    await navigator.share({ text, url });
     return;
   }
-  await navigator.clipboard.writeText(text);
+  await navigator.clipboard.writeText(`${text} ${url}`);
 }

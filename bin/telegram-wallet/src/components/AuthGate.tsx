@@ -146,11 +146,11 @@ function EmailLogin() {
     <form onSubmit={submit} style={{ width: '100%', maxWidth: 300, display: 'grid', gap: 8, marginTop: 16 }}>
       <p className="hint">Development: email login</p>
       {codeSent ? (
-        <input className="input" inputMode="numeric" placeholder="Code from the email" value={code} onChange={(e) => setCode(e.target.value)} />
+        <input className="field" inputMode="numeric" placeholder="Code from the email" value={code} onChange={(e) => setCode(e.target.value)} />
       ) : (
-        <input className="input" type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <input className="field" type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
       )}
-      <button className="btn secondary" type="submit">{codeSent ? 'Log in' : 'Send code'}</button>
+      <button className="btn soft" type="submit">{codeSent ? 'Log in' : 'Send code'}</button>
       {error && <p className="error">{error}</p>}
     </form>
   );

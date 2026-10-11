@@ -1,0 +1,45 @@
+'use client';
+
+import { accountAddress, shortAddress } from '@/lib/address';
+import type { ActivityItem } from '@/lib/walletEngine';
+import { Icon } from './Icon';
+import { TokenAmount } from './TokenAmount';
+
+function who(item: ActivityItem): string {
+  if (!item.counterparty) return when(item.timestamp);
+  try {
+    return `${item.direction === 'in' ? 'from' : 'to'} ${shortAddress(accountAddress(item.counterparty))}`;
+  } catch {
+    return when(item.timestamp);
+  }
+}
+
+function when(timestamp: string): string {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return '';
+  const today = new Date().toDateString() === date.toDateString();
+  return today
+    ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : date.toLocaleDateString([], { day: 'numeric', month: 'short' });
+}
+
+export function ActivityList({ items }: { items: ActivityItem[] }) {
+  if (items.length === 0) return <div className="empty">Your payments show up here.</div>;
+  return (
+    <div className="list">
+      {items.map((item) => (
+        <div key={item.id} className="row">
+          <span className="ico"><Icon name={item.welcome ? 'gift' : item.direction === 'in' ? 'receive' : 'send'} /></span>
+          <div>
+            <div className="t">{item.welcome ? 'Welcome gift' : item.direction === 'in' ? 'Received' : 'Sent'}</div>
+            <div className="s">{item.welcome ? when(item.timestamp) : who(item)}</div>
+          </div>
+          <span className={`v${item.direction === 'in' ? ' in' : ''}`}>
+            {item.direction === 'in' ? '+' : '−'}
+            <TokenAmount faucetId={item.faucetId} amount={item.amount} />
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}

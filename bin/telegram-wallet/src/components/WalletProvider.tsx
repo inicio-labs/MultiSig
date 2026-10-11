@@ -59,6 +59,10 @@ export function WalletProvider({ signer, children }: { signer: Signer; children:
     storage,
   }), [signer]);
   const snapshot = useSyncExternalStore(engine.subscribe, engine.getSnapshot, engine.getSnapshot);
+  // Development builds: the engine on window, for inspecting state in the console.
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'production') (window as { midenWallet?: unknown }).midenWallet = engine;
+  }, [engine]);
 
   useEffect(() => {
     void engine.start();
