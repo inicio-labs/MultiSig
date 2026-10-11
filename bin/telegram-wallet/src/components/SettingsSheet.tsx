@@ -1,7 +1,8 @@
 'use client';
 
+import { authenticate, requestBiometricAccess } from '@/lib/biometrics';
 import { usePref } from '@/lib/prefs';
-import { haptic, telegramCloud } from '@/lib/telegram';
+import { haptic, telegramCloud, useTelegramBiometrics } from '@/lib/telegram';
 import { Icon, type IconName } from './Icon';
 import { Sheet } from './Sheet';
 
@@ -9,7 +10,26 @@ import { Sheet } from './Sheet';
 export function SettingsSheet({ open, onClose }: { open: boolean; onClose(): void }) {
   const [hideAmounts, setHideAmounts] = usePref('hideAmounts');
   const [sound, setSound] = usePref('sound');
+  const [biometricSends, setBiometricSends] = usePref('biometricSends');
+  const bio = useTelegramBiometrics();
   const synced = telegramCloud() !== null;
+  const bioOn = biometricSends !== false && bio?.granted === true;
+
+  const switchBiometrics = (next: boolean) => {
+    if (!bio) return;
+    if (!next) {
+      // Turning it off takes a scan too, or anyone holding the phone could.
+      void authenticate(bio.manager, `Turn off ${bio.name} for sends`).then((ok) => {
+        if (ok) setBiometricSends(false);
+        else haptic('error');
+      });
+      return;
+    }
+    setBiometricSends(true);
+    if (!bio.requested) void requestBiometricAccess(bio.manager);
+    // Declined before: only Telegram's own settings can allow it now.
+    else if (!bio.granted) bio.manager.openSettings();
+  };
 
   return (
     <Sheet open={open} onClose={onClose}>
@@ -17,6 +37,15 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose(): voi
       <div className="cells">
         <Toggle icon="eye" label="Hide amounts" hint="Blur balances and payments" on={hideAmounts === true} set={setHideAmounts} />
         <Toggle icon="bell" label="Sound" hint="A chime when money comes in" on={sound !== false} set={setSound} />
+        {bio && (
+          <Toggle
+            icon={bio.type === 'finger' ? 'fingerprint' : 'face'}
+            label={`${bio.name} for sends`}
+            hint={bio.requested && !bio.granted ? 'Allow it in Telegram first' : 'Asked before every send'}
+            on={bioOn}
+            set={switchBiometrics}
+          />
+        )}
       </div>
       <div className="sub">
         {synced ? 'Saved to your Telegram, on all your devices.' : 'Saved on this device.'}

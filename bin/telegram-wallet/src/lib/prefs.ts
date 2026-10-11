@@ -5,7 +5,7 @@ import { storage } from './storage';
 import { telegramCloud } from './telegram';
 
 /**
- * The wallet's two settings. Inside Telegram they live in Telegram's cloud
+ * The wallet's settings. Inside Telegram they live in Telegram's cloud
  * storage, so they follow the user to their other Telegram devices; outside
  * it (or on old clients), in this device's storage. Both are UI preferences:
  * nothing sensitive is ever stored this way.
@@ -13,6 +13,8 @@ import { telegramCloud } from './telegram';
 export const PREFS = {
   hideAmounts: { key: 'hide_amounts', fallback: false },
   sound: { key: 'sound', fallback: true },
+  // Face ID / fingerprint before each send, where the phone has it (biometrics.ts).
+  biometricSends: { key: 'biometric_sends', fallback: true },
 } as const;
 
 type PrefName = keyof typeof PREFS;

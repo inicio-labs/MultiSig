@@ -4,9 +4,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AccountId } from '@miden-sdk/miden-sdk';
 import { useTokenInfo } from '@/hooks/useTokenInfo';
 import { accountAddress, shortAddress } from '@/lib/address';
+import { confirmWithBiometrics } from '@/lib/biometrics';
 import { formatError } from '@/lib/errors';
 import { toHexAccountId } from '@/lib/helpers';
-import { canScanQr, haptic, insideTelegram, scanQr } from '@/lib/telegram';
+import { usePref } from '@/lib/prefs';
+import { canScanQr, haptic, insideTelegram, scanQr, telegramBiometrics } from '@/lib/telegram';
 import { formatTokenAmount, parseTokenAmount } from '@/lib/tokenAmounts';
 import { Icon } from './Icon';
 import { ProgressSteps } from './ProgressSteps';
@@ -67,6 +69,7 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
   const [error, setError] = useState<string | null>(null);
   const [shake, setShake] = useState(0);
   const [sent, setSent] = useState('');
+  const [biometricSends] = usePref('biometricSends');
 
   const balances = snapshot.balances;
   const balance = balances.find((b) => b.faucetId === faucetId);
@@ -165,17 +168,22 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
     setError(null);
     amountInput.current?.blur();
     setStep('sending');
-    setSent(`${formatTokenAmount(units, decimals)} ${symbol}`);
-    engine.send(recipient.hex, faucetId, units, { private: isPrivate }).then(
-      () => {
-        haptic('success');
-        setStep('sent');
-      },
-      (e: unknown) => {
+    const label = `${formatTokenAmount(units, decimals)} ${symbol}`;
+    setSent(label);
+    // Face ID first, while the first step ("Confirming it’s you") shows.
+    const go = async () => {
+      if (!(await confirmWithBiometrics(telegramBiometrics(), { enabled: biometricSends !== false, reason: `Send ${label}` }))) {
         setStep('amount');
-        fail(formatError(e));
-      },
-    );
+        return fail('Not confirmed. Slide to try again.');
+      }
+      await engine.send(recipient.hex, faucetId, units, { private: isPrivate });
+      haptic('success');
+      setStep('sent');
+    };
+    go().catch((e: unknown) => {
+      setStep('amount');
+      fail(formatError(e));
+    });
   };
 
   return (
