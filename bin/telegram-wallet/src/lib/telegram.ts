@@ -4,7 +4,16 @@ import { useEffect, useRef } from 'react';
 
 interface TelegramWebApp {
   initData: string;
-  initDataUnsafe?: { start_param?: string };
+  initDataUnsafe?: { start_param?: string; user?: { first_name?: string; last_name?: string } };
+  viewportHeight?: number;
+  DeviceOrientation?: {
+    start(params: { refresh_rate?: number }, callback?: (started: boolean) => void): void;
+    stop(callback?: () => void): void;
+    beta: number | null;
+    gamma: number | null;
+  };
+  onEvent?(event: string, handler: () => void): void;
+  offEvent?(event: string, handler: () => void): void;
   version: string;
   colorScheme?: 'light' | 'dark';
   isVersionAtLeast?(version: string): boolean;
@@ -187,4 +196,65 @@ export async function shareLink(url: string, text: string): Promise<void> {
     return;
   }
   await navigator.clipboard.writeText(`${text} ${url}`);
+}
+
+/** The Telegram user's name, for the card. Display only: never used to identify anyone. */
+export function telegramUserName(): string | null {
+  const user = webApp()?.initDataUnsafe?.user;
+  const name = [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim();
+  return name || null;
+}
+
+/** The height left for the app: Telegram's viewport, or the visual viewport (minus the keyboard). */
+export function viewportHeight(): number {
+  return webApp()?.viewportHeight || window.visualViewport?.height || window.innerHeight;
+}
+
+/** Calls `onChange` when the viewport height changes (keyboard, expand). */
+export function onViewportChange(onChange: () => void): () => void {
+  const app = webApp();
+  app?.onEvent?.('viewportChanged', onChange);
+  window.visualViewport?.addEventListener('resize', onChange);
+  return () => {
+    app?.offEvent?.('viewportChanged', onChange);
+    window.visualViewport?.removeEventListener('resize', onChange);
+  };
+}
+
+/**
+ * The phone's tilt, as -1…1 on each axis relative to how it was held when this
+ * started. Telegram's own sensor API inside Telegram (Bot API 8.0), else the
+ * browser's where it needs no permission prompt. Returns a stop function;
+ * calls nothing where neither exists (the card then follows the pointer).
+ */
+export function watchDeviceTilt(onTilt: (x: number, y: number) => void): () => void {
+  const clamp = (v: number) => Math.max(-1, Math.min(1, v));
+  let base: { beta: number; gamma: number } | null = null;
+  const report = (beta: number, gamma: number, range: number) => {
+    base ??= { beta, gamma };
+    onTilt(clamp((gamma - base.gamma) / range), clamp((beta - base.beta) / range));
+  };
+
+  const app = webApp();
+  const sensor = app?.DeviceOrientation;
+  if (app && sensor && supports(app, '8.0')) {
+    // Radians.
+    const handler = () => {
+      if (sensor.beta !== null && sensor.gamma !== null) report(sensor.beta, sensor.gamma, 0.45);
+    };
+    sensor.start({ refresh_rate: 50 });
+    app.onEvent?.('deviceOrientationChanged', handler);
+    return () => {
+      app.offEvent?.('deviceOrientationChanged', handler);
+      sensor.stop();
+    };
+  }
+  const needsPermission = typeof (window.DeviceOrientationEvent as unknown as { requestPermission?: unknown })?.requestPermission === 'function';
+  if (typeof window.DeviceOrientationEvent === 'undefined' || needsPermission) return () => undefined;
+  // Degrees.
+  const handler = (e: DeviceOrientationEvent) => {
+    if (e.beta !== null && e.gamma !== null) report(e.beta, e.gamma, 25);
+  };
+  window.addEventListener('deviceorientation', handler);
+  return () => window.removeEventListener('deviceorientation', handler);
 }

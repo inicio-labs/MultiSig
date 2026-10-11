@@ -1,0 +1,77 @@
+'use client';
+
+import { useEffect, useRef, type PointerEvent } from 'react';
+import { useTokenInfo } from '@/hooks/useTokenInfo';
+import { watchDeviceTilt } from '@/lib/telegram';
+import { formatTokenAmount } from '@/lib/tokenAmounts';
+import { RollingNumber } from './RollingNumber';
+
+/**
+ * The wallet as a physical card, after Telegram's Gram wallet: the balance,
+ * the owner's name embossed, the address along the edge. It tilts with the
+ * phone (or the pointer) and the foil catches the light.
+ */
+export function WalletCard({ balance, name, address, loading, onTap }: {
+  balance: { faucetId: string; amount: bigint } | null;
+  name: string | null;
+  address: string;
+  loading: boolean;
+  onTap(): void;
+}) {
+  const card = useRef<HTMLDivElement>(null);
+  const target = useRef({ x: 0, y: 0 });
+
+  // Ease toward the latest tilt every frame: sensors and pointers are jumpy.
+  useEffect(() => {
+    let frame = 0;
+    const now = { x: 0, y: 0 };
+    const tick = () => {
+      now.x += (target.current.x - now.x) * 0.12;
+      now.y += (target.current.y - now.y) * 0.12;
+      card.current?.style.setProperty('--tx', now.x.toFixed(4));
+      card.current?.style.setProperty('--ty', now.y.toFixed(4));
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    const stop = watchDeviceTilt((x, y) => { target.current = { x, y }; });
+    return () => {
+      cancelAnimationFrame(frame);
+      stop();
+    };
+  }, []);
+
+  const follow = (e: PointerEvent) => {
+    if (e.pointerType !== 'mouse' || !card.current) return;
+    const r = card.current.getBoundingClientRect();
+    target.current = {
+      x: Math.max(-1, Math.min(1, (e.clientX - r.left - r.width / 2) / (r.width / 2))),
+      y: Math.max(-1, Math.min(1, (e.clientY - r.top - r.height / 2) / (r.height / 2))),
+    };
+  };
+
+  return (
+    <div className="card-scene" onPointerMove={follow} onPointerLeave={() => { target.current = { x: 0, y: 0 }; }}>
+      <div className="card" ref={card} onClick={onTap} role="button" aria-label="Copy your address">
+        <div className="card-grain" />
+        <div className="card-shine" />
+        <div className="card-balance">
+          {loading || !balance ? (balance || loading ? <span className="shim" /> : <span>0</span>) : <CardAmount {...balance} />}
+        </div>
+        <div className="card-brand">miden</div>
+        {name && <div className="card-name">{name}</div>}
+        <div className="card-addr"><span>{address}</span></div>
+      </div>
+    </div>
+  );
+}
+
+function CardAmount({ faucetId, amount }: { faucetId: string; amount: bigint }) {
+  const token = useTokenInfo(faucetId);
+  if (token.status !== 'ready') return <span className="shim" />;
+  return (
+    <>
+      <RollingNumber value={formatTokenAmount(amount, token.info.decimals)} />
+      <small>{token.info.symbol}</small>
+    </>
+  );
+}

@@ -1,17 +1,17 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AccountId } from '@miden-sdk/miden-sdk';
 import { useTokenInfo } from '@/hooks/useTokenInfo';
+import { useViewportHeight } from '@/hooks/useViewportHeight';
 import { accountAddress, shortAddress } from '@/lib/address';
 import { formatError } from '@/lib/errors';
 import { toHexAccountId } from '@/lib/helpers';
-import { canScanQr, haptic, scanQr } from '@/lib/telegram';
+import { canScanQr, haptic, insideTelegram, scanQr, useTelegramBackButton } from '@/lib/telegram';
 import { formatTokenAmount, parseTokenAmount } from '@/lib/tokenAmounts';
 import type { ActivityStep } from '@/lib/walletEngine';
 import { Icon } from './Icon';
-import { Keypad } from './Keypad';
-import { Sheet } from './Sheet';
+import { RollingNumber } from './RollingNumber';
 import { SlideToSend } from './SlideToSend';
 import { TokenSymbol } from './TokenAmount';
 import { useWallet } from './WalletProvider';
@@ -20,6 +20,7 @@ const STEP_LABEL: Record<ActivityStep, string> = {
   preparing: 'Getting ready',
   signing: 'Signing',
   proving: 'Sending to the network',
+  delivering: 'Delivering privately',
   syncing: 'Almost done',
 };
 
@@ -47,13 +48,30 @@ function parseRecipient(input: string, ownId: string | null): { hex: string; add
   return { hex, address: accountAddress(hex) };
 }
 
-export function SendSheet({ open, onClose, prefill }: { open: boolean; onClose(): void; prefill?: string | null }) {
+/** Digits and one decimal point, at most `decimals` places. */
+function cleanAmount(raw: string, decimals: number): string {
+  let value = raw.replace(',', '.').replace(/[^\d.]/g, '');
+  const dot = value.indexOf('.');
+  if (dot >= 0) value = value.slice(0, dot + 1) + value.slice(dot + 1).replace(/\./g, '').slice(0, decimals);
+  if (decimals === 0) value = value.replace('.', '');
+  return value.replace(/^0+(?=\d)/, '');
+}
+
+/**
+ * Send, as one full screen like Gram's: who, a big amount on the phone's own
+ * keyboard (the page shrinks to stay above it), private by default, and a
+ * slide to send.
+ */
+export function SendPage({ open, prefill, onClose }: { open: boolean; prefill: string | null; onClose(): void }) {
   const { engine, snapshot } = useWallet();
+  const height = useViewportHeight();
+  const amountInput = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<Step>('to');
   const [input, setInput] = useState('');
   const [recipient, setRecipient] = useState<{ hex: string; address: string } | null>(null);
   const [faucetId, setFaucetId] = useState('');
   const [amount, setAmount] = useState('');
+  const [isPrivate, setPrivate] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [shake, setShake] = useState(0);
   const [sent, setSent] = useState('');
@@ -70,7 +88,7 @@ export function SendSheet({ open, onClose, prefill }: { open: boolean; onClose()
       .filter((item) => item.direction === 'out' && item.counterparty)
       .map((item) => item.counterparty!)
       .filter((id) => !seen.has(id.toLowerCase()) && seen.add(id.toLowerCase()))
-      .slice(0, 3);
+      .slice(0, 4);
   }, [snapshot.history]);
 
   const fail = (message: string) => {
@@ -79,16 +97,20 @@ export function SendSheet({ open, onClose, prefill }: { open: boolean; onClose()
     haptic('error');
   };
 
-  const chooseRecipient = (value: string) => {
-    setInput(value);
+  // Called from the tap or keystroke that picked the recipient: iOS opens the
+  // keyboard only for a focus made while handling the user's own input.
+  const pick = (value: string, { quiet = false } = {}): boolean => {
     try {
       setRecipient(parseRecipient(value, snapshot.accountId));
-      setError(null);
-      setStep('amount');
-      haptic('light');
     } catch (e) {
-      fail(formatError(e));
+      if (!quiet) fail(formatError(e));
+      return false;
     }
+    setError(null);
+    setStep('amount');
+    amountInput.current?.focus();
+    haptic('light');
+    return true;
   };
 
   // Each opening starts fresh; a pay link fills in the recipient.
@@ -97,25 +119,23 @@ export function SendSheet({ open, onClose, prefill }: { open: boolean; onClose()
     const fee = balances.find((b) => b.faucetId.toLowerCase() === snapshot.feeFaucetId);
     setFaucetId((fee ?? balances[0])?.faucetId ?? '');
     setAmount('');
+    setPrivate(true);
     setError(null);
     setRecipient(null);
     setInput(prefill ?? '');
     setStep('to');
-    if (prefill) chooseRecipient(prefill);
+    if (prefill) pick(prefill);
     // Only on opening: later balance updates must not reset the form.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, prefill]);
 
-  // A complete, valid address moves on by itself, typed or pasted.
-  const typed = (value: string) => {
-    setInput(value);
-    setError(null);
-    try {
-      setRecipient(parseRecipient(value, snapshot.accountId));
-      setStep('amount');
-      haptic('light');
-    } catch { /* not a full address yet */ }
-  };
+  const busy = step === 'sending';
+  const back = open && !busy && step !== 'sent' ? (step === 'amount' ? () => setStep('to') : onClose) : null;
+  useTelegramBackButton(back);
+  // Inside Telegram its own back button does this.
+  const backArrow = back && !insideTelegram
+    ? <button className="page-back" onClick={back} aria-label="Back"><Icon name="back" /></button>
+    : null;
 
   const scan = async () => {
     haptic('light');
@@ -127,7 +147,10 @@ export function SendSheet({ open, onClose, prefill }: { open: boolean; onClose()
         return false;
       }
     });
-    if (text) chooseRecipient(text);
+    if (text) {
+      setInput(text);
+      pick(text);
+    }
   };
 
   const max = () => {
@@ -148,9 +171,10 @@ export function SendSheet({ open, onClose, prefill }: { open: boolean; onClose()
     }
     if (units > balance.amount) return fail('That’s more than you have');
     setError(null);
+    amountInput.current?.blur();
     setStep('sending');
     setSent(`${formatTokenAmount(units, decimals)} ${symbol}`);
-    engine.send(recipient.hex, faucetId, units).then(
+    engine.send(recipient.hex, faucetId, units, { private: isPrivate }).then(
       () => {
         haptic('success');
         setStep('sent');
@@ -162,12 +186,23 @@ export function SendSheet({ open, onClose, prefill }: { open: boolean; onClose()
     );
   };
 
-  const busy = step === 'sending';
   return (
-    <Sheet open={open} onClose={onClose} onBack={step === 'amount' ? () => setStep('to') : undefined} locked={busy}>
+    <section className={`page${open ? ' on' : ''}`} style={{ height }} aria-hidden={!open}>
+      {/* Always mounted, so a tap can focus it (see pick). */}
+      <input
+        ref={amountInput}
+        className="amount-input"
+        inputMode="decimal"
+        autoComplete="off"
+        value={amount}
+        onChange={(e) => { setAmount(cleanAmount(e.target.value, decimals)); setError(null); haptic('selection'); }}
+        tabIndex={step === 'amount' ? 0 : -1}
+        aria-label="Amount"
+      />
+
       {step === 'to' && (
         <>
-          <div className="sh-t">Send to</div>
+          <div className="page-title">{backArrow}Send</div>
           <div className="field-wrap">
             <input
               className="field"
@@ -176,25 +211,23 @@ export function SendSheet({ open, onClose, prefill }: { open: boolean; onClose()
               autoComplete="off"
               autoCapitalize="off"
               spellCheck={false}
-              onChange={(e) => typed(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && chooseRecipient(input)}
+              onChange={(e) => { setInput(e.target.value); setError(null); pick(e.target.value, { quiet: true }); }}
+              onKeyDown={(e) => e.key === 'Enter' && pick(input)}
             />
             {canScanQr() && (
               <button className="field-icon" onClick={scan} aria-label="Scan a QR code"><Icon name="scan" /></button>
             )}
           </div>
           {recents.length > 0 && (
-            <>
-              <div className="sec">Recent</div>
-              <div className="list">
-                {recents.map((id) => (
-                  <button key={id} className="row" onClick={() => chooseRecipient(id)}>
-                    <span className="ico"><Icon name="user" /></span>
-                    <span className="t">{shortAddress(accountAddress(id))}</span>
-                  </button>
-                ))}
-              </div>
-            </>
+            <div className="cells">
+              <div className="cells-head">Recent</div>
+              {recents.map((id) => (
+                <button key={id} className="cell" onClick={() => pick(id)}>
+                  <span className="avatar"><Icon name="user" /></span>
+                  <span className="cell-main"><span className="cell-title mono-ish">{shortAddress(accountAddress(id))}</span></span>
+                </button>
+              ))}
+            </div>
           )}
           <p className="error">{error}</p>
         </>
@@ -202,37 +235,41 @@ export function SendSheet({ open, onClose, prefill }: { open: boolean; onClose()
 
       {step === 'amount' && recipient && (
         <>
-          <div className="sh-t">To {shortAddress(recipient.address)}</div>
-          {balances.length > 1 && (
-            <div className="tokens">
-              {balances.map((b) => (
-                <button
-                  key={b.faucetId}
-                  className={`chip${b.faucetId === faucetId ? ' on' : ''}`}
-                  onClick={() => { setFaucetId(b.faucetId); setAmount(''); haptic('selection'); }}
-                >
-                  <TokenSymbol faucetId={b.faucetId} />
-                </button>
-              ))}
-            </div>
-          )}
-          <div key={shake} className={`amount${shake ? ' shake' : ''}`}>
-            {amount || '0'} <small>{symbol}</small>
+          <div className="page-title">{backArrow}To <span className="to-addr">{shortAddress(recipient.address)}</span></div>
+          <button key={shake} className={`amount${shake ? ' shake' : ''}`} onClick={() => amountInput.current?.focus()}>
+            <RollingNumber value={amount || '0'} className="fast" />
+            <span className="caret" />
+            <small>{symbol}</small>
+          </button>
+          <div className="amount-meta">
+            <button className="pill" onClick={max}>
+              {balance && token.status === 'ready' ? `Balance ${formatTokenAmount(balance.amount, decimals)} · Max` : 'Max'}
+            </button>
+            {balances.length > 1 && balances.map((b) => (
+              <button
+                key={b.faucetId}
+                className={`pill${b.faucetId === faucetId ? ' on' : ''}`}
+                onClick={() => { setFaucetId(b.faucetId); setAmount(''); haptic('selection'); amountInput.current?.focus(); }}
+              >
+                <TokenSymbol faucetId={b.faucetId} />
+              </button>
+            ))}
           </div>
-          <div className="sub">
-            {balance && token.status === 'ready' ? `You have ${formatTokenAmount(balance.amount, decimals)} ${symbol} · ` : ''}
-            <button className="max" onClick={max}>Max</button>
-          </div>
-          <Keypad value={amount} decimals={decimals} onChange={(next) => { setAmount(next); setError(null); }} />
+          <button className="private" onClick={() => { setPrivate((p) => !p); haptic('selection'); }} role="switch" aria-checked={isPrivate}>
+            <span><Icon name="lock" /> Private</span>
+            <span className={`switch${isPrivate ? ' on' : ''}`} />
+          </button>
           <p className="error">{error}</p>
-          <SlideToSend label="Slide to send" onSlide={send} />
+          <div className="page-bottom">
+            <SlideToSend label={isPrivate ? 'Slide to send privately' : 'Slide to send'} onSlide={send} />
+          </div>
         </>
       )}
 
       {step === 'sending' && (
-        <div className="center" style={{ padding: '24px 0 32px' }}>
-          <div className="sh-t">Sending {sent}</div>
+        <div className="center">
           <div className="spinner" aria-hidden />
+          <div className="page-title">Sending {sent}</div>
           <div className="sub">{STEP_LABEL[snapshot.activity?.step ?? 'preparing']}…</div>
           {snapshot.notice && <div className="sub">{snapshot.notice}</div>}
         </div>
@@ -240,12 +277,15 @@ export function SendSheet({ open, onClose, prefill }: { open: boolean; onClose()
 
       {step === 'sent' && recipient && (
         <>
-          <div className="done"><Icon name="check" /></div>
-          <div className="sh-t">Sent {sent}</div>
-          <div className="sub">to {shortAddress(recipient.address)}</div>
-          <button className="btn soft" style={{ marginTop: 8 }} onClick={onClose}>Done</button>
+          <div className="center">
+            <div className="done"><Icon name="check" /></div>
+            <div className="page-title">Sent {sent}{isPrivate ? ' privately' : ''}</div>
+            <div className="sub">to {shortAddress(recipient.address)}</div>
+            {snapshot.notice && <div className="sub">{snapshot.notice}</div>}
+          </div>
+          <div className="page-bottom"><button className="btn soft" onClick={onClose}>Done</button></div>
         </>
       )}
-    </Sheet>
+    </section>
   );
 }

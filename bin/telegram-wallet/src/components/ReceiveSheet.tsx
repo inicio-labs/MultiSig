@@ -78,9 +78,7 @@ export function ReceiveSheet({ open, onClose }: { open: boolean; onClose(): void
     <Sheet open={open} onClose={onClose} locked={collecting}>
       <div className="sh-t">Receive</div>
       {qr ? <img className="qr" src={qr} alt="QR code of your address" /> : <div className="qr" />}
-      <button className="field" style={{ height: 'auto', padding: '12px 14px', textAlign: 'center', wordBreak: 'break-all' }} onClick={copy}>
-        {address}
-      </button>
+      <button className="addr-full" onClick={copy}>{address}</button>
       <div className="chips">
         <button className="chip" onClick={copy}><Icon name="copy" />Copy</button>
         <button className="chip" onClick={share}><Icon name="share" />Share</button>
@@ -88,15 +86,15 @@ export function ReceiveSheet({ open, onClose }: { open: boolean; onClose(): void
 
       {waiting.length > 0 ? (
         <>
-          <div className="sec">Waiting for you · {waiting.length}</div>
-          <div className="list">
+          <div className="cells">
+            <div className="cells-head">Waiting for you · {waiting.length}</div>
             {waiting.map((note) => note.assets.map((asset, i) => (
-              <div key={`${note.id}-${i}`} className="row">
-                <span className="ico"><Icon name="receive" /></span>
-                <div>
-                  <div className="t">+<TokenAmount faucetId={asset.faucetId} amount={asset.amount} /></div>
-                  <div className="s">Ready to collect</div>
-                </div>
+              <div key={`${note.id}-${i}`} className="cell">
+                <span className="avatar"><Icon name="receive" /></span>
+                <span className="cell-main">
+                  <span className="cell-title">+<TokenAmount faucetId={asset.faucetId} amount={asset.amount} /></span>
+                  <span className="cell-sub">Ready to collect</span>
+                </span>
               </div>
             )))}
           </div>

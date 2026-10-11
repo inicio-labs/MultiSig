@@ -18,6 +18,7 @@ import {
   registerAccountNoteTag,
   registerAccountOnNode,
 } from '@/lib/multisigApi';
+import { createPrivateNotes } from '@/lib/privateSend';
 import { storage } from '@/lib/storage';
 import { WalletEngine, type WalletSnapshot } from '@/lib/walletEngine';
 
@@ -56,6 +57,7 @@ export function WalletProvider({ signer, children }: { signer: Signer; children:
     loadAccount: loadWalletAccount,
     registerOnNode: (client, accountId) => registerAccountOnNode(client, accountId),
     registerNoteTag: registerAccountNoteTag,
+    createPrivateNotes,
     storage,
   }), [signer]);
   const snapshot = useSyncExternalStore(engine.subscribe, engine.getSnapshot, engine.getSnapshot);

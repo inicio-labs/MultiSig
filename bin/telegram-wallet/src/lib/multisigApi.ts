@@ -4,7 +4,19 @@ import {
   type MultisigConfig,
   type Signer,
 } from '@openzeppelin/miden-multisig-client';
-import { AccountId, NoteTag, type MidenClient } from '@miden-sdk/miden-sdk';
+import type { GuardianHttpClient } from '@openzeppelin/guardian-client';
+import {
+  AccountId,
+  Endpoint,
+  NoteScript,
+  NoteTag,
+  NoteType,
+  RpcClient,
+  TransactionSummary,
+  type MidenClient,
+  type Note,
+  type NoteInclusionProof,
+} from '@miden-sdk/miden-sdk';
 import { GUARDIAN_ENDPOINT, MIDEN_NETWORK, MIDEN_REGISTRATION_CODE, MIDEN_RPC_URL } from '@/config/psm';
 import { normalizeCommitment } from '@/lib/helpers';
 import { registerNodeAccount } from './nodeRegistration';
@@ -53,6 +65,123 @@ export function registerAccountOnNode(
   registrationRequests.set(key, request);
   request.finally(() => registrationRequests.delete(key)).catch(() => undefined);
   return request;
+}
+
+function base64ToBytes(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+/**
+ * Extracts the full output notes a proposal's transaction will create, by
+ * deserializing its own `txSummary` — no Guardian call, no chain sync, no
+ * ambiguity between proposals. Same reconstruction `verifyProposalMetadataBinding`
+ * already runs internally on every syncProposals().
+ *
+ * Returns full `Note` objects, not just IDs: sendPrivate() only skips its
+ * local-database lookup when given an object with real `.id()`/`.assets()`
+ * methods (checked via duck typing in the SDK's own sendPrivate wrapper). A
+ * plain ID string or NoteId falls through to that lookup instead — which
+ * fails here, because the note hasn't been executed yet, so it was never
+ * written to the local database in the first place.
+ */
+export function getOutputNotesFromTxSummary(txSummaryBase64: string): Note[] {
+  const summary = TransactionSummary.deserialize(base64ToBytes(txSummaryBase64));
+  return summary
+    .outputNotes()
+    .notes()
+    .map((note) => note.intoFull())
+    .filter(
+      (note): note is Note =>
+        note !== undefined && note.metadata().noteType() === NoteType.Private,
+    );
+}
+
+/**
+ * The recipient account of a P2ID note, read from the note's storage (the
+ * target account's suffix, then prefix); undefined for any other note script.
+ */
+export function p2idRecipient(note: Note): string | undefined {
+  const recipient = note.recipient();
+  if (recipient.script().root().toHex() !== NoteScript.p2id().root().toHex()) return undefined;
+  const [suffix, prefix] = recipient.storage().items().map((felt) => felt.asInt().toString(16).padStart(16, '0'));
+  if (!suffix || !prefix) return undefined;
+  // The suffix felt carries the ID's last 7 bytes followed by a zero byte.
+  return `0x${prefix}${suffix.slice(0, 14)}`;
+}
+
+/**
+ * The Guardian client a Multisig signs its requests with. The class keeps it
+ * private and exposes only `deltaHistory`; `MultisigClient.guardianClient` is
+ * not a substitute: the app replaces it on a Guardian reconnect, and it has no
+ * signer after an auto-load ("No signer configured").
+ */
+function multisigGuardian(multisig: Multisig): Pick<GuardianHttpClient, 'getDelta'> {
+  return (multisig as unknown as { guardian: GuardianHttpClient }).guardian;
+}
+
+export interface LatestPrivateNote {
+  id: string;
+  recipientId: string | undefined;
+  note: Note;
+}
+
+/**
+ * The private notes of the account's latest canonical transaction, rebuilt
+ * from the transaction summary Guardian keeps with the delta. Guardian
+ * acknowledges every execution before it reaches the chain, so any signer can
+ * read these notes from any device.
+ */
+export async function latestCanonicalPrivateNotes(
+  multisig: Multisig,
+  guardian: Pick<GuardianHttpClient, 'getDelta'> = multisigGuardian(multisig),
+): Promise<LatestPrivateNote[]> {
+  const { entries } = await multisig.deltaHistory({ limit: 1 });
+  const latest = entries[0];
+  if (!latest) return [];
+  const delta = await guardian.getDelta(multisig.accountId, latest.nonce);
+  const txSummary = (delta.deltaPayload as { txSummary?: { data?: unknown } } | undefined)?.txSummary?.data;
+  if (typeof txSummary !== 'string') return [];
+  return getOutputNotesFromTxSummary(txSummary).map((note) => ({
+    id: note.id().toString(),
+    recipientId: p2idRecipient(note),
+    note,
+  }));
+}
+
+/**
+ * Node-side checks for private notes, over one RPC connection: where a note
+ * was committed, whether it has been consumed, and its inclusion proof.
+ * `free()` releases the connection.
+ */
+export function noteChainChecks(rpcUrl: string = MIDEN_RPC_URL) {
+  const rpc = new RpcClient(new Endpoint(rpcUrl));
+  const fetchProof = async (note: Note): Promise<NoteInclusionProof | undefined> => {
+    const fetched = await rpc.getNotesById([note.id()]);
+    try {
+      return fetched[0]?.inclusionProof;
+    } finally {
+      for (const entry of fetched) entry.free();
+    }
+  };
+  return {
+    fetchProof,
+    async committedAt(note: Note): Promise<number | undefined> {
+      const proof = await fetchProof(note);
+      if (!proof) return undefined;
+      try {
+        return proof.location().blockNum();
+      } finally {
+        proof.free();
+      }
+    },
+    async isConsumed(note: Note, fromBlock: number): Promise<boolean> {
+      return (await rpc.getNullifierCommitHeight(note.nullifier(), fromBlock)) !== undefined;
+    },
+    free: () => rpc.free(),
+  };
 }
 
 /** Track notes addressed to the account, so syncs pick them up. */

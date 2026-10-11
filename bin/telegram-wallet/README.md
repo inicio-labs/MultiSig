@@ -30,28 +30,37 @@ Miden SDK's own ECDSA signer.
 
 ## Design
 
-One screen, two bottom sheets, one orange theme (Telegram's theme colours are
-ignored, and its header and bars are painted the app's background).
+After Telegram's Gram wallet (its public prototype: IlyaGrshin/wallet_animations),
+in Miden orange on a light base. Telegram's theme colours are ignored; its
+header and bars take the app's background.
 
-- **Setup is invisible.** Home shows at once. The balance shimmers while the
-  account is created, funded and deployed in the background, then a "Welcome
-  gift" toast lands. Only Send waits; it says so if tapped early.
-- **Incoming payments** wait in Receive, with a count on the bell (top right).
-  One tap ("Collect all") claims them. The welcome gift is the only automatic
-  claim.
-- **Built for the thumb:**
-  - actions at the bottom;
-  - sheets that swipe down to close;
-  - a keypad for amounts (the system keyboard resizes Telegram's webview);
-  - slide-to-send, because signing is silent and this is the confirmation;
-  - pull-to-refresh, since Telegram's own swipe-to-close is turned off;
-  - Telegram haptics, QR scanner, back button, chat picker for sharing, and
-    a close confirmation while sending.
+- **The card is the home screen.** It shows the balance with rolling digits,
+  the Telegram name embossed and the address along the edge. It tilts with
+  the phone (Telegram's DeviceOrientation, else the pointer) and the foil
+  catches the light. Tapping it copies the address. Once it scrolls away, the
+  balance rides in the top bar.
+- **Setup is invisible.** The balance shimmers while the account is found or
+  created and registered; only Send waits, and says so if tapped early. There
+  is no welcome gift: anything the network sends a new account is an ordinary
+  incoming payment.
+- **Incoming payments** wait in Receive (a bottom sheet), with a count on the
+  bell. One "Collect all" claims them.
+- **Send is one screen.** One address field (Telegram's QR scanner inside it)
+  moves on by itself once the address is valid. Recent recipients come from
+  history.
+  - The amount is big and typed on the phone's keyboard; the page shrinks to
+    stay above it.
+  - The send is **private by default** (switch to make it public).
+  - Slide to send: signing is silent, so the slide is the confirmation.
+- **Private sends:** the note goes to the recipient through the note
+  transport after the transaction commits (`src/lib/privateSend.ts`, from
+  coordinator-frontend). No later transaction runs while one is undelivered.
 - **Pay links:** with `NEXT_PUBLIC_TELEGRAM_APP_URL` set, Share sends
-  `…?startapp=pay_<address>`. That link opens the wallet with Send filled in.
-- **Recent** is Guardian's history of the account, so it is the same on every
-  device. Fee notes are hidden; the account's first transaction is the welcome
-  gift.
+  `…?startapp=pay_<address>`, which opens Send filled in.
+- **Telegram touches:** haptics on every touch, pull-to-refresh (Telegram's
+  swipe-to-close is off), and a close confirmation while sending.
+- **Recent** is Guardian's history, the same on every device, without fee
+  notes.
 
 ## Setup
 
@@ -96,7 +105,4 @@ configuration runs the app this way on testnet.
   slowly for local proving to be the default here.
 - **Max button:** for the fee token (USDCX on testnet), Max keeps 0.001 for
   fees.
-- **Not in v1:**
-  - private sends (receiving private notes works);
-  - transaction history;
-  - signer management.
+- **Not in v1:** signer management.

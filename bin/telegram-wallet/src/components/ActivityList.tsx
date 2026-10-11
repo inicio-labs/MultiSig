@@ -26,20 +26,20 @@ function when(timestamp: string): string {
 export function ActivityList({ items }: { items: ActivityItem[] }) {
   if (items.length === 0) return <div className="empty">Your payments show up here.</div>;
   return (
-    <div className="list">
+    <>
       {items.map((item) => (
-        <div key={item.id} className="row">
-          <span className="ico"><Icon name={item.direction === 'in' ? 'receive' : 'send'} /></span>
-          <div>
-            <div className="t">{item.direction === 'in' ? 'Received' : 'Sent'}</div>
-            <div className="s">{who(item)}</div>
-          </div>
-          <span className={`v${item.direction === 'in' ? ' in' : ''}`}>
+        <div key={item.id} className="cell">
+          <span className="avatar"><Icon name={item.direction === 'in' ? 'receive' : 'send'} /></span>
+          <span className="cell-main">
+            <span className="cell-title">{item.direction === 'in' ? 'Received' : 'Sent'}</span>
+            <span className="cell-sub">{who(item)}</span>
+          </span>
+          <span className={`cell-value${item.direction === 'in' ? ' in' : ''}`}>
             {item.direction === 'in' ? '+' : '−'}
             <TokenAmount faucetId={item.faucetId} amount={item.amount} />
           </span>
         </div>
       ))}
-    </div>
+    </>
   );
 }

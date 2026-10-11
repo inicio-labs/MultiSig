@@ -8,6 +8,7 @@ import {
   type VaultBalance,
 } from '@openzeppelin/miden-multisig-client';
 import type { HistoryEntry } from '@openzeppelin/guardian-client';
+import { NoteType } from '@miden-sdk/miden-sdk';
 import { describeExecutionError, formatError } from './errors';
 import {
   clearExecutionPushed,
@@ -19,6 +20,7 @@ import {
   type ReleaseOutcome,
 } from './pendingCandidate';
 import type { MultisigHooks } from './multisigApi';
+import type { PrivateNotes } from './privateSend';
 
 /** The parts of the Miden client the engine uses. */
 export interface WalletMidenClient {
@@ -41,6 +43,8 @@ export interface WalletEngineDeps<C extends WalletMidenClient, M extends WalletM
   loadAccount(multisigClient: M, accountId: string, signer: Signer, hooks: MultisigHooks): Promise<Multisig>;
   registerOnNode(midenClient: C, accountId: string): Promise<void>;
   registerNoteTag(midenClient: C, accountId: string): Promise<void>;
+  /** Private sends: note delivery and the check before each transaction. */
+  createPrivateNotes?(midenClient: C): PrivateNotes;
   /** Remembers the account this key last used, to prefer it if the key has several. */
   storage?: { get(key: string): string | null; set(key: string, value: string): void };
   release?: typeof releasePendingCandidate;
@@ -55,7 +59,7 @@ export type WalletPhase =
   | { kind: 'ready' }
   | { kind: 'error'; message: string };
 
-export type ActivityStep = 'preparing' | 'signing' | 'proving' | 'syncing';
+export type ActivityStep = 'preparing' | 'signing' | 'proving' | 'delivering' | 'syncing';
 
 export interface WalletActivity {
   kind: 'send' | 'claim';
@@ -140,6 +144,7 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
   };
   private readonly listeners = new Set<() => void>();
   private midenClient: C | null = null;
+  private privateNotes: PrivateNotes | null = null;
   private multisig: Multisig | null = null;
   private busy = false;
   private starting: Promise<void> | null = null;
@@ -180,6 +185,7 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
       this.update({ phase: { kind: 'starting' }, notice: null });
       const midenClient = this.midenClient ?? await this.deps.startMidenClient();
       this.midenClient = midenClient;
+      this.privateNotes ??= this.deps.createPrivateNotes?.(midenClient) ?? null;
       const multisigClient = this.deps.createMultisigClient(midenClient);
       this.update({ phase: { kind: 'finding' } });
 
@@ -206,6 +212,12 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
         await this.deps.registerOnNode(midenClient, multisig.accountId);
       }
       this.update({ phase: { kind: 'ready' } });
+      // A private payment whose delivery the app did not finish (closed meanwhile).
+      const privateNotes = this.privateNotes;
+      if (privateNotes) {
+        void this.exclusive(() => privateNotes.ensureDelivered(multisig))
+          .catch((error) => console.warn('An earlier private payment is not delivered yet', error));
+      }
     } catch (error) {
       this.update({ phase: { kind: 'error', message: formatError(error, 'The wallet could not start') } });
     }
@@ -271,9 +283,15 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
     if (this.multisig === multisig) this.update({ incoming, balances, history });
   }
 
-  async send(recipientId: string, faucetId: string, amount: bigint): Promise<void> {
+  /** A private send's note travels to the recipient through the note transport, after it commits. */
+  async send(recipientId: string, faucetId: string, amount: bigint, { private: isPrivate = false } = {}): Promise<void> {
     if (amount <= 0n) throw new Error('Enter an amount greater than zero.');
-    await this.runTransaction('send', (ms) => ms.createP2idProposal(recipientId, faucetId, amount));
+    if (isPrivate && !this.privateNotes) throw new Error('Private payments are not available.');
+    await this.runTransaction(
+      'send',
+      (ms) => ms.createP2idProposal(recipientId, faucetId, amount, isPrivate ? { noteType: NoteType.Private } : undefined),
+      isPrivate,
+    );
   }
 
   async claimAll(): Promise<void> {
@@ -282,13 +300,17 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
     await this.runTransaction('claim', (ms) => ms.createConsumeNotesProposal(ids));
   }
 
-  private async runTransaction(kind: WalletActivity['kind'], create: (ms: Multisig) => Promise<Proposal>): Promise<void> {
+  private async runTransaction(
+    kind: WalletActivity['kind'],
+    create: (ms: Multisig) => Promise<Proposal>,
+    isPrivate = false,
+  ): Promise<void> {
     const { midenClient, multisig } = this;
     if (!midenClient || !multisig) throw new Error('The wallet is not ready yet.');
     if (this.busy) throw new Error('Another transaction is still in progress.');
     this.busy = true;
     try {
-      await this.exclusive(() => this.transact(midenClient, multisig, kind, create));
+      await this.exclusive(() => this.transact(midenClient, multisig, kind, create, isPrivate));
     } finally {
       this.busy = false;
     }
@@ -299,7 +321,9 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
     multisig: Multisig,
     kind: WalletActivity['kind'],
     create: (ms: Multisig) => Promise<Proposal>,
+    isPrivate: boolean,
   ): Promise<void> {
+    const privateNotes = this.privateNotes;
     const step = (s: ActivityStep) => this.update({ activity: { kind, step: s } });
     const label = kind === 'send' ? 'Send failed' : 'Claim failed';
     clearExecutionPushed(multisig.accountId);
@@ -308,6 +332,13 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
     this.update({ notice: null });
     try {
       step('preparing');
+      // An earlier private payment must reach its recipient before the account
+      // moves on (privateSend.ts); this delivers it, or refuses.
+      if (privateNotes) {
+        await privateNotes.ensureDelivered(multisig).catch((error: unknown) => {
+          throw new Error(`your last private payment hasn't reached its recipient yet (${formatError(error)}). Try again in a minute.`);
+        });
+      }
       // Building a proposal executes the transaction against foreign state (the
       // fee faucet) at the store's sync height, which the node prunes after
       // about 50 blocks: sync to the tip first.
@@ -321,9 +352,19 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
           ? `the proposal did not verify: ${fresh.verification.message}`
           : 'the proposal is not ready to execute.');
       }
+      if (isPrivate) privateNotes!.record(multisig, fresh);
       step('proving');
       await multisig.executeProposal(proposal.id);
       executed = true;
+      if (isPrivate) {
+        step('delivering');
+        await privateNotes!.deliver(multisig, fresh).catch((error: unknown) => {
+          // Sent: the note is recorded and the next transaction (or start)
+          // delivers it once it has committed.
+          console.warn('Private delivery is not done yet', error);
+          this.update({ notice: 'Sent privately. Delivery to the recipient finishes in a moment; keep the app open.' });
+        });
+      }
       step('syncing');
       await this.syncAccount().catch((error) => {
         console.warn('Refresh after the transaction failed', error);
@@ -334,6 +375,8 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
         throw new Error(await this.recoverLock(multisig));
       }
       const message = describeExecutionError(error, label);
+      // Never reached Guardian, so it cannot land: nothing to deliver.
+      if (isPrivate && proposal && !executed && !executionWasPushed(multisig.accountId)) privateNotes?.forget(proposal);
       if (proposal && !executed && executionWasPushed(multisig.accountId)) {
         // Guardian accepted this execute's push before it failed, so the lock
         // is ours and the transaction can no longer land: release it now
