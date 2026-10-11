@@ -21,7 +21,7 @@ import { ActivityList } from './ActivityList';
 import { BURST_LANDS_MS, CoinBurst, type Burst } from './CoinBurst';
 import { Icon } from './Icon';
 import { ReceiveSheet, type Collected } from './ReceiveSheet';
-import { SendPage } from './SendPage';
+import { SendSheet } from './SendSheet';
 import { SettingsSheet } from './SettingsSheet';
 import { TokenAmount } from './TokenAmount';
 import { ToastProvider, useToast } from './Toast';
@@ -39,7 +39,7 @@ export function Screens() {
 /**
  * The card, two actions and the activity: the whole app. Account setup (find
  * or create, register) runs behind it while the balance shimmers; only Send
- * waits for it. Send is its own screen; Receive and Settings are sheets.
+ * waits for it. Send, Receive and Settings are sheets over it.
  */
 function WalletHome() {
   const { engine, snapshot } = useWallet();
@@ -229,7 +229,7 @@ function WalletHome() {
       </main>
 
       <CoinBurst burst={burst} />
-      <SendPage open={view === 'send'} prefill={prefill} onClose={() => setView('home')} />
+      <SendSheet open={view === 'send'} prefill={prefill} onClose={() => setView('home')} />
       <ReceiveSheet open={view === 'receive'} onClose={() => setView('home')} hidden={hidden} onCollected={collected} />
       <SettingsSheet open={view === 'settings'} onClose={() => setView('home')} />
     </>

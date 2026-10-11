@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
+import { useKeyboardFrame } from '@/hooks/useViewportHeight';
 import { haptic, useTelegramBackButton } from '@/lib/telegram';
 
 // A downward drag past this many pixels dismisses the sheet.
@@ -11,14 +12,17 @@ const DISMISS_PX = 90;
  * on its handle, a tap outside, or Telegram's back button (`onBack`, for a
  * step back inside the sheet, else close).
  */
-export function Sheet({ open, onClose, onBack, locked = false, children }: {
+export function Sheet({ open, onClose, onBack, locked = false, aboveKeyboard = false, children }: {
   open: boolean;
   onClose(): void;
   onBack?: () => void;
   /** While a transaction runs: no dismissing. */
   locked?: boolean;
+  /** Ride on top of the phone's keyboard while it is open. */
+  aboveKeyboard?: boolean;
   children: ReactNode;
 }) {
+  const keyboard = useKeyboardFrame();
   const sheet = useRef<HTMLDivElement>(null);
   const startY = useRef<number | null>(null);
   useTelegramBackButton(open && !locked ? (onBack ?? onClose) : null);
@@ -58,7 +62,16 @@ export function Sheet({ open, onClose, onBack, locked = false, children }: {
   return (
     <>
       <div className={`scrim${open ? ' on' : ''}`} onClick={() => !locked && onClose()} />
-      <div ref={sheet} className={`sheet${open ? ' on' : ''}`} role="dialog" aria-modal="true" aria-hidden={!open}>
+      <div
+        ref={sheet}
+        className={`sheet${open ? ' on' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-hidden={!open}
+        style={aboveKeyboard && keyboard.inset > 0
+          ? { bottom: keyboard.inset, maxHeight: keyboard.visible - 12, paddingBottom: 14 }
+          : undefined}
+      >
         <div className="grab" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
           <div className="handle" />
         </div>

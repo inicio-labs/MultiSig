@@ -3,15 +3,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AccountId } from '@miden-sdk/miden-sdk';
 import { useTokenInfo } from '@/hooks/useTokenInfo';
-import { useViewportHeight } from '@/hooks/useViewportHeight';
 import { accountAddress, shortAddress } from '@/lib/address';
 import { formatError } from '@/lib/errors';
 import { toHexAccountId } from '@/lib/helpers';
-import { canScanQr, haptic, insideTelegram, scanQr, useTelegramBackButton } from '@/lib/telegram';
+import { canScanQr, haptic, insideTelegram, scanQr } from '@/lib/telegram';
 import { formatTokenAmount, parseTokenAmount } from '@/lib/tokenAmounts';
 import type { ActivityStep } from '@/lib/walletEngine';
 import { Icon } from './Icon';
 import { RollingNumber } from './RollingNumber';
+import { Sheet } from './Sheet';
 import { SlideToSend } from './SlideToSend';
 import { TokenSymbol } from './TokenAmount';
 import { useWallet } from './WalletProvider';
@@ -58,13 +58,12 @@ function cleanAmount(raw: string, decimals: number): string {
 }
 
 /**
- * Send, as one full screen like Gram's: who, a big amount on the phone's own
- * keyboard (the page shrinks to stay above it), private by default, and a
- * slide to send.
+ * Send, as a sheet over the home screen: who, a big amount on the phone's own
+ * keyboard (the sheet rides on top of it), private by default, and a slide to
+ * send. Swipe down to cancel, like Receive.
  */
-export function SendPage({ open, prefill, onClose }: { open: boolean; prefill: string | null; onClose(): void }) {
+export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: string | null; onClose(): void }) {
   const { engine, snapshot } = useWallet();
-  const height = useViewportHeight();
   const amountInput = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<Step>('to');
   const [input, setInput] = useState('');
@@ -130,8 +129,8 @@ export function SendPage({ open, prefill, onClose }: { open: boolean; prefill: s
   }, [open, prefill]);
 
   const busy = step === 'sending';
-  const back = open && !busy && step !== 'sent' ? (step === 'amount' ? () => setStep('to') : onClose) : null;
-  useTelegramBackButton(back);
+  // Telegram's back button (via the sheet) steps back to the recipient, then closes.
+  const back = step === 'amount' ? () => setStep('to') : null;
   // Inside Telegram its own back button does this.
   const backArrow = back && !insideTelegram
     ? <button className="page-back" onClick={back} aria-label="Back"><Icon name="back" /></button>
@@ -187,7 +186,7 @@ export function SendPage({ open, prefill, onClose }: { open: boolean; prefill: s
   };
 
   return (
-    <section className={`page${open ? ' on' : ''}`} style={{ height }} aria-hidden={!open}>
+    <Sheet open={open} onClose={onClose} onBack={back ?? undefined} locked={busy} aboveKeyboard>
       {/* Always mounted, so a tap can focus it (see pick). */}
       <input
         ref={amountInput}
@@ -286,6 +285,6 @@ export function SendPage({ open, prefill, onClose }: { open: boolean; prefill: s
           <div className="page-bottom"><button className="btn soft" onClick={onClose}>Done</button></div>
         </>
       )}
-    </section>
+    </Sheet>
   );
 }

@@ -196,14 +196,13 @@ button.cell:active { background: var(--bg); }
 .chip { height: 48px; border-radius: 14px; background: var(--or-soft); color: var(--ink); display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 15px; font-weight: 600; }
 .chip:active { transform: scale(.97); }
 
-/* Send: a full page that follows the keyboard (its height is set inline) */
-.page { position: fixed; top: 0; left: 0; right: 0; z-index: 15; max-width: 480px; margin: 0 auto; background: var(--bg); padding: calc(var(--sa-top) + 18px) 16px calc(var(--sa-bottom) + 14px); display: flex; flex-direction: column; gap: 14px; transform: translateX(105%); transition: transform .32s cubic-bezier(.2, .8, .2, 1); overflow: hidden; }
-.page.on { transform: none; }
+/* Send (a sheet): title row, the big amount, the switch, the slide */
+.sheet .center { padding: 22px 0 18px; }
 .page-title { position: relative; font-family: var(--rounded); font-size: 19px; font-weight: 700; text-align: center; }
 .page-back { position: absolute; left: -4px; top: 50%; transform: translateY(-50%); width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-size: 24px; color: var(--ink); }
 .page-back:active { background: var(--or-soft); }
 .to-addr { color: var(--ink); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 15px; font-weight: 500; }
-.page-bottom { margin-top: auto; }
+.page-bottom { margin-top: 6px; }
 .field-wrap { position: relative; }
 .field { background: var(--surface); border: 0; border-radius: 14px; padding: 0 52px 0 16px; height: 52px; width: 100%; outline: none; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 15px; box-shadow: 0 0 0 1px var(--line) inset; }
 .field:focus { box-shadow: 0 0 0 2px var(--or) inset; }
