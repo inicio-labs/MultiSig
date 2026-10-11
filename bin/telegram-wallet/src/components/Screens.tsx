@@ -216,8 +216,19 @@ function WalletHome() {
 
         {phase.kind === 'error' && (
           <div className="notice">
-            <span>Your wallet couldn’t start. <span className="hint">{phase.message}</span></span>
-            <button className="btn soft" onClick={() => void engine.start()}>Try again</button>
+            <span>Your wallet couldn’t start. <span className="hint selectable">{phase.message}</span></span>
+            <div className="actions">
+              <button
+                className="btn soft"
+                onClick={() => void navigator.clipboard.writeText(phase.message).then(
+                  () => toast('Details copied', 'copy'),
+                  () => toast('Copy is not available here', 'alert'),
+                )}
+              >
+                Copy details
+              </button>
+              <button className="btn soft" onClick={() => void engine.start()}>Try again</button>
+            </div>
           </div>
         )}
         {snapshot.notice && !busy && <div className="notice hint">{snapshot.notice}</div>}

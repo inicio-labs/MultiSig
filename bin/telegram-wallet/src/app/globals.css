@@ -98,6 +98,7 @@ svg.icon { width: 1em; height: 1em; flex: none; }
 .others { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: -4px; }
 .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .notice { background: var(--surface); border-radius: 16px; padding: 14px; display: grid; gap: 10px; font-size: 14px; }
+.selectable { -webkit-user-select: text; user-select: text; word-break: break-word; }
 
 /* The card: Gram's, in Miden orange. --tx/--ty are the tilt (-1…1). */
 .card-scene { perspective: 900px; }

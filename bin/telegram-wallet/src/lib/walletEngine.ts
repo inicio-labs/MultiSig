@@ -122,6 +122,14 @@ export interface WalletSnapshot {
 
 const LAST_ACCOUNT_KEY = 'miden-tg-wallet:last-account';
 
+/** What start() was doing, for the error a user can send us. */
+const START_STEP: Partial<Record<WalletPhase['kind'], string>> = {
+  starting: 'starting the Miden client',
+  finding: 'looking up the account on Guardian',
+  creating: 'creating the account',
+  registering: 'registering the account on the network',
+};
+
 /**
  * The wallet's account lifecycle and transactions, without any UI.
  *
@@ -214,7 +222,8 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
           .catch((error) => console.warn('An earlier private payment is not delivered yet', error));
       }
     } catch (error) {
-      this.update({ phase: { kind: 'error', message: formatError(error, 'The wallet could not start') } });
+      const during = START_STEP[this.snapshot.phase.kind] ?? 'starting';
+      this.update({ phase: { kind: 'error', message: formatError(error, `The wallet could not start (while ${during})`) } });
     }
   }
 
