@@ -7,6 +7,7 @@ import type { Signer } from '@openzeppelin/miden-multisig-client';
 import type { Hex } from 'viem';
 import { formatError } from '@/lib/errors';
 import { createPrivySigner } from '@/lib/privySigner';
+import { reportDiag } from '@/lib/remoteDiag';
 import { storage } from '@/lib/storage';
 import { insideTelegram, prepareTelegramRetry } from '@/lib/telegram';
 import { Fatal, Splash } from './Splash';
@@ -50,7 +51,10 @@ export function AuthGate({ onRetry, children }: { onRetry(): void; children(sign
   useEffect(() => {
     if (!ready || !authenticated || !user || !walletsReady || embedded || linked || creatingFor.current === user.id) return;
     creatingFor.current = user.id;
-    createWallet().catch((e: unknown) => setError(`Could not create your wallet: ${formatError(e)}`));
+    createWallet().catch((e: unknown) => {
+      reportDiag('auth.createWallet', e);
+      setError(`Could not create your wallet: ${formatError(e)}`);
+    });
   }, [ready, authenticated, user, walletsReady, embedded, linked, createWallet]);
 
   const address = embedded?.address;
@@ -71,6 +75,7 @@ export function AuthGate({ onRetry, children }: { onRetry(): void; children(sign
       storage.set(cacheKey, result.publicKey);
       if (!cancelled) setSigner({ address: wallet.address, signer: result.signer });
     })().catch((e: unknown) => {
+      reportDiag('auth.signer', e);
       if (!cancelled) setError(`Could not use your wallet key: ${formatError(e)}`);
     });
     return () => { cancelled = true; };

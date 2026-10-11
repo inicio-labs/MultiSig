@@ -19,6 +19,7 @@ import {
   registerAccountOnNode,
 } from '@/lib/multisigApi';
 import { createPrivateNotes } from '@/lib/privateSend';
+import { reportDiag } from '@/lib/remoteDiag';
 import { storage } from '@/lib/storage';
 import { WalletEngine, type WalletSnapshot } from '@/lib/walletEngine';
 
@@ -69,6 +70,9 @@ export function WalletProvider({ signer, children }: { signer: Signer; children:
   useEffect(() => {
     void engine.start();
   }, [engine]);
+  useEffect(() => {
+    if (snapshot.phase.kind === 'error') reportDiag('wallet.start', snapshot.phase.message);
+  }, [snapshot.phase]);
 
   const ready = snapshot.phase.kind === 'ready';
   useEffect(() => {

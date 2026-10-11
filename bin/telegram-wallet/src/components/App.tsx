@@ -10,6 +10,7 @@ import { Screens } from './Screens';
 import { Fatal, Splash } from './Splash';
 import { DevSignerGate } from './DevSignerGate';
 import { DEV_LOCAL_SIGNER } from '@/lib/devSigner';
+import { installRemoteDiag } from '@/lib/remoteDiag';
 
 export default function App() {
   const [bridgeReady, setBridgeReady] = useState(false);
@@ -17,6 +18,7 @@ export default function App() {
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
+    installRemoteDiag();
     void initializeTelegramBridge().then(() => {
       setupTelegramChrome();
       setBridgeReady(true);
