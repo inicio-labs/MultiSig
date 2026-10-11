@@ -223,10 +223,13 @@ export function viewportHeight(): number {
 export function onViewportChange(onChange: () => void): () => void {
   const app = webApp();
   app?.onEvent?.('viewportChanged', onChange);
+  // iOS scrolls the visible area when the keyboard opens, without resizing it.
   window.visualViewport?.addEventListener('resize', onChange);
+  window.visualViewport?.addEventListener('scroll', onChange);
   return () => {
     app?.offEvent?.('viewportChanged', onChange);
     window.visualViewport?.removeEventListener('resize', onChange);
+    window.visualViewport?.removeEventListener('scroll', onChange);
   };
 }
 

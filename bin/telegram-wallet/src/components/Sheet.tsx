@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import { useKeyboardFrame } from '@/hooks/useViewportHeight';
-import { haptic, useTelegramBackButton } from '@/lib/telegram';
+import { reportDiag } from '@/lib/remoteDiag';
+import { haptic, useTelegramBackButton, viewportHeight } from '@/lib/telegram';
 
 // A downward drag past this many pixels dismisses the sheet.
 const DISMISS_PX = 90;
@@ -37,6 +38,24 @@ export function Sheet({ open, onClose, onBack, locked = false, aboveKeyboard = f
     return () => clearTimeout(timer);
   }, [open]);
 
+  const onKeyboard = aboveKeyboard && keyboard.inset > 0;
+  // Test phones only (remoteDiag): where the keyboard and the sheet ended up.
+  useEffect(() => {
+    if (!open || !aboveKeyboard) return;
+    const timer = setTimeout(() => {
+      const vv = window.visualViewport;
+      const rect = sheet.current?.getBoundingClientRect();
+      reportDiag('keyboard', JSON.stringify({
+        inset: keyboard.inset, visible: keyboard.visible, innerHeight: window.innerHeight,
+        clientHeight: document.documentElement.clientHeight, vvHeight: vv?.height, vvOffsetTop: vv?.offsetTop,
+        scrollY: window.scrollY, telegramViewport: viewportHeight(),
+        sheetTop: rect?.top, sheetBottom: rect?.bottom, sheetScroll: sheet.current?.scrollTop,
+        sheetContent: sheet.current?.scrollHeight, focused: (document.activeElement as HTMLElement | null)?.className,
+      }));
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [open, aboveKeyboard, keyboard.inset, keyboard.visible]);
+
   const down = (e: PointerEvent) => {
     if (locked) return;
     startY.current = e.clientY;
@@ -64,13 +83,11 @@ export function Sheet({ open, onClose, onBack, locked = false, aboveKeyboard = f
       <div className={`scrim${open ? ' on' : ''}`} onClick={() => !locked && onClose()} />
       <div
         ref={sheet}
-        className={`sheet${open ? ' on' : ''}`}
+        className={`sheet${open ? ' on' : ''}${onKeyboard ? ' on-keyboard' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-hidden={!open}
-        style={aboveKeyboard && keyboard.inset > 0
-          ? { bottom: keyboard.inset, maxHeight: keyboard.visible - 12, paddingBottom: 14 }
-          : undefined}
+        style={onKeyboard ? { bottom: keyboard.inset, maxHeight: keyboard.visible - 8, paddingBottom: 12 } : undefined}
       >
         <div className="grab" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
           <div className="handle" />
