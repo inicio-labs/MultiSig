@@ -56,7 +56,11 @@ function fakeMultisig(log: string[], opts: FakeOptions = {}) {
       fail('createP2idProposal');
       return { id: 'p-send', nonce: ++proposalNonce };
     },
-    signProposal: async (id: string) => { log.push(`sign:${id}`); },
+    signProposal: async (id: string) => {
+      log.push(`sign:${id}`);
+      return { id, nonce: proposalNonce, status: 'ready', verification: { status: 'verified' } };
+    },
+    getStoreAccount: async () => { log.push('storeAccount'); return ms.account; },
     syncProposals: async () => [
       { id: 'p-consume', nonce: proposalNonce, status: 'ready', verification: { status: 'verified' } },
       { id: 'p-send', nonce: proposalNonce, status: 'ready', verification: { status: 'verified' } },
@@ -70,6 +74,8 @@ function fakeMultisig(log: string[], opts: FakeOptions = {}) {
     },
     deltaHistory: async () => ({ entries: [] }),
     setNotes: (next: Array<typeof funding>) => { notes = next; },
+    /** Another device moved the account. */
+    bumpNonce: () => { nonce += 1n; },
   };
   return ms;
 }
@@ -105,6 +111,7 @@ function setup(opts: FakeOptions & {
       record: (_ms, proposal) => { log.push(`record:${proposal.id}`); },
       deliver: async (_ms, proposal) => { log.push(`deliver:${proposal.id}`); },
       forget: (proposal) => { log.push(`forget:${proposal.id}`); },
+      hasPending: () => false,
       ...opts.privateNotes,
     }),
     release,
@@ -218,9 +225,32 @@ describe('WalletEngine transactions', () => {
       if (step && steps.at(-1) !== step) steps.push(step);
     });
     await engine.send(RECIPIENT, TOKEN, 25n);
-    expect(log).toEqual(['ensureDelivered', 'syncChain', `p2id:${RECIPIENT}:${TOKEN}:25`, 'sign:p-send', 'execute:p-send', 'sync', 'syncState']);
+    // The new balance comes from the local account; the refresh follows in the background.
+    const shown = log.indexOf('storeAccount') + 1;
+    expect(log.slice(0, shown)).toEqual(['syncChain', `p2id:${RECIPIENT}:${TOKEN}:25`, 'sign:p-send', 'execute:p-send', 'storeAccount']);
     expect(steps).toEqual(['preparing', 'signing', 'proving', 'syncing']);
     expect(engine.getSnapshot().activity).toBeNull();
+    await engine.settled();
+    expect(log.slice(shown)).toEqual(['sync', 'syncState']);
+  });
+
+  it('checks earlier private payments only when the account moved since the last check', async () => {
+    const { engine, log, ms } = await ready();
+    await engine.send(RECIPIENT, TOKEN, 1n);
+    await engine.send(RECIPIENT, TOKEN, 1n);
+    expect(log.filter((entry) => entry === 'ensureDelivered')).toHaveLength(0);
+    ms.bumpNonce();
+    await engine.settled();
+    log.length = 0;
+    await engine.send(RECIPIENT, TOKEN, 1n);
+    expect(log[0]).toBe('ensureDelivered');
+  });
+
+  it('takes the collected notes off the list as soon as the claim executes', async () => {
+    const { engine } = await ready({ notes: [funding] });
+    expect(engine.getSnapshot().incoming).toEqual([funding]);
+    await engine.claimAll();
+    expect(engine.getSnapshot().incoming).toEqual([]);
   });
 
   it('releases the Guardian lock when an execute fails after Guardian accepted it', async () => {
@@ -241,12 +271,14 @@ describe('WalletEngine transactions', () => {
     expect(release).toHaveBeenCalledTimes(1);
   });
 
-  it('treats a refresh failure after a successful execute as success', async () => {
+  it('treats a failure to read the new balance after a successful execute as success', async () => {
     const { engine, ms, release } = await ready();
+    ms.getStoreAccount = async () => { throw new Error('store busy'); };
     ms.syncState = async () => { throw new Error('guardian unavailable'); };
     await engine.send(RECIPIENT, TOKEN, 1n);
     expect(engine.getSnapshot().notice).toMatch(/balance may take a moment/);
     expect(release).not.toHaveBeenCalled();
+    await engine.settled();
   });
 
   it('runs one transaction at a time', async () => {
@@ -275,9 +307,9 @@ describe('WalletEngine transactions', () => {
       if (step && steps.at(-1) !== step) steps.push(step);
     });
     await engine.send(RECIPIENT, TOKEN, 7n, { private: true });
-    expect(log).toEqual([
-      'ensureDelivered', 'syncChain', `p2id:${RECIPIENT}:${TOKEN}:7:private`, 'sign:p-send', 'record:p-send',
-      'execute:p-send', 'deliver:p-send', 'sync', 'syncState',
+    expect(log.slice(0, log.indexOf('storeAccount') + 1)).toEqual([
+      'syncChain', `p2id:${RECIPIENT}:${TOKEN}:7:private`, 'sign:p-send', 'record:p-send',
+      'execute:p-send', 'deliver:p-send', 'storeAccount',
     ]);
     expect(steps).toEqual(['preparing', 'signing', 'proving', 'delivering', 'syncing']);
   });

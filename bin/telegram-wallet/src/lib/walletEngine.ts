@@ -43,6 +43,8 @@ export interface WalletEngineDeps<C extends WalletMidenClient, M extends WalletM
   loadAccount(multisigClient: M, accountId: string, signer: Signer, hooks: MultisigHooks): Promise<Multisig>;
   registerOnNode(midenClient: C, accountId: string): Promise<void>;
   registerNoteTag(midenClient: C, accountId: string): Promise<void>;
+  /** How long each step of a transaction took (diagnostics). */
+  trace?(label: string, ms: number): void;
   /** Private sends: note delivery and the check before each transaction. */
   createPrivateNotes?(midenClient: C): PrivateNotes;
   /** Remembers the account this key last used, to prefer it if the key has several. */
@@ -153,6 +155,12 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
   private readonly listeners = new Set<() => void>();
   private midenClient: C | null = null;
   private privateNotes: PrivateNotes | null = null;
+  /**
+   * The account nonce at which the last private-payment check passed. While
+   * the nonce has not moved and nothing is waiting to be delivered, there is
+   * nothing new to check: skips two Guardian calls (and their signatures).
+   */
+  private deliveryCheckedAt: bigint | null = null;
   private multisig: Multisig | null = null;
   private busy = false;
   private starting: Promise<void> | null = null;
@@ -218,7 +226,7 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
       // A private payment whose delivery the app did not finish (closed meanwhile).
       const privateNotes = this.privateNotes;
       if (privateNotes) {
-        void this.exclusive(() => privateNotes.ensureDelivered(multisig))
+        void this.exclusive(() => this.checkDeliveries(multisig, privateNotes))
           .catch((error) => console.warn('An earlier private payment is not delivered yet', error));
       }
     } catch (error) {
@@ -315,22 +323,48 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
   async claimAll(): Promise<void> {
     const ids = this.snapshot.incoming.map((note) => note.id);
     if (ids.length === 0) return;
-    await this.runTransaction('claim', (ms) => ms.createConsumeNotesProposal(ids));
+    await this.runTransaction('claim', (ms) => ms.createConsumeNotesProposal(ids), false, ids);
   }
 
   private async runTransaction(
     kind: WalletActivity['kind'],
     create: (ms: Multisig) => Promise<Proposal>,
     isPrivate = false,
+    consumes: string[] = [],
   ): Promise<void> {
     const { midenClient, multisig } = this;
     if (!midenClient || !multisig) throw new Error('The wallet is not ready yet.');
     if (this.busy) throw new Error('Another transaction is still in progress.');
     this.busy = true;
     try {
-      await this.exclusive(() => this.transact(midenClient, multisig, kind, create, isPrivate));
+      await this.exclusive(() => this.transact(midenClient, multisig, kind, create, isPrivate, consumes));
     } finally {
       this.busy = false;
+    }
+    // The money is already shown (from the local account, below); bring
+    // history, Guardian's view and anything new up to date in the background.
+    void this.refresh().catch((error) => console.warn('Refresh after the transaction failed', error));
+  }
+
+  /** Every queued refresh and transaction has finished. */
+  settled(): Promise<void> {
+    return this.queue.then(() => undefined);
+  }
+
+  private async checkDeliveries(multisig: Multisig, privateNotes: PrivateNotes): Promise<void> {
+    const nonce = multisig.account.nonce().asInt();
+    if (this.deliveryCheckedAt === nonce && !privateNotes.hasPending(multisig.accountId)) return;
+    await privateNotes.ensureDelivered(multisig);
+    this.deliveryCheckedAt = nonce;
+  }
+
+  /** Run one step of a transaction, reporting how long it took. */
+  private async timed<T>(label: string, work: () => Promise<T>): Promise<T> {
+    const started = performance.now();
+    try {
+      return await work();
+    } finally {
+      this.deps.trace?.(label, Math.round(performance.now() - started));
     }
   }
 
@@ -340,6 +374,7 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
     kind: WalletActivity['kind'],
     create: (ms: Multisig) => Promise<Proposal>,
     isPrivate: boolean,
+    consumes: string[],
   ): Promise<void> {
     const privateNotes = this.privateNotes;
     const step = (s: ActivityStep) => this.update({ activity: { kind, step: s } });
@@ -353,18 +388,22 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
       // An earlier private payment must reach its recipient before the account
       // moves on (privateSend.ts); this delivers it, or refuses.
       if (privateNotes) {
-        await privateNotes.ensureDelivered(multisig).catch((error: unknown) => {
+        await this.timed('check deliveries', () => this.checkDeliveries(multisig, privateNotes)).catch((error: unknown) => {
           throw new Error(`your last private payment hasn't reached its recipient yet (${formatError(error)}). Try again in a minute.`);
         });
       }
       // Building a proposal executes the transaction against foreign state (the
       // fee faucet) at the store's sync height, which the node prunes after
       // about 50 blocks: sync to the tip first.
-      await midenClient.syncChain();
-      proposal = await create(multisig);
+      await this.timed('sync to tip', () => midenClient.syncChain());
+      proposal = await this.timed('build proposal', () => create(multisig));
       step('signing');
-      await multisig.signProposal(proposal.id);
-      const fresh = (await multisig.syncProposals()).find((p) => p.id === proposal!.id);
+      // signProposal re-verifies the proposal and returns it signed; read it
+      // back from Guardian only when that copy is not ready yet.
+      const signed = await this.timed('sign', () => multisig.signProposal(proposal!.id));
+      const fresh = signed && isProposalActionable(signed)
+        ? signed
+        : (await this.timed('re-read proposals', () => multisig.syncProposals())).find((p) => p.id === proposal!.id);
       if (!fresh || !isProposalActionable(fresh)) {
         throw new Error(fresh?.verification.status === 'failed'
           ? `the proposal did not verify: ${fresh.verification.message}`
@@ -372,20 +411,22 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
       }
       if (isPrivate) privateNotes!.record(multisig, fresh);
       step('proving');
-      await multisig.executeProposal(proposal.id);
+      await this.timed('execute, prove, submit', () => multisig.executeProposal(proposal!.id));
       executed = true;
+      let delivered = true;
       if (isPrivate) {
         step('delivering');
-        await privateNotes!.deliver(multisig, fresh).catch((error: unknown) => {
+        await this.timed('deliver privately', () => privateNotes!.deliver(multisig, fresh)).catch((error: unknown) => {
           // Sent: the note is recorded and the next transaction (or start)
           // delivers it once it has committed.
+          delivered = false;
           console.warn('Private delivery is not done yet', error);
           this.update({ notice: 'Sent privately. Delivery to the recipient finishes in a moment; keep the app open.' });
         });
       }
       step('syncing');
-      await this.syncAccount().catch((error) => {
-        console.warn('Refresh after the transaction failed', error);
+      await this.timed('show new balance', () => this.showLocalResult(multisig, consumes, delivered)).catch((error) => {
+        console.warn('Reading the new balance failed', error);
         this.update({ notice: 'Done. The balance may take a moment to update.' });
       });
     } catch (error) {
@@ -407,6 +448,24 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
       clearExecutionPushed(multisig.accountId);
       this.update({ activity: null });
     }
+  }
+
+  /**
+   * Right after an execute: the new balance from this device's copy of the
+   * account (the execute applied it locally; no network), and the collected
+   * notes off the list. The full refresh follows in the background.
+   */
+  private async showLocalResult(multisig: Multisig, consumes: string[], delivered: boolean): Promise<void> {
+    const account = await multisig.getStoreAccount();
+    const token = this.snapshot.feeFaucetId;
+    const balances = AccountInspector.fromAccount(account).vaultBalances
+      .filter((b) => b.amount > 0n && (!token || b.faucetId.toLowerCase() === token));
+    const gone = new Set(consumes);
+    if (this.multisig !== multisig) return;
+    this.update({ balances, incoming: this.snapshot.incoming.filter((note) => !gone.has(note.id)) });
+    // Our own transaction is the latest: its private notes (if any) are
+    // delivered, so the next transaction need not look again.
+    if (delivered) this.deliveryCheckedAt = account.nonce().asInt();
   }
 
   private async releaseLock(multisig: Multisig, nonce: number): Promise<ReleaseOutcome | 'failed'> {

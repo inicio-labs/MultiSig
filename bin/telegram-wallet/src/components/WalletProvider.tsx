@@ -60,6 +60,11 @@ export function WalletProvider({ signer, children }: { signer: Signer; children:
     registerNoteTag: registerAccountNoteTag,
     createPrivateNotes,
     storage,
+    trace: (label, ms) => {
+      if (process.env.NODE_ENV === 'production' && process.env.NEXT_PUBLIC_REMOTE_DIAGNOSTICS !== '1') return;
+      console.info(`[wallet] ${label}: ${ms} ms`);
+      reportDiag('timing', `${label}: ${ms} ms`);
+    },
   }), [signer]);
   const snapshot = useSyncExternalStore(engine.subscribe, engine.getSnapshot, engine.getSnapshot);
   // Development builds: the engine on window, for inspecting state in the console.

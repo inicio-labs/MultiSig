@@ -8,21 +8,14 @@ import { formatError } from '@/lib/errors';
 import { toHexAccountId } from '@/lib/helpers';
 import { canScanQr, haptic, insideTelegram, scanQr } from '@/lib/telegram';
 import { formatTokenAmount, parseTokenAmount } from '@/lib/tokenAmounts';
-import type { ActivityStep } from '@/lib/walletEngine';
 import { Icon } from './Icon';
+import { ProgressSteps } from './ProgressSteps';
 import { RollingNumber } from './RollingNumber';
 import { Sheet } from './Sheet';
 import { SlideToSend } from './SlideToSend';
 import { TokenSymbol } from './TokenAmount';
 import { useWallet } from './WalletProvider';
 
-const STEP_LABEL: Record<ActivityStep, string> = {
-  preparing: 'Getting ready',
-  signing: 'Signing',
-  proving: 'Sending to the network',
-  delivering: 'Delivering privately',
-  syncing: 'Almost done',
-};
 
 type Step = 'to' | 'amount' | 'sending' | 'sent';
 
@@ -266,10 +259,9 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
       )}
 
       {step === 'sending' && (
-        <div className="center">
-          <div className="spinner" aria-hidden />
+        <div className="sending">
           <div className="page-title">Sending {sent}</div>
-          <div className="sub">{STEP_LABEL[snapshot.activity?.step ?? 'preparing']}…</div>
+          <ProgressSteps kind="send" isPrivate={isPrivate} step={snapshot.activity?.kind === 'send' ? snapshot.activity.step : 'preparing'} />
           {snapshot.notice && <div className="sub">{snapshot.notice}</div>}
         </div>
       )}

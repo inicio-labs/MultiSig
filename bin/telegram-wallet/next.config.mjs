@@ -14,6 +14,9 @@ const securityHeaders = [
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  // A second local copy (e.g. the development signer beside a production
+  // build) needs its own build folder: two Next processes must not share one.
+  distDir: process.env.NEXT_DIST_DIR || '.next',
   // This app has its own lockfile inside the MultiSig repo.
   outputFileTracingRoot: __dirname,
   // `next dev` behind a tunnel (Telegram needs https): allow its host to load dev assets.

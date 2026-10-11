@@ -22,6 +22,8 @@ import { ensureLatestPrivateNotesDelivered } from './privateNoteGuard';
 export interface PrivateNotes {
   /** Deliver what earlier private sends left undelivered; throws while one cannot be delivered yet. */
   ensureDelivered(multisig: Multisig): Promise<void>;
+  /** A private send made on this device is still waiting to be delivered. */
+  hasPending(accountId: string): boolean;
   /** Before executing a private send: keep its notes, so a committed note is always delivered. */
   record(multisig: Multisig, proposal: Proposal): void;
   /** After executing: wait for the notes to commit, then deliver them. */
@@ -94,6 +96,8 @@ export function createPrivateNotes(midenClient: MidenClient): PrivateNotes {
     },
 
     deliver: (multisig, proposal) => deliverRecorded(multisig.accountId, DELIVER_AFTER_SEND_MS, proposal.id),
+
+    hasPending: (accountId) => pendingDeliveries(accountId).length > 0,
 
     forget: (proposal) => removePendingDelivery(proposal.id),
   };

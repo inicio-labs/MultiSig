@@ -7,6 +7,7 @@ import { formatError } from '@/lib/errors';
 import { payLink } from '@/lib/payLink';
 import { haptic, shareLink } from '@/lib/telegram';
 import { Icon } from './Icon';
+import { ProgressSteps } from './ProgressSteps';
 import { Sheet } from './Sheet';
 import { TokenAmount } from './TokenAmount';
 import { useToast } from './Toast';
@@ -107,9 +108,11 @@ export function ReceiveSheet({ open, onClose, hidden, onCollected }: {
             )))}
           </div>
           <p className="error">{error}</p>
-          <button className="btn" onClick={collect} disabled={collecting || snapshot.activity !== null}>
-            {collecting ? 'Collecting…' : 'Collect'}
-          </button>
+          {collecting ? (
+            <ProgressSteps kind="claim" step={snapshot.activity?.kind === 'claim' ? snapshot.activity.step : 'preparing'} />
+          ) : (
+            <button className="btn" onClick={collect} disabled={snapshot.activity !== null}>Collect</button>
+          )}
         </>
       ) : (
         <div className="sub" style={{ padding: '4px 12px 8px' }}>
