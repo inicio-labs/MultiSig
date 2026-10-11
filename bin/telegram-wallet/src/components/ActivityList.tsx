@@ -29,10 +29,10 @@ export function ActivityList({ items }: { items: ActivityItem[] }) {
     <div className="list">
       {items.map((item) => (
         <div key={item.id} className="row">
-          <span className="ico"><Icon name={item.welcome ? 'gift' : item.direction === 'in' ? 'receive' : 'send'} /></span>
+          <span className="ico"><Icon name={item.direction === 'in' ? 'receive' : 'send'} /></span>
           <div>
-            <div className="t">{item.welcome ? 'Welcome gift' : item.direction === 'in' ? 'Received' : 'Sent'}</div>
-            <div className="s">{item.welcome ? when(item.timestamp) : who(item)}</div>
+            <div className="t">{item.direction === 'in' ? 'Received' : 'Sent'}</div>
+            <div className="s">{who(item)}</div>
           </div>
           <span className={`v${item.direction === 'in' ? ' in' : ''}`}>
             {item.direction === 'in' ? '+' : '−'}

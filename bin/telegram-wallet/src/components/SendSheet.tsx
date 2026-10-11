@@ -14,7 +14,6 @@ import { Keypad } from './Keypad';
 import { Sheet } from './Sheet';
 import { SlideToSend } from './SlideToSend';
 import { TokenSymbol } from './TokenAmount';
-import { useToast } from './Toast';
 import { useWallet } from './WalletProvider';
 
 const STEP_LABEL: Record<ActivityStep, string> = {
@@ -50,7 +49,6 @@ function parseRecipient(input: string, ownId: string | null): { hex: string; add
 
 export function SendSheet({ open, onClose, prefill }: { open: boolean; onClose(): void; prefill?: string | null }) {
   const { engine, snapshot } = useWallet();
-  const toast = useToast();
   const [step, setStep] = useState<Step>('to');
   const [input, setInput] = useState('');
   const [recipient, setRecipient] = useState<{ hex: string; address: string } | null>(null);
@@ -108,12 +106,15 @@ export function SendSheet({ open, onClose, prefill }: { open: boolean; onClose()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, prefill]);
 
-  const paste = async () => {
+  // A complete, valid address moves on by itself, typed or pasted.
+  const typed = (value: string) => {
+    setInput(value);
+    setError(null);
     try {
-      const text = (await navigator.clipboard.readText()).trim();
-      if (text) return chooseRecipient(text);
-    } catch { /* not allowed in this webview */ }
-    toast('Long-press the field to paste', 'paste');
+      setRecipient(parseRecipient(value, snapshot.accountId));
+      setStep('amount');
+      haptic('light');
+    } catch { /* not a full address yet */ }
   };
 
   const scan = async () => {
@@ -167,21 +168,20 @@ export function SendSheet({ open, onClose, prefill }: { open: boolean; onClose()
       {step === 'to' && (
         <>
           <div className="sh-t">Send to</div>
-          <input
-            className="field"
-            placeholder="Miden address"
-            value={input}
-            autoComplete="off"
-            autoCapitalize="off"
-            spellCheck={false}
-            onChange={(e) => { setInput(e.target.value); setError(null); }}
-            onKeyDown={(e) => e.key === 'Enter' && chooseRecipient(input)}
-          />
-          <div className="chips">
-            <button className="chip" onClick={paste}><Icon name="paste" />Paste</button>
-            {canScanQr()
-              ? <button className="chip" onClick={scan}><Icon name="scan" />Scan QR</button>
-              : <button className="chip" onClick={() => chooseRecipient(input)}><Icon name="arrow" />Next</button>}
+          <div className="field-wrap">
+            <input
+              className="field"
+              placeholder="Miden address"
+              value={input}
+              autoComplete="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              onChange={(e) => typed(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && chooseRecipient(input)}
+            />
+            {canScanQr() && (
+              <button className="field-icon" onClick={scan} aria-label="Scan a QR code"><Icon name="scan" /></button>
+            )}
           </div>
           {recents.length > 0 && (
             <>
@@ -197,7 +197,6 @@ export function SendSheet({ open, onClose, prefill }: { open: boolean; onClose()
             </>
           )}
           <p className="error">{error}</p>
-          <button className="btn" onClick={() => chooseRecipient(input)}>Continue</button>
         </>
       )}
 

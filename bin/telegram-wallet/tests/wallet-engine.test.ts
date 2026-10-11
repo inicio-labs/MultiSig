@@ -73,7 +73,7 @@ function fakeMultisig(log: string[], opts: FakeOptions = {}) {
   return ms;
 }
 
-function setup(opts: FakeOptions & { existing?: Array<{ accountId: string; updatedAt: string }>; remembered?: string; fundingArrives?: boolean } = {}) {
+function setup(opts: FakeOptions & { existing?: Array<{ accountId: string; updatedAt: string }>; remembered?: string } = {}) {
   const log: string[] = [];
   const ms = fakeMultisig(log, opts);
   const midenClient: WalletMidenClient = {
@@ -95,12 +95,6 @@ function setup(opts: FakeOptions & { existing?: Array<{ accountId: string; updat
     registerOnNode: async () => { log.push('registerOnNode'); },
     registerNoteTag: async () => { log.push('registerNoteTag'); },
     storage: { get: (k) => store.get(k) ?? null, set: (k, v) => { store.set(k, v); } },
-    waitForFunding: async ({ check }) => {
-      log.push('waitForFunding');
-      if (opts.fundingArrives === false) throw new Error('The funding note has not arrived after 10 minutes.');
-      ms.setNotes([funding]);
-      return (await check()) ? 'found' : 'stopped';
-    },
     release,
   };
   const engine = new WalletEngine(deps);
@@ -113,20 +107,24 @@ function setup(opts: FakeOptions & { existing?: Array<{ accountId: string; updat
 }
 
 describe('WalletEngine.start', () => {
-  it('creates, registers and funds a new account, then claims the funding note to deploy it', async () => {
+  it('creates a new account, registers it on Guardian and the node, and is ready without transacting', async () => {
     const { engine, log, phases, store } = setup();
     await engine.start();
 
     expect(engine.getSnapshot().phase).toEqual({ kind: 'ready' });
-    expect(phases).toEqual(['starting', 'finding', 'creating', 'funding', 'activating', 'ready']);
+    expect(phases).toEqual(['starting', 'finding', 'creating', 'registering', 'ready']);
     expect(log).toEqual([
-      'startMidenClient', 'createAccount', 'registerOnGuardian', 'registerNoteTag', 'sync', 'syncState',
-      'registerOnNode', 'waitForFunding', 'sync',
-      'syncChain', 'consume:0xnote-funding', 'sign:p-consume', 'execute:p-consume', 'sync', 'syncState',
+      'startMidenClient', 'createAccount', 'registerOnGuardian', 'registerNoteTag', 'sync', 'syncState', 'registerOnNode',
     ]);
     expect(store.get('miden-tg-wallet:last-account')).toBe(engine.getSnapshot().accountId);
     expect(engine.getSnapshot().balances).toEqual([{ faucetId: FEE, amount: 5n }]);
-    expect(engine.getSnapshot().welcome).toEqual({ faucetId: FEE, amount: 1_000_000n });
+  });
+
+  it('leaves what the network sends a new account as an ordinary incoming payment', async () => {
+    const { engine, log } = setup({ notes: [funding] });
+    await engine.start();
+    expect(engine.getSnapshot().incoming).toEqual([funding]);
+    expect(log.some((entry) => entry.startsWith('consume:'))).toBe(false);
   });
 
   it('shares one start between concurrent calls, so one key never creates two accounts', async () => {
@@ -143,6 +141,13 @@ describe('WalletEngine.start', () => {
     expect(log).toEqual(['startMidenClient', 'load:0xold', 'registerNoteTag', 'sync', 'syncState']);
   });
 
+  it('registers a never-used existing account again (its first start may have been interrupted)', async () => {
+    const { engine, log } = setup({ nonce: 0n, existing: [{ accountId: '0xold', updatedAt: '2026-10-01T00:00:00Z' }] });
+    await engine.start();
+    expect(log).toContain('registerOnNode');
+    expect(engine.getSnapshot().phase).toEqual({ kind: 'ready' });
+  });
+
   it('prefers the account last used on this device, else the latest updated one', async () => {
     const existing = [
       { accountId: '0xA', updatedAt: '2026-10-01T00:00:00Z' },
@@ -157,22 +162,18 @@ describe('WalletEngine.start', () => {
     expect(remembered.log).toContain('load:0xA');
   });
 
-  it('claims a never-used account whose funding note already arrived, without registering again', async () => {
-    const { engine, log } = setup({ nonce: 0n, notes: [funding], existing: [{ accountId: '0xold', updatedAt: '2026-10-01T00:00:00Z' }] });
+  it('reports a failed start, and a retry resumes the same account', async () => {
+    const { engine, log, ms } = setup();
+    const register = vi.fn().mockRejectedValueOnce(new Error('node unavailable')).mockResolvedValue(undefined);
+    (engine as unknown as { deps: { registerOnNode: typeof register } }).deps.registerOnNode = register;
+    await engine.start();
+    expect(engine.getSnapshot().phase).toMatchObject({ kind: 'error', message: expect.stringContaining('node unavailable') });
+
     await engine.start();
     expect(engine.getSnapshot().phase).toEqual({ kind: 'ready' });
-    expect(log).not.toContain('registerOnNode');
-    expect(log).toContain('execute:p-consume');
-  });
-
-  it('reports a funding timeout, and a retry resumes the same account', async () => {
-    const { engine, log } = setup({ fundingArrives: false });
-    await engine.start();
-    expect(engine.getSnapshot().phase).toMatchObject({ kind: 'error', message: expect.stringContaining('funding note has not arrived') });
-
-    await engine.start();
     expect(log.filter((entry) => entry === 'createAccount')).toHaveLength(1);
     expect(log.filter((entry) => entry === 'startMidenClient')).toHaveLength(1);
+    expect(ms.accountId).toBe(engine.getSnapshot().accountId);
   });
 });
 
@@ -256,20 +257,12 @@ describe('toActivity', () => {
   const entries = [
     { nonce: 1791637467838, status: 'canonical' as const, timestamp: 't3', inputNotes: [], outputNotes: [note('n3', '10', { recipient: RECIPIENT }), fee], decodeWarnings: [] },
     { nonce: 1791637304354, status: 'canonical' as const, timestamp: 't2', inputNotes: [note('n2', '5', { sender: RECIPIENT })], outputNotes: [fee], decodeWarnings: [] },
-    { nonce: 1791637244235, status: 'canonical' as const, timestamp: 't1', inputNotes: [note('n1', '1000000', { sender: FEE })], outputNotes: [fee], decodeWarnings: [] },
   ];
-  const view = (items: ReturnType<typeof toActivity>) =>
-    items.map(({ direction, amount, counterparty, welcome }) => ({ direction, amount, counterparty, welcome }));
 
-  it('lists payments per transaction without fee notes, the first claim as the welcome gift', () => {
-    expect(view(toActivity(entries, { complete: true }))).toEqual([
-      { direction: 'out', amount: 10n, counterparty: RECIPIENT, welcome: false },
-      { direction: 'in', amount: 5n, counterparty: RECIPIENT, welcome: false },
-      { direction: 'in', amount: 1_000_000n, counterparty: FEE, welcome: true },
+  it('lists the payments of each transaction, without its fee note', () => {
+    expect(toActivity(entries).map(({ direction, amount, counterparty }) => ({ direction, amount, counterparty }))).toEqual([
+      { direction: 'out', amount: 10n, counterparty: RECIPIENT },
+      { direction: 'in', amount: 5n, counterparty: RECIPIENT },
     ]);
-  });
-
-  it('marks no welcome gift on a page that does not reach the first transaction', () => {
-    expect(toActivity(entries, { complete: false }).some((item) => item.welcome)).toBe(false);
   });
 });

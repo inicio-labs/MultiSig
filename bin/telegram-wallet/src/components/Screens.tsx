@@ -5,7 +5,6 @@ import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { accountAddress, shortAddress } from '@/lib/address';
 import { payLinkAddress } from '@/lib/payLink';
 import { haptic, setClosingConfirmation, telegramStartParam } from '@/lib/telegram';
-import { formatTokenAmount, getTokenInfo } from '@/lib/tokenAmounts';
 import { ActivityList } from './ActivityList';
 import { Icon } from './Icon';
 import { ReceiveSheet } from './ReceiveSheet';
@@ -23,9 +22,9 @@ export function Screens() {
 }
 
 /**
- * The whole app is this one screen plus two sheets. Account setup (create,
- * register, fund, deploy) runs behind it: the balance shimmers until the
- * welcome gift lands, and only Send waits for it.
+ * The whole app is this one screen plus two sheets. Account setup (find or
+ * create, register) runs behind it: the balance shimmers meanwhile, and only
+ * Send waits for it.
  */
 function WalletHome() {
   const { engine, snapshot } = useWallet();
@@ -51,19 +50,6 @@ function WalletHome() {
       () => toast('Couldn’t refresh. Check your connection.', 'alert'),
     );
   });
-
-  // The network's funding, collected during setup: the welcome gift.
-  const welcomed = useRef(false);
-  useEffect(() => {
-    const gift = snapshot.welcome;
-    if (!gift || welcomed.current) return;
-    welcomed.current = true;
-    haptic('success');
-    void getTokenInfo(gift.faucetId).then(
-      (info) => toast(`Welcome gift: ${formatTokenAmount(gift.amount, info.decimals)} ${info.symbol} added`, 'gift'),
-      () => toast('Welcome gift added', 'gift'),
-    );
-  }, [snapshot.welcome, toast]);
 
   // A new payment: a tap on the wrist, and the bell's badge.
   const lastWaiting = useRef(0);

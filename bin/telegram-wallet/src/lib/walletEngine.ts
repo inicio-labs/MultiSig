@@ -9,7 +9,6 @@ import {
 } from '@openzeppelin/miden-multisig-client';
 import type { HistoryEntry } from '@openzeppelin/guardian-client';
 import { describeExecutionError, formatError } from './errors';
-import { waitForFundingNote } from './fundingWait';
 import {
   clearExecutionPushed,
   executionWasPushed,
@@ -44,7 +43,6 @@ export interface WalletEngineDeps<C extends WalletMidenClient, M extends WalletM
   registerNoteTag(midenClient: C, accountId: string): Promise<void>;
   /** Remembers the account this key last used, to prefer it if the key has several. */
   storage?: { get(key: string): string | null; set(key: string, value: string): void };
-  waitForFunding?: typeof waitForFundingNote;
   release?: typeof releasePendingCandidate;
 }
 
@@ -52,10 +50,8 @@ export type WalletPhase =
   | { kind: 'starting' }
   | { kind: 'finding' }
   | { kind: 'creating' }
-  /** Registered on the node; waiting for the network's funding note. */
-  | { kind: 'funding' }
-  /** Claiming the funding note: the account's first transaction deploys it. */
-  | { kind: 'activating' }
+  /** Registering the never-used account with the node. */
+  | { kind: 'registering' }
   | { kind: 'ready' }
   | { kind: 'error'; message: string };
 
@@ -75,21 +71,15 @@ export interface ActivityItem {
   /** The other account (sender of a received note, recipient of a sent one), when known. */
   counterparty?: string;
   timestamp: string;
-  /** The network's funding of a new account, claimed by its first transaction. */
-  welcome: boolean;
 }
 
 /**
  * Received and sent assets per transaction, newest first (Guardian's order).
  * Output notes without a recipient are the transaction fee, not a payment.
- * When the page reaches the start of the history (`complete`), its last entry
- * is the account's first transaction: the claim of the network's funding,
- * shown as the welcome gift.
  */
-export function toActivity(entries: HistoryEntry[], { complete }: { complete: boolean }): ActivityItem[] {
+export function toActivity(entries: HistoryEntry[]): ActivityItem[] {
   const items: ActivityItem[] = [];
-  entries.forEach((entry, index) => {
-    const first = complete && index === entries.length - 1;
+  for (const entry of entries) {
     const notes = [
       ...entry.inputNotes.map((note) => ({ note, direction: 'in' as const, counterparty: note.sender })),
       ...entry.outputNotes
@@ -106,11 +96,10 @@ export function toActivity(entries: HistoryEntry[], { complete }: { complete: bo
           amount: BigInt(asset.amount),
           counterparty,
           timestamp: entry.timestamp,
-          welcome: first && direction === 'in',
         });
       });
     }
-  });
+  }
   return items;
 }
 
@@ -123,8 +112,6 @@ export interface WalletSnapshot {
   activity: WalletActivity | null;
   /** Recent transactions, newest first. */
   history: ActivityItem[];
-  /** Set once when the network's funding was claimed on this start: the app's welcome gift. */
-  welcome: { faucetId: string; amount: bigint } | null;
   /** Something the user should know that is not an error (e.g. slow local proving). */
   notice: string | null;
 }
@@ -135,9 +122,8 @@ const LAST_ACCOUNT_KEY = 'miden-tg-wallet:last-account';
  * The wallet's account lifecycle and transactions, without any UI.
  *
  * start(): find the 1-of-1 Guardian account for this key (any device), or
- * create one; a new or never-used account is registered on the node, which
- * funds it, and the funding note is claimed right away because that first
- * transaction deploys the account. send()/claimAll(): every transaction of a
+ * create one; a never-used account is registered on the node. The account
+ * deploys with its first transaction. send()/claimAll(): every transaction of a
  * Guardian account is a proposal, even with one signer, so each runs the whole
  * create → sign → execute pipeline in one call.
  */
@@ -150,7 +136,6 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
     feeFaucetId: null,
     activity: null,
     history: [],
-    welcome: null,
     notice: null,
   };
   private readonly listeners = new Set<() => void>();
@@ -212,7 +197,14 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
       const feeFaucetId = feeFaucet.toString().toLowerCase();
       feeFaucet.free?.();
       this.update({ feeFaucetId });
-      if (multisig.account.nonce().asInt() === 0n) await this.activate(midenClient, multisig, feeFaucetId);
+      if (multisig.account.nonce().asInt() === 0n) {
+        // The node only accepts transactions from registered accounts. A new
+        // account registers here; one whose first start was interrupted is
+        // registered again (idempotent). Whatever the network sends a new
+        // account arrives as an ordinary incoming payment.
+        this.update({ phase: { kind: 'registering' } });
+        await this.deps.registerOnNode(midenClient, multisig.accountId);
+      }
       this.update({ phase: { kind: 'ready' } });
     } catch (error) {
       this.update({ phase: { kind: 'error', message: formatError(error, 'The wallet could not start') } });
@@ -233,36 +225,6 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
     const multisig = await this.deps.createAccount(multisigClient, this.deps.signer, this.hooks);
     await multisig.registerOnGuardian();
     return multisig;
-  }
-
-  /** Get the never-used account its funding note and claim it (the deploying transaction). */
-  private async activate(midenClient: C, multisig: Multisig, feeFaucetId: string): Promise<void> {
-    const hasFunds = (notes: ConsumableNote[]) =>
-      notes.some((note) => note.assets.some((asset) => asset.faucetId.toLowerCase() === feeFaucetId && asset.amount > 0n));
-
-    if (!hasFunds(this.snapshot.incoming)) {
-      // Registration funds a new account. It is idempotent, so an account whose
-      // first start was interrupted is simply registered again.
-      await this.deps.registerOnNode(midenClient, multisig.accountId);
-      this.update({ phase: { kind: 'funding' } });
-      const outcome = await (this.deps.waitForFunding ?? waitForFundingNote)({
-        isCurrent: () => this.multisig === multisig,
-        check: async () => {
-          await midenClient.sync();
-          const incoming = await multisig.getConsumableNotes();
-          this.update({ incoming });
-          return hasFunds(incoming);
-        },
-      });
-      if (outcome !== 'found') throw new Error('The network has not funded the new account yet. Try again in a few minutes.');
-    }
-    this.update({ phase: { kind: 'activating' } });
-    const funding = this.snapshot.incoming
-      .flatMap((note) => note.assets)
-      .filter((asset) => asset.faucetId.toLowerCase() === feeFaucetId)
-      .reduce((sum, asset) => sum + asset.amount, 0n);
-    await this.runTransaction('claim', (ms) => ms.createConsumeNotesProposal(this.snapshot.incoming.map((note) => note.id)));
-    this.update({ welcome: { faucetId: feeFaucetId, amount: funding } });
   }
 
   private exclusive<T>(task: () => Promise<T>): Promise<T> {
@@ -301,7 +263,7 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
     const balances = AccountInspector.fromAccount(multisig.account).vaultBalances.filter((b) => b.amount > 0n);
     // History is a nicety: keep the last list if Guardian's feed fails.
     const history = await multisig.deltaHistory({ limit: 20 })
-      .then((page) => toActivity(page.entries, { complete: !page.nextCursor }))
+      .then((page) => toActivity(page.entries))
       .catch((error: unknown) => {
         console.warn('Could not load the account history', error);
         return this.snapshot.history;

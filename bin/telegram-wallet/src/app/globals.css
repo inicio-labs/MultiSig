@@ -130,3 +130,7 @@ svg.icon { width: 1em; height: 1em; flex: none; }
 .toast { position: fixed; left: 18px; right: 18px; top: calc(var(--sa-top) + 12px); max-width: 444px; margin: 0 auto; background: var(--card); box-shadow: 0 8px 30px rgba(27, 20, 16, .14), 0 0 0 1px var(--line) inset; border-radius: 18px; padding: 12px 14px; font-size: 14px; font-weight: 500; display: flex; gap: 10px; align-items: center; transform: translateY(-160%); transition: transform .35s cubic-bezier(.2, .8, .2, 1); z-index: 20; }
 .toast.on { transform: translateY(0); }
 .toast .ico { width: 34px; height: 34px; border-radius: 12px; display: grid; place-items: center; background: var(--or-soft); color: var(--or); font-size: 18px; flex: none; }
+.field-wrap { position: relative; }
+.field-wrap .field { padding-right: 52px; }
+.field-icon { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; font-size: 20px; color: var(--or); }
+.field-icon:active { background: var(--or-soft); }
