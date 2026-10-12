@@ -4,24 +4,22 @@ import { useEffect, useState } from 'react';
 import type { Signer } from '@openzeppelin/miden-multisig-client';
 import { createDevSigner } from '@/lib/devSigner';
 import { formatError } from '@/lib/errors';
-import { Screens } from './Screens';
+import { Gate } from './AuthGate';
 import { Fatal, Splash } from './Splash';
-import { WalletProvider } from './WalletProvider';
 
-/** Development only: the wallet with a browser-held key instead of Privy (see devSigner.ts). */
-export function DevSignerGate() {
-  const [signer, setSigner] = useState<Signer | null>(null);
+/** Development only: a browser-held key instead of Privy (see devSigner.ts), handed up like AuthGate's. */
+export function DevSignerGate({ onSigner, preview }: { onSigner(signer: Signer | null): void; preview: boolean }) {
+  const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    createDevSigner().then((result) => setSigner(result.signer), (e: unknown) => setError(formatError(e)));
-  }, []);
+    createDevSigner().then((result) => {
+      onSigner(result.signer);
+      setReady(true);
+    }, (e: unknown) => setError(formatError(e)));
+  }, [onSigner]);
 
-  if (error) return <Fatal title="Development signer failed" message={error} />;
-  if (!signer) return <Splash label="Development signer…" />;
-  return (
-    <WalletProvider signer={signer}>
-      <Screens />
-    </WalletProvider>
-  );
+  if (error) return <Gate><Fatal title="Development signer failed" message={error} /></Gate>;
+  if (!ready && !preview) return <Gate><Splash label="Development signer…" /></Gate>;
+  return null;
 }

@@ -23,25 +23,33 @@ const LOCAL_PREFIX = 'miden-tg-wallet:pref:';
 const listeners = new Map<PrefName, Set<(value: boolean) => void>>();
 const cache = new Map<PrefName, boolean>();
 
+// This device's copy, read at once on opening (Telegram's cloud answers a
+// moment later): hide amounts must apply from the first frame.
+function onDevice(name: PrefName): boolean | null {
+  const raw = storage.get(LOCAL_PREFIX + PREFS[name].key);
+  return raw === null ? null : raw === '1';
+}
+
 async function load(name: PrefName): Promise<boolean> {
   const { key, fallback } = PREFS[name];
   const cloud = telegramCloud();
   const raw = cloud ? await cloud.get(key) : storage.get(LOCAL_PREFIX + key);
-  return raw === null ? fallback : raw === '1';
+  const value = raw === null ? (onDevice(name) ?? fallback) : raw === '1';
+  storage.set(LOCAL_PREFIX + key, value ? '1' : '0');
+  return value;
 }
 
 function save(name: PrefName, value: boolean): void {
   const { key } = PREFS[name];
   cache.set(name, value);
   for (const listener of listeners.get(name) ?? []) listener(value);
-  const cloud = telegramCloud();
-  if (cloud) void cloud.set(key, value ? '1' : '0');
-  else storage.set(LOCAL_PREFIX + key, value ? '1' : '0');
+  storage.set(LOCAL_PREFIX + key, value ? '1' : '0');
+  void telegramCloud()?.set(key, value ? '1' : '0');
 }
 
 /** A setting, shared by every component that reads it; `null` until loaded. */
 export function usePref(name: PrefName): [boolean | null, (value: boolean) => void] {
-  const [value, setValue] = useState<boolean | null>(cache.get(name) ?? null);
+  const [value, setValue] = useState<boolean | null>(cache.get(name) ?? onDevice(name));
   useEffect(() => {
     const set = listeners.get(name) ?? new Set();
     listeners.set(name, set);

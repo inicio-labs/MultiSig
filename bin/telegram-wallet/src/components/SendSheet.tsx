@@ -16,6 +16,7 @@ import { formatTokenAmount, parseTokenAmount } from '@/lib/tokenAmounts';
 import { Icon } from './Icon';
 import { ProgressSteps } from './ProgressSteps';
 import { RollingNumber } from './RollingNumber';
+import { SendFlow } from './SendFlow';
 import { Sheet } from './Sheet';
 import { SlideToSend } from './SlideToSend';
 import { TokenSymbol } from './TokenAmount';
@@ -129,6 +130,8 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
   }, [open, prefill]);
 
   const busy = step === 'sending';
+  // Face ID runs before the engine starts: that is still "confirming it's you".
+  const sendStep = snapshot.activity?.kind === 'send' ? snapshot.activity.step : 'preparing';
   // Telegram's back button (via the sheet) steps back to the recipient, then closes.
   const back = step === 'amount' ? () => setStep('to') : null;
 
@@ -288,7 +291,14 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
       {step === 'sending' && (
         <div className="sending">
           <div className="page-title">Sending {sent}</div>
-          <ProgressSteps kind="send" step={snapshot.activity?.kind === 'send' ? snapshot.activity.step : 'preparing'} />
+          {recipient && (
+            <SendFlow
+              stage={sendStep === 'preparing' || sendStep === 'signing' ? 'confirming' : 'sending'}
+              to={recipient.address}
+              isPrivate={isPrivate}
+            />
+          )}
+          <ProgressSteps kind="send" step={sendStep} />
           {snapshot.notice && <div className="sub">{snapshot.notice}</div>}
         </div>
       )}
@@ -296,7 +306,7 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
       {step === 'sent' && recipient && (
         <>
           <div className="center">
-            <div className="done"><Icon name="check" /></div>
+            <SendFlow stage="landed" to={recipient.address} isPrivate={isPrivate} />
             <div className="page-title">Sent {sent}{isPrivate ? ' privately' : ''}</div>
             <div className="sub">to {shortAddress(recipient.address)}</div>
             {fee !== null && token.status === 'ready' && (

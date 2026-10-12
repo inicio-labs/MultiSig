@@ -212,6 +212,16 @@ export async function shareLink(url: string, text: string): Promise<void> {
 }
 
 /** The Telegram user's name, for the card. Display only: never used to identify anyone. */
+/** The Telegram user's id, from the launch data (before Telegram's script loads); null outside Telegram. */
+export function telegramUserId(): string | null {
+  try {
+    const user = JSON.parse(new URLSearchParams(launchData).get('user') ?? 'null') as { id?: number } | null;
+    return user?.id ? String(user.id) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function telegramUserName(): string | null {
   const user = webApp()?.initDataUnsafe?.user;
   const name = [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim();

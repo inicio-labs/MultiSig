@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
 import { useTokenInfo } from '@/hooks/useTokenInfo';
 import { accountAddress, shortAddress } from '@/lib/address';
 import { feeLabel } from '@/lib/fees';
@@ -7,7 +8,7 @@ import type { ActivityItem } from '@/lib/walletEngine';
 import { Icon } from './Icon';
 import { TokenAmount } from './TokenAmount';
 
-function who(item: ActivityItem): string {
+export function who(item: ActivityItem): string {
   if (!item.counterparty) return when(item.timestamp);
   try {
     return `${item.direction === 'in' ? 'from' : 'to'} ${shortAddress(accountAddress(item.counterparty))}`;
@@ -25,12 +26,30 @@ function when(timestamp: string): string {
     : date.toLocaleDateString([], { day: 'numeric', month: 'short' });
 }
 
-export function ActivityList({ items }: { items: ActivityItem[] }) {
+export function ActivityList({ items, loading = false }: { items: ActivityItem[]; loading?: boolean }) {
+  // Rows already there on the first render (the saved view) do not fade in;
+  // payments that arrive later do.
+  const seen = useRef<Set<string> | null>(null);
+  seen.current ??= new Set(items.map((item) => item.id));
+  useEffect(() => { for (const item of items) seen.current?.add(item.id); });
+  if (items.length === 0 && loading) {
+    // First open on this phone: placeholders until the history arrives.
+    return (
+      <>
+        {[0, 1].map((i) => (
+          <div key={i} className="cell" aria-hidden>
+            <span className="avatar skeleton" />
+            <span className="cell-main"><span className="shim" /><span className="shim short" /></span>
+          </div>
+        ))}
+      </>
+    );
+  }
   if (items.length === 0) return <div className="empty">Your payments show up here.</div>;
   return (
     <>
       {items.map((item) => (
-        <div key={item.id} className="cell">
+        <div key={item.id} className={`cell${seen.current?.has(item.id) ? '' : ' row-in'}`}>
           <span className="avatar"><Icon name={item.direction === 'in' ? 'receive' : 'send'} /></span>
           <span className="cell-main">
             <span className="cell-title">{item.direction === 'in' ? 'Received' : 'Sent'}</span>

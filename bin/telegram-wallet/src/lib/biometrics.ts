@@ -26,9 +26,19 @@ const REASON_MAX = 128;
 /** Shown in Telegram's permission popup, the first time the wallet asks. */
 export const ACCESS_REASON = 'Confirm your payments with a glance or a touch';
 
-export function initBiometrics(manager: BiometricManager): Promise<void> {
+// A Telegram app that never answers whether it has biometrics must not hold
+// a send forever: past this, it counts as having none.
+const INIT_TIMEOUT_MS = 2_000;
+
+export function initBiometrics(manager: BiometricManager, timeoutMs = INIT_TIMEOUT_MS): Promise<void> {
   if (manager.isInited) return Promise.resolve();
-  return new Promise((resolve) => { manager.init(() => resolve()); });
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, timeoutMs);
+    manager.init(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
 }
 
 /** What this phone calls it, e.g. "Face ID" on an iPhone. */
@@ -61,7 +71,7 @@ export async function confirmWithBiometrics(
 ): Promise<boolean> {
   if (!manager || !enabled) return true;
   await initBiometrics(manager);
-  if (!manager.isBiometricAvailable) return true;
+  if (!manager.isInited || !manager.isBiometricAvailable) return true;
   if (!manager.isAccessRequested && !(await requestBiometricAccess(manager))) return true;
   if (!manager.isAccessGranted) return true;
   return authenticate(manager, reason);

@@ -49,6 +49,8 @@ export interface WalletEngineDeps<C extends WalletMidenClient, M extends WalletM
   createPrivateNotes?(midenClient: C): PrivateNotes;
   /** Remembers the account this key last used, to prefer it if the key has several. */
   storage?: { get(key: string): string | null; set(key: string, value: string): void };
+  /** Whose saved home view this is (see savedView.ts); defaults to the signing key, null for none. */
+  viewKey?: string | null;
   release?: typeof releasePendingCandidate;
 }
 
@@ -131,7 +133,23 @@ export interface WalletSnapshot {
   history: ActivityItem[];
   /** Something the user should know that is not an error (e.g. slow local proving). */
   notice: string | null;
+  /**
+   * While starting, balances and history are what this phone showed last
+   * time, saved at this moment (ms); null once they are up to date.
+   */
+  savedAt: number | null;
 }
+
+/** The home screen as it last was, kept on this phone to show at once on the next open. */
+interface SavedView {
+  accountId: string;
+  feeFaucetId: string | null;
+  balances: Array<{ faucetId: string; amount: string }>;
+  history: Array<Omit<ActivityItem, 'amount' | 'fee'> & { amount: string; fee?: { faucetId: string; amount: string } }>;
+  savedAt: number;
+}
+
+export const LAST_VIEW_KEY = 'miden-tg-wallet:last-view:';
 
 const LAST_ACCOUNT_KEY = 'miden-tg-wallet:last-account';
 
@@ -162,6 +180,7 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
     activity: null,
     history: [],
     notice: null,
+    savedAt: null,
   };
   private readonly listeners = new Set<() => void>();
   private midenClient: C | null = null;
@@ -187,7 +206,58 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
     }),
   };
 
-  constructor(private readonly deps: WalletEngineDeps<C, M>) {}
+  constructor(private readonly deps: WalletEngineDeps<C, M>) {
+    // Opening shows the last balance and payments at once; the start brings them up to date.
+    const saved = this.loadView();
+    if (saved) this.snapshot = { ...this.snapshot, ...saved };
+  }
+
+  // Per user (Telegram account, else signing key): another user on this phone never sees it.
+  private viewKey(): string | null {
+    const key = this.deps.viewKey === undefined ? `key:${(this.deps.signer.commitment ?? '').toLowerCase()}` : this.deps.viewKey;
+    return key === null ? null : LAST_VIEW_KEY + key;
+  }
+
+  private loadView(): Partial<WalletSnapshot> | null {
+    const key = this.viewKey();
+    if (!key) return null;
+    try {
+      const raw = this.deps.storage?.get(key);
+      if (!raw) return null;
+      const view = JSON.parse(raw) as SavedView;
+      return {
+        accountId: view.accountId,
+        feeFaucetId: view.feeFaucetId,
+        balances: view.balances.map((b) => ({ faucetId: b.faucetId, amount: BigInt(b.amount) })),
+        history: view.history.map(({ amount, fee, ...item }) => ({
+          ...item,
+          amount: BigInt(amount),
+          ...(fee ? { fee: { faucetId: fee.faucetId, amount: BigInt(fee.amount) } } : {}),
+        })),
+        savedAt: view.savedAt,
+      };
+    } catch {
+      return null; // unreadable: start from an empty screen, as before
+    }
+  }
+
+  private saveView(): void {
+    const { accountId, feeFaucetId, balances, history } = this.snapshot;
+    const key = this.viewKey();
+    if (!accountId || !key) return;
+    const view: SavedView = {
+      accountId,
+      feeFaucetId,
+      balances: balances.map((b) => ({ faucetId: b.faucetId, amount: b.amount.toString() })),
+      history: history.map(({ amount, fee, ...item }) => ({
+        ...item,
+        amount: amount.toString(),
+        ...(fee ? { fee: { faucetId: fee.faucetId, amount: fee.amount.toString() } } : {}),
+      })),
+      savedAt: Date.now(),
+    };
+    this.deps.storage?.set(key, JSON.stringify(view));
+  }
 
   getSnapshot = (): WalletSnapshot => this.snapshot;
 
@@ -317,7 +387,9 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
         console.warn('Could not load the account history', error);
         return this.snapshot.history;
       });
-    if (this.multisig === multisig) this.update({ incoming, balances, history });
+    if (this.multisig !== multisig) return;
+    this.update({ incoming, balances, history, savedAt: null });
+    this.saveView();
   }
 
   /** A private send's note travels to the recipient through the note transport, after it commits. */
@@ -490,6 +562,7 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
     const gone = new Set(consumes);
     if (this.multisig !== multisig) return;
     this.update({ balances, incoming: this.snapshot.incoming.filter((note) => !gone.has(note.id)) });
+    this.saveView();
     // Our own transaction is the latest: its private notes (if any) are
     // delivered, so the next transaction need not look again.
     if (delivered) this.deliveryCheckedAt = account.nonce().asInt();

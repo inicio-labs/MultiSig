@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { biometricName, confirmWithBiometrics, type BiometricManager } from '@/lib/biometrics';
 
 function fakeManager(over: Partial<BiometricManager> = {}, { grant = true, pass = true } = {}) {
@@ -54,6 +54,19 @@ describe('Face ID before a send', () => {
     const before = fakeManager({ isInited: true, isAccessRequested: true, isAccessGranted: false });
     expect(await confirmWithBiometrics(before.manager, { enabled: true, reason: 'Send 1 USDCX' })).toBe(true);
     expect(before.calls).toEqual([]);
+  });
+
+  it('goes ahead when Telegram never answers whether it has biometrics', async () => {
+    vi.useFakeTimers();
+    try {
+      const { manager, calls } = fakeManager({ init() { calls.push('init'); } });
+      const result = confirmWithBiometrics(manager, { enabled: true, reason: 'Send 1 USDCX' });
+      await vi.advanceTimersByTimeAsync(2_000);
+      await expect(result).resolves.toBe(true);
+      expect(calls).toEqual(['init']);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('stops the send when the scan fails', async () => {

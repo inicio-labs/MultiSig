@@ -3,6 +3,10 @@
 import { useEffect, useRef, useState } from 'react';
 import type { VaultBalance } from '@openzeppelin/miden-multisig-client';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
+import { useTokenInfo } from '@/hooks/useTokenInfo';
+import { feeLabel } from '@/lib/fees';
+import { saveFirstPaint } from '@/lib/firstPaint';
+import { viewKeyFor } from '@/lib/savedView';
 import { accountAddress, shortAddress } from '@/lib/address';
 import { isCollectLink, payLinkAddress } from '@/lib/payLink';
 import { usePref } from '@/lib/prefs';
@@ -16,8 +20,10 @@ import {
   telegramUserName,
   useTelegramSettingsButton,
 } from '@/lib/telegram';
+import { timeAgo } from '@/lib/timeAgo';
 import { formatTokenAmount, getTokenInfo } from '@/lib/tokenAmounts';
-import { ActivityList } from './ActivityList';
+import type { ActivityItem } from '@/lib/walletEngine';
+import { ActivityList, who } from './ActivityList';
 import { BURST_LANDS_MS, CoinBurst, type Burst } from './CoinBurst';
 import { Icon } from './Icon';
 import { ReceiveSheet, type Collected } from './ReceiveSheet';
@@ -59,12 +65,15 @@ function WalletHome() {
   const indicator = useRef<HTMLDivElement>(null);
   const { phase } = snapshot;
   const ready = phase.kind === 'ready';
+  // Starting: the screen shows what this phone saw last time, if anything,
+  // while the wallet catches up (a few seconds).
+  const updating = phase.kind !== 'ready' && phase.kind !== 'error';
   const address = snapshot.accountId ? accountAddress(snapshot.accountId) : '';
   const waiting = ready ? snapshot.incoming.length : 0;
   const name = useRef(telegramUserName()).current;
   // USDCX only: an empty wallet still shows "0 USDCX".
   const main = snapshot.balances[0]
-    ?? (ready && snapshot.feeFaucetId ? { faucetId: snapshot.feeFaucetId, amount: 0n } : null);
+    ?? ((ready || snapshot.savedAt) && snapshot.feeFaucetId ? { faucetId: snapshot.feeFaucetId, amount: 0n } : null);
   const shown = held ?? main;
   // Blurred while hide amounts is on, and while the app is in the background
   // (so the app switcher's preview never shows them). Back as it was on return.
@@ -179,9 +188,13 @@ function WalletHome() {
       <div className="ptr" ref={indicator}><Icon name="refresh" /> Release to refresh</div>
       <header className={`topbar${cardGone ? ' scrolled' : ''}`}>
         <span className="private-pill"><Icon name="lock" /> Private</span>
-        <div className={`topbar-balance${hidden ? ' amounts-hidden' : ''}`} aria-hidden={!cardGone}>
-          {shown && <span className="amount-value"><TokenAmount faucetId={shown.faucetId} amount={shown.amount} /></span>}
-        </div>
+        {updating ? (
+          <div className="updating" role="status"><span className="spin" />Updating…</div>
+        ) : (
+          <div className={`topbar-balance${hidden ? ' amounts-hidden' : ''}`} aria-hidden={!cardGone}>
+            {shown && <span className="amount-value"><TokenAmount faucetId={shown.faucetId} amount={shown.amount} /></span>}
+          </div>
+        )}
         <div className="topbar-actions">
           <button className="bell" onClick={toggleHidden} aria-label={hideAmounts ? 'Show amounts' : 'Hide amounts'} aria-pressed={hideAmounts === true}>
             <Icon name={hideAmounts ? 'eyeOff' : 'eye'} />
@@ -208,6 +221,7 @@ function WalletHome() {
             name={name}
             address={address ? shortAddress(address) : ''}
             loading={!ready && !main}
+            caption={updating && snapshot.savedAt ? `Updated ${timeAgo(snapshot.savedAt)}` : null}
             hidden={hidden}
             celebration={celebration}
             onTap={copy}
@@ -238,16 +252,50 @@ function WalletHome() {
         )}
         {snapshot.notice && !busy && <div className="notice hint">{snapshot.notice}</div>}
 
-        <div className={`cells${hidden ? ' amounts-hidden' : ''}`}>
+        <div className={`cells${hidden ? ' amounts-hidden' : ''}${updating ? ' updating' : ''}`}>
           <div className="cells-head">Activity</div>
-          <ActivityList items={snapshot.history} />
+          <ActivityList items={snapshot.history} loading={updating} />
         </div>
       </main>
 
+      {ready && main && (
+        <FirstPaintSaver balance={main} history={snapshot.history} name={name} address={address ? shortAddress(address) : ''} />
+      )}
       <CoinBurst burst={burst} />
       <SendSheet open={view === 'send'} prefill={prefill} onClose={() => setView('home')} />
       <ReceiveSheet open={view === 'receive'} onClose={() => setView('home')} hidden={hidden} onCollected={collected} />
       <SettingsSheet open={view === 'settings'} onClose={() => setView('home')} />
     </>
   );
+}
+
+/**
+ * After every refresh: this screen as plain text, for the next open's
+ * instant first paint (firstPaint.ts). Inside Telegram only (keyed by user).
+ */
+function FirstPaintSaver({ balance, history, name, address }: {
+  balance: VaultBalance;
+  history: ActivityItem[];
+  name: string | null;
+  address: string;
+}) {
+  const token = useTokenInfo(balance.faucetId);
+  useEffect(() => {
+    const viewKey = viewKeyFor(null);
+    if (!viewKey || token.status !== 'ready') return;
+    const { decimals, symbol } = token.info;
+    saveFirstPaint(viewKey, {
+      balance: formatTokenAmount(balance.amount, decimals),
+      symbol,
+      name,
+      address,
+      rows: history.slice(0, 8).map((item) => ({
+        in: item.direction === 'in',
+        sub: who(item) + (item.fee ? ` · fee ${feeLabel(item.fee.amount, decimals, symbol)}` : ''),
+        value: `${item.direction === 'in' ? '+' : '−'}${formatTokenAmount(item.amount, decimals)} ${symbol}`,
+      })),
+      savedAt: Date.now(),
+    });
+  }, [balance, history, name, address, token]);
+  return null;
 }

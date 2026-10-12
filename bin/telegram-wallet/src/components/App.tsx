@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { PrivyProvider } from '@privy-io/react-auth';
+import { getWasmOrThrow } from '@miden-sdk/miden-sdk';
+import type { Signer } from '@openzeppelin/miden-multisig-client';
 import { CONFIG_ERRORS, PRIVY_APP_ID, PRIVY_CLIENT_ID } from '@/config/psm';
 import { initializeTelegramBridge, setupTelegramChrome } from '@/lib/telegram';
 import { AuthGate, DEV_EMAIL_LOGIN } from './AuthGate';
@@ -10,12 +12,20 @@ import { Screens } from './Screens';
 import { Fatal, Splash } from './Splash';
 import { DevSignerGate } from './DevSignerGate';
 import { DEV_LOCAL_SIGNER } from '@/lib/devSigner';
+import { InstantPreview } from './InstantPreview';
 import { installRemoteDiag } from '@/lib/remoteDiag';
+import { hasSavedView, viewKeyFor } from '@/lib/savedView';
 
 export default function App() {
   const [bridgeReady, setBridgeReady] = useState(false);
   // Remounting Privy is how a failed Telegram login is retried (see AuthGate).
   const [attempt, setAttempt] = useState(0);
+  const [signer, setSigner] = useState<Signer | null>(null);
+  // Opened before on this phone: the home screen shows the last balance and
+  // payments at once, while Telegram, Privy and the wallet start underneath.
+  const [preview] = useState(() => hasSavedView(viewKeyFor(null)));
+  // The screens format addresses with the Miden SDK, whose WebAssembly loads lazily.
+  const [wasmReady, setWasmReady] = useState(false);
 
   useEffect(() => {
     installRemoteDiag();
@@ -23,14 +33,37 @@ export default function App() {
       setupTelegramChrome();
       setBridgeReady(true);
     });
+    // On failure the sign-in (which loads it too) shows the error.
+    getWasmOrThrow().then(() => setWasmReady(true), (e: unknown) => console.warn('Miden WebAssembly failed to load', e));
   }, []);
 
   if (CONFIG_ERRORS.length > 0) {
     return <Fatal title="Not configured" message={CONFIG_ERRORS.join(' ')} />;
   }
-  if (!bridgeReady) return <Splash />;
-  if (DEV_LOCAL_SIGNER) return <DevSignerGate />;
+  const gate = !bridgeReady
+    ? null
+    : DEV_LOCAL_SIGNER
+      ? <DevSignerGate preview={preview} onSigner={setSigner} />
+      : <PrivyGate attempt={attempt} preview={preview} onRetry={() => setAttempt((n) => n + 1)} onSigner={setSigner} />;
 
+  // The screens stay mounted from the saved view to the live wallet. They
+  // wait for Telegram's script (its menu buttons and events attach on mount)
+  // and the SDK's WebAssembly; until then, the saved screen as plain text.
+  const live = bridgeReady && wasmReady && (signer !== null || preview);
+  return (
+    <WalletProvider signer={signer}>
+      {live ? <Screens /> : preview ? <InstantPreview /> : <Splash />}
+      {gate}
+    </WalletProvider>
+  );
+}
+
+function PrivyGate({ attempt, preview, onRetry, onSigner }: {
+  attempt: number;
+  preview: boolean;
+  onRetry(): void;
+  onSigner(signer: Signer | null): void;
+}) {
   return (
     <PrivyProvider
       key={attempt}
@@ -44,13 +77,7 @@ export default function App() {
         embeddedWallets: { ethereum: { createOnLogin: 'off' }, showWalletUIs: false },
       }}
     >
-      <AuthGate onRetry={() => setAttempt((n) => n + 1)}>
-        {(signer) => (
-          <WalletProvider signer={signer}>
-            <Screens />
-          </WalletProvider>
-        )}
-      </AuthGate>
+      <AuthGate preview={preview} onRetry={onRetry} onSigner={onSigner} />
     </PrivyProvider>
   );
 }

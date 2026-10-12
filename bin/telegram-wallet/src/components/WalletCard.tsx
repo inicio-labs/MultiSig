@@ -11,11 +11,13 @@ import { RollingNumber } from './RollingNumber';
  * the owner's name embossed, the address along the edge. It tilts with the
  * phone (or the pointer) and the foil catches the light.
  */
-export function WalletCard({ balance, name, address, loading, hidden, celebration, onTap }: {
+export function WalletCard({ balance, name, address, loading, caption, hidden, celebration, onTap }: {
   balance: { faucetId: string; amount: bigint } | null;
   name: string | null;
   address: string;
   loading: boolean;
+  /** In place of the wordmark, e.g. "Updated 2 min ago" while the balance is being refreshed. */
+  caption?: string | null;
   /** Amounts blurred: hide amounts is on, or the app is in the background. */
   hidden: boolean;
   /** Money just landed: the card pulses and shows what came in. */
@@ -77,7 +79,7 @@ export function WalletCard({ balance, name, address, loading, hidden, celebratio
         <div className="card-balance amount-value">
           {loading || !balance ? (balance || loading ? <span className="shim" /> : <span>0</span>) : <CardAmount {...balance} />}
         </div>
-        <div className="card-brand">miden</div>
+        <div className="card-brand">{caption ?? 'miden'}</div>
         {name && <div className="card-name">{name}</div>}
         <div className="card-addr"><span>{address}</span></div>
       </div>

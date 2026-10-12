@@ -122,7 +122,7 @@ function setup(opts: FakeOptions & {
     const kind = engine.getSnapshot().phase.kind;
     if (phases.at(-1) !== kind) phases.push(kind);
   });
-  return { engine, log, ms, phases, release, store };
+  return { engine, log, ms, phases, release, store, deps };
 }
 
 describe('WalletEngine.start', () => {
@@ -138,6 +138,33 @@ describe('WalletEngine.start', () => {
     ]);
     expect(store.get('miden-tg-wallet:last-account')).toBe(engine.getSnapshot().accountId);
     expect(engine.getSnapshot().balances).toEqual([{ faucetId: FEE, amount: 5n }]);
+  });
+
+  it('opens with what this phone showed last time, then brings it up to date', async () => {
+    const first = setup({ nonce: 1n, existing: [{ accountId: '0xacc', updatedAt: '2026-10-01T00:00:00Z' }] });
+    const note = (noteId: string, amount: string, extra: object = {}) => ({
+      noteId, tag: 'p2id' as const, noteType: 'public' as const, assets: [{ assetId: FEE, kind: 'fungible' as const, amount }], ...extra,
+    });
+    first.ms.deltaHistory = async () => ({ entries: [
+      { nonce: 7, status: 'canonical' as const, timestamp: 't1', inputNotes: [], outputNotes: [note('n1', '2', { recipient: RECIPIENT }), note('fee', '1', { tag: 'custom' })], decodeWarnings: [] },
+    ] }) as never;
+    await first.engine.start();
+
+    // Next open on the same phone: the last balance and payments at once.
+    const next = new WalletEngine(first.deps);
+    expect(next.getSnapshot()).toMatchObject({
+      phase: { kind: 'starting' },
+      accountId: first.engine.getSnapshot().accountId,
+      balances: [{ faucetId: FEE, amount: 5n }],
+      history: [{ direction: 'out', amount: 2n, fee: { faucetId: FEE, amount: 1n } }],
+      savedAt: expect.any(Number),
+    });
+    await next.start();
+    expect(next.getSnapshot().savedAt).toBeNull();
+
+    // Another key (another Telegram user on this phone) sees nothing of it.
+    const stranger = new WalletEngine({ ...first.deps, signer: { commitment: '0x' + 'ab'.repeat(32) } as unknown as Signer });
+    expect(stranger.getSnapshot()).toMatchObject({ balances: [], history: [], savedAt: null });
   });
 
   it('holds only the network fee token (USDCX): other tokens are never shown or collected', async () => {

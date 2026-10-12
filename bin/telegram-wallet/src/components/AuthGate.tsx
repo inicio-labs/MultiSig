@@ -23,9 +23,16 @@ const SEAMLESS_LOGIN_TIMEOUT_MS = 15_000;
 
 /**
  * Logged in with Privy (silently, from Telegram's launch data, inside
- * Telegram), with an embedded wallet, and that wallet as a multisig signer.
+ * Telegram), with an embedded wallet, and that wallet as a multisig signer,
+ * handed up with `onSigner`. While it gets there, it shows a splash, or
+ * nothing when the home screen is already showing the saved view (`preview`);
+ * a sign-in screen or an error covers the screen.
  */
-export function AuthGate({ onRetry, children }: { onRetry(): void; children(signer: Signer): ReactNode }) {
+export function AuthGate({ onRetry, onSigner, preview }: {
+  onRetry(): void;
+  onSigner(signer: Signer | null): void;
+  preview: boolean;
+}) {
   const { ready, authenticated, user } = usePrivy();
   const { ready: walletsReady, wallets } = useWallets();
   const { createWallet } = useCreateWallet();
@@ -58,6 +65,8 @@ export function AuthGate({ onRetry, children }: { onRetry(): void; children(sign
   }, [ready, authenticated, user, walletsReady, embedded, linked, createWallet]);
 
   const address = embedded?.address;
+  const current = signer && signer.address === address ? signer.signer : null;
+  useEffect(() => { onSigner(current); }, [current, onSigner]);
   useEffect(() => {
     const wallet = embeddedRef.current;
     if (!wallet) return;
@@ -94,14 +103,20 @@ export function AuthGate({ onRetry, children }: { onRetry(): void; children(sign
     onRetry();
   };
 
-  if (!ready) return <Splash />;
-  if (error) return <Fatal title="Something went wrong" message={error} action={{ label: 'Try again', run: retry }} />;
+  const waiting = (label?: string) => (preview ? null : <Gate><Splash label={label} /></Gate>);
+  if (error) return <Gate><Fatal title="Something went wrong" message={error} action={{ label: 'Try again', run: retry }} /></Gate>;
+  if (!ready) return waiting();
   if (!authenticated) {
-    if (insideTelegram && !loginStalled) return <Splash label="Signing you in with Telegram…" />;
-    return <LoginScreen onRetry={retry} />;
+    if (insideTelegram && !loginStalled) return waiting('Signing you in with Telegram…');
+    return <Gate><LoginScreen onRetry={retry} /></Gate>;
   }
-  if (!signer || signer.address !== address) return <Splash label="Preparing your wallet…" />;
-  return <>{children(signer.signer)}</>;
+  if (!current) return waiting('Preparing your wallet…');
+  return null;
+}
+
+/** Over the home screen (which may be showing the saved view underneath). */
+export function Gate({ children }: { children: ReactNode }) {
+  return <div className="gate">{children}</div>;
 }
 
 function LoginScreen({ onRetry }: { onRetry(): void }) {

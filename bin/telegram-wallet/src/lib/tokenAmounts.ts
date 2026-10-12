@@ -1,5 +1,6 @@
 import { AccountId, BasicFungibleFaucetComponent, Endpoint, RpcClient } from '@miden-sdk/miden-sdk';
 import { MIDEN_RPC_URL } from '@/config/psm';
+import { storage } from './storage';
 
 /**
  * Converts a user-entered decimal amount into base units for a token with
@@ -42,6 +43,20 @@ export interface TokenInfo {
 }
 
 const tokenInfoCache = new Map<string, Promise<TokenInfo>>();
+const SAVED_TOKEN_KEY = 'miden-tg-wallet:token:';
+
+/**
+ * Decimals and symbol this phone read before: a faucet's metadata does not
+ * change, so amounts show at once on opening while getTokenInfo re-reads it.
+ */
+export function savedTokenInfo(faucetId: string): TokenInfo | null {
+  try {
+    const info = JSON.parse(storage.get(SAVED_TOKEN_KEY + faucetId.trim().toLowerCase()) ?? 'null') as TokenInfo | null;
+    return info && typeof info.decimals === 'number' && typeof info.symbol === 'string' ? info : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Upper bound on the metadata lookup; the SDK's RPC transport has no deadline of its own. */
 export const DECIMALS_LOOKUP_TIMEOUT_MS = 15_000;
@@ -76,7 +91,7 @@ export function getTokenInfo(
     );
     tokenInfoCache.set(key, pending);
     // Do not cache failures: a transient RPC error must not stick.
-    pending.catch(() => tokenInfoCache.delete(key));
+    pending.then((info) => storage.set(SAVED_TOKEN_KEY + key, JSON.stringify(info)), () => tokenInfoCache.delete(key));
   }
   return pending;
 }

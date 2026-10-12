@@ -20,6 +20,7 @@ import {
 } from '@/lib/multisigApi';
 import { createPrivateNotes } from '@/lib/privateSend';
 import { reportDiag } from '@/lib/remoteDiag';
+import { viewKeyFor } from '@/lib/savedView';
 import { storage } from '@/lib/storage';
 import { WalletEngine, type WalletSnapshot } from '@/lib/walletEngine';
 
@@ -49,9 +50,18 @@ interface WalletContextValue {
 
 const WalletContext = createContext<WalletContextValue | null>(null);
 
-export function WalletProvider({ signer, children }: { signer: Signer; children: ReactNode }) {
+// Stands in until the real key is ready: the engine then only shows the saved view.
+const NO_SIGNER = { commitment: '' } as unknown as Signer;
+
+/**
+ * The wallet engine for the screens. Until `signer` is ready (Telegram and
+ * Privy still starting) it shows this user's saved home view and does
+ * nothing else; the screens stay mounted when the real engine takes over.
+ */
+export function WalletProvider({ signer, children }: { signer: Signer | null; children: ReactNode }) {
   const engine = useMemo(() => new WalletEngine({
-    signer,
+    signer: signer ?? NO_SIGNER,
+    viewKey: viewKeyFor(signer),
     startMidenClient,
     createMultisigClient,
     createAccount: createWalletAccount,
@@ -73,8 +83,8 @@ export function WalletProvider({ signer, children }: { signer: Signer; children:
   }, [engine]);
 
   useEffect(() => {
-    void engine.start();
-  }, [engine]);
+    if (signer) void engine.start();
+  }, [engine, signer]);
   useEffect(() => {
     if (snapshot.phase.kind === 'error') reportDiag('wallet.start', snapshot.phase.message);
   }, [snapshot.phase]);
