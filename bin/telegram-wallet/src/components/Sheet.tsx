@@ -4,14 +4,15 @@ import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from '
 import { useKeyboardFrame } from '@/hooks/useViewportHeight';
 import { reportDiag } from '@/lib/remoteDiag';
 import { haptic, useTelegramBackButton, viewportHeight } from '@/lib/telegram';
+import { Icon } from './Icon';
 
 // A downward drag past this many pixels dismisses the sheet.
 const DISMISS_PX = 90;
 
 /**
  * A bottom sheet: it rises into the thumb zone, and closes with a swipe down
- * on its handle, a tap outside, or Telegram's back button (`onBack`, for a
- * step back inside the sheet, else close).
+ * on its handle, a tap outside, its own back/close button, or Telegram's back
+ * button (`onBack`, for a step back inside the sheet, else close).
  */
 export function Sheet({ open, onClose, onBack, locked = false, aboveKeyboard = false, children }: {
   open: boolean;
@@ -38,7 +39,8 @@ export function Sheet({ open, onClose, onBack, locked = false, aboveKeyboard = f
     return () => clearTimeout(timer);
   }, [open]);
 
-  const onKeyboard = aboveKeyboard && keyboard.inset > 0;
+  const onKeyboard = aboveKeyboard && keyboard.open;
+  const back = onBack ?? onClose;
   // Test phones only (remoteDiag): where the keyboard and the sheet ended up.
   useEffect(() => {
     if (!open || !aboveKeyboard) return;
@@ -46,7 +48,7 @@ export function Sheet({ open, onClose, onBack, locked = false, aboveKeyboard = f
       const vv = window.visualViewport;
       const rect = sheet.current?.getBoundingClientRect();
       reportDiag('keyboard', JSON.stringify({
-        inset: keyboard.inset, visible: keyboard.visible, innerHeight: window.innerHeight,
+        inset: keyboard.inset, visible: keyboard.visible, open: keyboard.open, innerHeight: window.innerHeight,
         clientHeight: document.documentElement.clientHeight, vvHeight: vv?.height, vvOffsetTop: vv?.offsetTop,
         scrollY: window.scrollY, telegramViewport: viewportHeight(),
         sheetTop: rect?.top, sheetBottom: rect?.bottom, sheetScroll: sheet.current?.scrollTop,
@@ -54,7 +56,7 @@ export function Sheet({ open, onClose, onBack, locked = false, aboveKeyboard = f
       }));
     }, 700);
     return () => clearTimeout(timer);
-  }, [open, aboveKeyboard, keyboard.inset, keyboard.visible]);
+  }, [open, aboveKeyboard, keyboard.inset, keyboard.visible, keyboard.open]);
 
   const down = (e: PointerEvent) => {
     if (locked) return;
@@ -92,6 +94,12 @@ export function Sheet({ open, onClose, onBack, locked = false, aboveKeyboard = f
         <div className="grab" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
           <div className="handle" />
         </div>
+        {/* Back where the thumb can reach it, not only in Telegram's header. */}
+        {mounted && !locked && (
+          <button className="sheet-nav" onClick={() => { haptic('light'); back(); }} aria-label={onBack ? 'Back' : 'Close'}>
+            <Icon name={onBack ? 'back' : 'close'} />
+          </button>
+        )}
         {mounted && children}
       </div>
     </>

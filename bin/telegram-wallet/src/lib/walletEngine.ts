@@ -77,6 +77,8 @@ export interface ActivityItem {
   /** The other account (sender of a received note, recipient of a sent one), when known. */
   counterparty?: string;
   timestamp: string;
+  /** The network fee this transaction paid, on its first item only. */
+  fee?: { faucetId: string; amount: bigint };
 }
 
 /**
@@ -86,6 +88,7 @@ export interface ActivityItem {
 export function toActivity(entries: HistoryEntry[]): ActivityItem[] {
   const items: ActivityItem[] = [];
   for (const entry of entries) {
+    const first = items.length;
     const notes = [
       ...entry.inputNotes.map((note) => ({ note, direction: 'in' as const, counterparty: note.sender })),
       ...entry.outputNotes
@@ -105,6 +108,14 @@ export function toActivity(entries: HistoryEntry[]): ActivityItem[] {
         });
       });
     }
+    let fee: ActivityItem['fee'];
+    for (const note of entry.outputNotes.filter((n) => !n.recipient)) {
+      for (const asset of note.assets) {
+        if (asset.kind !== 'fungible' || !asset.amount) continue;
+        fee = { faucetId: asset.assetId, amount: (fee?.amount ?? 0n) + BigInt(asset.amount) };
+      }
+    }
+    if (fee && items[first]) items[first] = { ...items[first], fee };
   }
   return items;
 }
@@ -310,14 +321,30 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
   }
 
   /** A private send's note travels to the recipient through the note transport, after it commits. */
-  async send(recipientId: string, faucetId: string, amount: bigint, { private: isPrivate = false } = {}): Promise<void> {
+  /** Resolves with the network fee it paid, when the new balance could be read (null otherwise). */
+  async send(
+    recipientId: string,
+    faucetId: string,
+    amount: bigint,
+    { private: isPrivate = false } = {},
+  ): Promise<{ fee: bigint | null }> {
     if (amount <= 0n) throw new Error('Enter an amount greater than zero.');
     if (isPrivate && !this.privateNotes) throw new Error('Private payments are not available.');
+    const before = this.feeTokenBalance();
     await this.runTransaction(
       'send',
       (ms) => ms.createP2idProposal(recipientId, faucetId, amount, isPrivate ? { noteType: NoteType.Private } : undefined),
       isPrivate,
     );
+    // The fee is paid in the fee token: whatever left it beyond the payment.
+    const spent = before - this.feeTokenBalance();
+    const fee = faucetId.toLowerCase() === this.snapshot.feeFaucetId ? spent - amount : spent;
+    return { fee: spent > 0n && fee >= 0n ? fee : null };
+  }
+
+  private feeTokenBalance(): bigint {
+    const token = this.snapshot.feeFaucetId;
+    return this.snapshot.balances.find((b) => b.faucetId.toLowerCase() === token)?.amount ?? 0n;
   }
 
   async claimAll(): Promise<void> {

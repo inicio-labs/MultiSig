@@ -207,10 +207,12 @@ button.cell:active { background: var(--bg); }
 /* Send (a sheet): title row, the big amount, the switch, the slide */
 .sheet .center { padding: 22px 0 18px; }
 .page-title { position: relative; font-family: var(--rounded); font-size: 19px; font-weight: 700; text-align: center; }
-.page-back { position: absolute; left: -4px; top: 50%; transform: translateY(-50%); width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-size: 24px; color: var(--ink); }
-.page-back:active { background: var(--or-soft); }
+.sheet-nav { position: absolute; top: 20px; left: 10px; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-size: 22px; color: var(--ink); background: var(--surface); z-index: 1; }
+.sheet-nav:active { background: var(--or-soft); }
 .to-addr { color: var(--ink); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 15px; font-weight: 500; }
 .page-bottom { margin-top: 6px; }
+.page-bottom.stack { display: flex; flex-direction: column; gap: 10px; }
+.pill.quiet { background: transparent; color: var(--hint); font-weight: 600; }
 .field-wrap { position: relative; }
 .field { background: var(--surface); border: 0; border-radius: 14px; padding: 0 52px 0 16px; height: 52px; width: 100%; outline: none; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 15px; box-shadow: 0 0 0 1px var(--line) inset; }
 .field:focus { box-shadow: 0 0 0 2px var(--or) inset; }

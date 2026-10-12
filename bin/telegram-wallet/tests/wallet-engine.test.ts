@@ -271,11 +271,20 @@ describe('WalletEngine transactions', () => {
     expect(release).toHaveBeenCalledTimes(1);
   });
 
+  it('reports the fee a send paid, from the new balance', async () => {
+    const { engine, ms } = await ready();
+    // 5 before; 2 sent and a fee of 1 leave 2.
+    ms.account = { ...ms.account, balances: [{ faucetId: FEE, amount: 2n }] };
+    await expect(engine.send(RECIPIENT, FEE, 2n)).resolves.toEqual({ fee: 1n });
+    await engine.settled();
+  });
+
   it('treats a failure to read the new balance after a successful execute as success', async () => {
     const { engine, ms, release } = await ready();
     ms.getStoreAccount = async () => { throw new Error('store busy'); };
     ms.syncState = async () => { throw new Error('guardian unavailable'); };
-    await engine.send(RECIPIENT, TOKEN, 1n);
+    // Without the new balance, the fee is unknown.
+    await expect(engine.send(RECIPIENT, TOKEN, 1n)).resolves.toEqual({ fee: null });
     expect(engine.getSnapshot().notice).toMatch(/balance may take a moment/);
     expect(release).not.toHaveBeenCalled();
     await engine.settled();
@@ -358,6 +367,13 @@ describe('toActivity', () => {
     expect(toActivity(entries).map(({ direction, amount, counterparty }) => ({ direction, amount, counterparty }))).toEqual([
       { direction: 'out', amount: 10n, counterparty: RECIPIENT },
       { direction: 'in', amount: 5n, counterparty: RECIPIENT },
+    ]);
+  });
+
+  it('puts each transaction’s fee on its first item', () => {
+    expect(toActivity(entries).map((item) => item.fee)).toEqual([
+      { faucetId: FEE, amount: 126n },
+      { faucetId: FEE, amount: 126n },
     ]);
   });
 });

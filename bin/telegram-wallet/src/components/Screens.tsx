@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { VaultBalance } from '@openzeppelin/miden-multisig-client';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { accountAddress, shortAddress } from '@/lib/address';
-import { payLinkAddress } from '@/lib/payLink';
+import { isCollectLink, payLinkAddress } from '@/lib/payLink';
 import { usePref } from '@/lib/prefs';
 import { playChime, playTick, unlockSoundOnFirstTouch } from '@/lib/sound';
 import {
@@ -105,17 +105,22 @@ function WalletHome() {
   const busy = snapshot.activity !== null;
   useEffect(() => setClosingConfirmation(busy), [busy]);
 
-  // Opened from someone's pay link: straight to Send, once the wallet is ready.
+  // Opened from someone's pay link: straight to Send, once the wallet is
+  // ready. From a "Tell them" message: straight to Receive, to collect.
   const linkHandled = useRef(false);
   useEffect(() => {
     if (!ready || linkHandled.current) return;
     linkHandled.current = true;
-    const to = payLinkAddress(telegramStartParam());
+    const param = telegramStartParam();
+    const to = payLinkAddress(param);
     if (to) {
       setPrefill(to);
       setView('send');
+    } else if (isCollectLink(param)) {
+      setView('receive');
+      void engine.refresh().catch(() => undefined);
     }
-  }, [ready]);
+  }, [ready, engine]);
 
   // Settings live in Telegram's own menu for the app; a gear outside Telegram.
   const openSettings = () => {

@@ -2,6 +2,7 @@
 
 import { useEffect, useReducer, useRef } from 'react';
 import { biometricName, initBiometrics, type BiometricManager } from './biometrics';
+import { reportDiag } from './remoteDiag';
 
 interface TelegramWebApp {
   initData: string;
@@ -172,7 +173,10 @@ export function useTelegramBackButton(onBack: (() => void) | null): void {
   useEffect(() => {
     const button = webApp()?.BackButton;
     if (!button || !visible) return;
-    const handler = () => latest.current?.();
+    const handler = () => {
+      reportDiag('telegram.back', 'pressed');
+      latest.current?.();
+    };
     button.onClick(handler);
     button.show();
     return () => {
@@ -223,11 +227,14 @@ export function viewportHeight(): number {
 export function onViewportChange(onChange: () => void): () => void {
   const app = webApp();
   app?.onEvent?.('viewportChanged', onChange);
-  // iOS scrolls the visible area when the keyboard opens, without resizing it.
+  // The page resizing (Telegram shrinks it for the keyboard), the visible area
+  // resizing, and Safari scrolling the visible area without resizing it.
+  window.addEventListener('resize', onChange);
   window.visualViewport?.addEventListener('resize', onChange);
   window.visualViewport?.addEventListener('scroll', onChange);
   return () => {
     app?.offEvent?.('viewportChanged', onChange);
+    window.removeEventListener('resize', onChange);
     window.visualViewport?.removeEventListener('resize', onChange);
     window.visualViewport?.removeEventListener('scroll', onChange);
   };

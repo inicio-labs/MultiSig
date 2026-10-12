@@ -6,9 +6,12 @@ import { useTokenInfo } from '@/hooks/useTokenInfo';
 import { accountAddress, shortAddress } from '@/lib/address';
 import { confirmWithBiometrics } from '@/lib/biometrics';
 import { formatError } from '@/lib/errors';
+import { feeLabel } from '@/lib/fees';
 import { toHexAccountId } from '@/lib/helpers';
+import { collectLink } from '@/lib/payLink';
 import { usePref } from '@/lib/prefs';
-import { canScanQr, haptic, insideTelegram, scanQr, telegramBiometrics } from '@/lib/telegram';
+import { reportDiag } from '@/lib/remoteDiag';
+import { canScanQr, haptic, scanQr, shareLink, telegramBiometrics } from '@/lib/telegram';
 import { formatTokenAmount, parseTokenAmount } from '@/lib/tokenAmounts';
 import { Icon } from './Icon';
 import { ProgressSteps } from './ProgressSteps';
@@ -23,7 +26,7 @@ type Step = 'to' | 'amount' | 'sending' | 'sent';
 
 /**
  * Fees are paid in the fee token (USDCX on testnet), from the same balance, so
- * Max keeps 0.001 of it back: several times today's testnet fee (~0.00013).
+ * a send must leave 0.001 of it: several times today's testnet fee (~0.00013).
  */
 function feeReserve(decimals: number): bigint {
   return 10n ** BigInt(Math.max(decimals - 3, 0));
@@ -69,6 +72,7 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
   const [error, setError] = useState<string | null>(null);
   const [shake, setShake] = useState(0);
   const [sent, setSent] = useState('');
+  const [fee, setFee] = useState<bigint | null>(null);
   const [biometricSends] = usePref('biometricSends');
 
   const balances = snapshot.balances;
@@ -127,10 +131,6 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
   const busy = step === 'sending';
   // Telegram's back button (via the sheet) steps back to the recipient, then closes.
   const back = step === 'amount' ? () => setStep('to') : null;
-  // Inside Telegram its own back button does this.
-  const backArrow = back && !insideTelegram
-    ? <button className="page-back" onClick={back} aria-label="Back"><Icon name="back" /></button>
-    : null;
 
   const scan = async () => {
     haptic('light');
@@ -148,13 +148,13 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
     }
   };
 
-  const max = () => {
-    if (!balance || token.status !== 'ready') return;
-    const isFee = faucetId.toLowerCase() === snapshot.feeFaucetId;
-    const value = isFee ? balance.amount - feeReserve(decimals) : balance.amount;
-    setAmount(value > 0n ? formatTokenAmount(value, decimals) : '0');
-    haptic('selection');
-  };
+  const paysFee = faucetId.toLowerCase() === snapshot.feeFaucetId;
+  // What a send costs, before sliding: the last fee this wallet paid, else the
+  // amount it keeps back for one.
+  const lastFee = snapshot.history.find((item) => item.fee)?.fee?.amount;
+  const feeEstimate = token.status === 'ready' && paysFee
+    ? feeLabel(lastFee ?? feeReserve(decimals), decimals, symbol)
+    : null;
 
   const send = () => {
     if (!recipient || !balance || token.status !== 'ready') return;
@@ -165,7 +165,13 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
       return fail('Enter an amount');
     }
     if (units > balance.amount) return fail('That’s more than you have');
+    // Never the whole balance: the fee comes out of it too.
+    const reserve = paysFee ? feeReserve(decimals) : 0n;
+    if (units + reserve > balance.amount) {
+      return fail(`Leave ${formatTokenAmount(reserve, decimals)} ${symbol} for the fee`);
+    }
     setError(null);
+    setFee(null);
     amountInput.current?.blur();
     setStep('sending');
     const label = `${formatTokenAmount(units, decimals)} ${symbol}`;
@@ -176,14 +182,26 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
         setStep('amount');
         return fail('Not confirmed. Slide to try again.');
       }
-      await engine.send(recipient.hex, faucetId, units, { private: isPrivate });
+      const result = await engine.send(recipient.hex, faucetId, units, { private: isPrivate });
+      setFee(result.fee);
       haptic('success');
       setStep('sent');
     };
     go().catch((e: unknown) => {
+      reportDiag('send.error', e);
       setStep('amount');
       fail(formatError(e));
     });
+  };
+
+  // After a send: tell the friend in their chat, with a link that opens their
+  // wallet on Collect.
+  const link = collectLink();
+  const tellThem = () => {
+    if (!link) return;
+    haptic('light');
+    const text = `I sent you ${sent}${isPrivate ? ' privately' : ''} on Miden. Open your wallet to collect it:`;
+    void shareLink(link, text).catch(() => undefined);
   };
 
   return (
@@ -202,7 +220,7 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
 
       {step === 'to' && (
         <>
-          <div className="page-title">{backArrow}Send</div>
+          <div className="page-title">Send</div>
           <div className="field-wrap">
             <input
               className="field"
@@ -235,16 +253,17 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
 
       {step === 'amount' && recipient && (
         <>
-          <div className="page-title">{backArrow}To <span className="to-addr">{shortAddress(recipient.address)}</span></div>
+          <div className="page-title">To <span className="to-addr">{shortAddress(recipient.address)}</span></div>
           <button key={shake} className={`amount${shake ? ' shake' : ''}`} onClick={() => amountInput.current?.focus()}>
             <RollingNumber value={amount || '0'} className="fast" />
             <span className="caret" />
             <small>{symbol}</small>
           </button>
           <div className="amount-meta">
-            <button className="pill" onClick={max}>
-              {balance && token.status === 'ready' ? `Balance ${formatTokenAmount(balance.amount, decimals)} · Max` : 'Max'}
-            </button>
+            {balance && token.status === 'ready' && (
+              <span className="pill">Balance {formatTokenAmount(balance.amount, decimals)}</span>
+            )}
+            {feeEstimate && <span className="pill quiet">Fee {feeEstimate}</span>}
             {balances.length > 1 && balances.map((b) => (
               <button
                 key={b.faucetId}
@@ -280,9 +299,15 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
             <div className="done"><Icon name="check" /></div>
             <div className="page-title">Sent {sent}{isPrivate ? ' privately' : ''}</div>
             <div className="sub">to {shortAddress(recipient.address)}</div>
+            {fee !== null && token.status === 'ready' && (
+              <div className="sub">Fee {feeLabel(fee, decimals, symbol)}</div>
+            )}
             {snapshot.notice && <div className="sub">{snapshot.notice}</div>}
           </div>
-          <div className="page-bottom"><button className="btn soft" onClick={onClose}>Done</button></div>
+          <div className="page-bottom stack">
+            {link && <button className="btn" onClick={tellThem}><Icon name="share" />Tell them</button>}
+            <button className="btn soft" onClick={onClose}>Done</button>
+          </div>
         </>
       )}
     </Sheet>
