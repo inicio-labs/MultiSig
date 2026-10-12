@@ -238,11 +238,16 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
   };
 
   // After a send: tell them in their chat, from your own account (you pick
-  // the chat and press send). No link: their address may be in any Miden wallet.
+  // the chat and press send). No link: their address may be in any Miden wallet,
+  // so the message names it.
   const tellThem = () => {
+    if (!recipient) return;
     haptic('light');
-    void shareText(`Hi! I've sent you ${sent}${isPrivate ? ' privately' : ''}. Please claim it in your Miden wallet.`)
-      .catch(() => undefined);
+    // The full address: they may have several wallets; this says which one.
+    void shareText(
+      `Hi! I've sent you ${sent}${isPrivate ? ' privately' : ''} to your address ${recipient.address}. `
+      + 'Please claim it in your Miden wallet.',
+    ).catch(() => undefined);
   };
 
   return (
