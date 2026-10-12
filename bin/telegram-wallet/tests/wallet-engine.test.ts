@@ -84,8 +84,11 @@ function setup(opts: FakeOptions & {
   existing?: Array<{ accountId: string; updatedAt: string }>;
   remembered?: string;
   privateNotes?: Partial<PrivateNotes>;
+  /** The Guardian lookup fails this many times first, with this error. */
+  lookupFails?: { times: number; error: Error };
 } = {}) {
   const log: string[] = [];
+  const lookups: string[] = [];
   const ms = fakeMultisig(log, opts);
   const midenClient: WalletMidenClient = {
     sync: async () => { log.push('sync'); },
@@ -99,8 +102,13 @@ function setup(opts: FakeOptions & {
     signer: { commitment: '0x' + '0c'.repeat(32), scheme: 'ecdsa' } as unknown as Signer,
     startMidenClient: async () => { log.push('startMidenClient'); return midenClient; },
     createMultisigClient: () => ({
-      recoverByKey: async () => (opts.existing ?? []).map(({ accountId, updatedAt }) => ({ accountId, state: { updatedAt } })),
+      recoverByKey: async () => {
+        lookups.push('recoverByKey');
+        if (opts.lookupFails && opts.lookupFails.times-- > 0) throw opts.lookupFails.error;
+        return (opts.existing ?? []).map(({ accountId, updatedAt }) => ({ accountId, state: { updatedAt } }));
+      },
     }),
+    startRetryDelaysMs: [0, 0, 0],
     createAccount: async () => { log.push('createAccount'); return ms as never; },
     loadAccount: async (_c, accountId) => { log.push(`load:${accountId}`); return ms as never; },
     registerOnNode: async () => { log.push('registerOnNode'); },
@@ -122,7 +130,7 @@ function setup(opts: FakeOptions & {
     const kind = engine.getSnapshot().phase.kind;
     if (phases.at(-1) !== kind) phases.push(kind);
   });
-  return { engine, log, ms, phases, release, store, deps };
+  return { engine, log, lookups, ms, phases, release, store, deps };
 }
 
 describe('WalletEngine.start', () => {
@@ -165,6 +173,25 @@ describe('WalletEngine.start', () => {
     // Another key (another Telegram user on this phone) sees nothing of it.
     const stranger = new WalletEngine({ ...first.deps, signer: { commitment: '0x' + 'ab'.repeat(32) } as unknown as Signer });
     expect(stranger.getSnapshot()).toMatchObject({ balances: [], history: [], savedAt: null });
+  });
+
+  it('tries a start again on its own when the phone’s database aborts a read (first launch)', async () => {
+    const aborted = new Error('failed to get account: storage error: database-related non-query error: failed to fetch account snapshot: JsValue(Object({"name":"AbortError","message":"Transaction aborted"}))');
+    const { engine, lookups } = setup({ nonce: 1n, existing: [{ accountId: '0xacc', updatedAt: '2026-10-01T00:00:00Z' }], lookupFails: { times: 2, error: aborted } });
+    await engine.start();
+    expect(engine.getSnapshot().phase).toEqual({ kind: 'ready' });
+    expect(lookups).toHaveLength(3);
+  });
+
+  it('shows a start error that is not passing, or that keeps happening', async () => {
+    const wrong = setup({ existing: [], lookupFails: { times: 1, error: new Error('signature does not match') } });
+    await wrong.engine.start();
+    expect(wrong.engine.getSnapshot().phase).toMatchObject({ kind: 'error', message: expect.stringMatching(/while looking up the account on Guardian.*signature/) });
+
+    const stuck = setup({ existing: [], lookupFails: { times: 9, error: new Error('Transaction aborted') } });
+    await stuck.engine.start();
+    expect(stuck.engine.getSnapshot().phase.kind).toBe('error');
+    expect(stuck.lookups).toHaveLength(4);
   });
 
   it('holds only the network fee token (USDCX): other tokens are never shown or collected', async () => {
@@ -222,7 +249,10 @@ describe('WalletEngine.start', () => {
 
   it('reports a failed start, and a retry resumes the same account', async () => {
     const { engine, log, ms } = setup();
-    const register = vi.fn().mockRejectedValueOnce(new Error('node unavailable')).mockResolvedValue(undefined);
+    // Unavailable through the automatic retries (1 + 3), then back.
+    const down = new Error('node unavailable');
+    const register = vi.fn().mockRejectedValueOnce(down).mockRejectedValueOnce(down).mockRejectedValueOnce(down)
+      .mockRejectedValueOnce(down).mockResolvedValue(undefined);
     (engine as unknown as { deps: { registerOnNode: typeof register } }).deps.registerOnNode = register;
     await engine.start();
     expect(engine.getSnapshot().phase).toMatchObject({ kind: 'error', message: expect.stringContaining('node unavailable') });

@@ -45,6 +45,8 @@ export interface WalletEngineDeps<C extends WalletMidenClient, M extends WalletM
   registerNoteTag(midenClient: C, accountId: string): Promise<void>;
   /** How long each step of a transaction took (diagnostics). */
   trace?(label: string, ms: number): void;
+  /** Waits between automatic start retries (tests pass zeros). */
+  startRetryDelaysMs?: number[];
   /** Private sends: note delivery and the check before each transaction. */
   createPrivateNotes?(midenClient: C): PrivateNotes;
   /** Remembers the account this key last used, to prefer it if the key has several. */
@@ -152,6 +154,17 @@ interface SavedView {
 export const LAST_VIEW_KEY = 'miden-tg-wallet:last-view:';
 
 const LAST_ACCOUNT_KEY = 'miden-tg-wallet:last-account';
+
+/**
+ * A start that fails on something passing (the phone's local database
+ * aborting a read while it sets itself up on a first launch, a network or
+ * Guardian hiccup) is tried again on its own before any error shows: the
+ * screen keeps "Updating…". Never while creating the account: a retry there
+ * could make a second one.
+ */
+const START_RETRY_DELAYS_MS = [800, 2_000, 4_000];
+const RETRY_PHASES = new Set<WalletPhase['kind']>(['starting', 'finding', 'registering']);
+const PASSING_ERROR = /transaction aborted|aborterror|database-related|failed to fetch|load failed|network|timed? ?out|deadline|unavailable|\b50[234]\b/i;
 
 /** What start() was doing, for the error a user can send us. */
 const START_STEP: Partial<Record<WalletPhase['kind'], string>> = {
@@ -278,7 +291,27 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
   }
 
   private async run(): Promise<void> {
-    try {
+    const delays = this.deps.startRetryDelaysMs ?? START_RETRY_DELAYS_MS;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await this.startOnce();
+        return;
+      } catch (error) {
+        const phase = this.snapshot.phase.kind;
+        if (attempt < delays.length && RETRY_PHASES.has(phase) && PASSING_ERROR.test(formatError(error))) {
+          console.warn(`Wallet start failed (${phase}); trying again`, error);
+          await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
+          continue;
+        }
+        const during = START_STEP[phase] ?? 'starting';
+        this.update({ phase: { kind: 'error', message: formatError(error, `The wallet could not start (while ${during})`) } });
+        return;
+      }
+    }
+  }
+
+  private async startOnce(): Promise<void> {
+    {
       this.update({ phase: { kind: 'starting' }, notice: null });
       const midenClient = this.midenClient ?? await this.deps.startMidenClient();
       this.midenClient = midenClient;
@@ -310,9 +343,6 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
         void this.exclusive(() => this.checkDeliveries(multisig, privateNotes))
           .catch((error) => console.warn('An earlier private payment is not delivered yet', error));
       }
-    } catch (error) {
-      const during = START_STEP[this.snapshot.phase.kind] ?? 'starting';
-      this.update({ phase: { kind: 'error', message: formatError(error, `The wallet could not start (while ${during})`) } });
     }
   }
 
