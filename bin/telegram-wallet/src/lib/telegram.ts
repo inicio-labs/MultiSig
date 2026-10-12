@@ -200,6 +200,23 @@ export function haptic(kind: Haptic): void {
 }
 
 /** Share into a Telegram chat with the chat picker; the system share sheet elsewhere. */
+/**
+ * A plain message into a chat the user picks, sent from their own account.
+ * Telegram's share link needs a `url`: the message goes there, alone.
+ */
+export async function shareText(text: string): Promise<void> {
+  const app = webApp();
+  if (app?.openTelegramLink) {
+    app.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(text)}`);
+    return;
+  }
+  if (navigator.share) {
+    await navigator.share({ text });
+    return;
+  }
+  await navigator.clipboard.writeText(text);
+}
+
 export async function shareLink(url: string, text: string): Promise<void> {
   const app = webApp();
   if (app?.openTelegramLink) {

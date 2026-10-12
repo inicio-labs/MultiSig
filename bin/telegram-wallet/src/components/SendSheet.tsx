@@ -10,9 +10,8 @@ import { alertRecipient } from '@/lib/alerts';
 import { formatError } from '@/lib/errors';
 import { feeLabel } from '@/lib/fees';
 import { toHexAccountId } from '@/lib/helpers';
-import { collectLink } from '@/lib/payLink';
 import { reportDiag } from '@/lib/remoteDiag';
-import { canScanQr, haptic, onAppActiveChange, scanQr, shareLink, telegramBiometrics } from '@/lib/telegram';
+import { canScanQr, haptic, onAppActiveChange, scanQr, shareText, telegramBiometrics } from '@/lib/telegram';
 import { formatTokenAmount, parseTokenAmount } from '@/lib/tokenAmounts';
 import { Icon } from './Icon';
 import { ProgressSteps } from './ProgressSteps';
@@ -238,14 +237,12 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
     });
   };
 
-  // After a send: tell the friend in their chat, with a link that opens their
-  // wallet on Collect.
-  const link = collectLink();
+  // After a send: tell them in their chat, from your own account (you pick
+  // the chat and press send). No link: their address may be in any Miden wallet.
   const tellThem = () => {
-    if (!link) return;
     haptic('light');
-    const text = `I sent you ${sent}${isPrivate ? ' privately' : ''} on Miden. Open your wallet to collect it:`;
-    void shareLink(link, text).catch(() => undefined);
+    void shareText(`Hi! I've sent you ${sent}${isPrivate ? ' privately' : ''}. Please claim it in your Miden wallet.`)
+      .catch(() => undefined);
   };
 
   return (
@@ -370,7 +367,7 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
             {snapshot.notice && <div className="sub">{snapshot.notice}</div>}
           </div>
           <div className="page-bottom stack">
-            {link && <button className="btn" onClick={tellThem}><Icon name="share" />Tell them</button>}
+            <button className="btn" onClick={tellThem}><Icon name="share" />Tell them</button>
             <button className="btn soft" onClick={onClose}>Done</button>
           </div>
         </>
