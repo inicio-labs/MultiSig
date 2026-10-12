@@ -1,11 +1,10 @@
 /**
- * Face ID or fingerprint before a send, through Telegram's own prompt
- * (BiometricManager, Bot API 7.2). It locks the phone, not the key: the
- * Privy key still signs on its own, so this stops someone holding an
- * unlocked phone, not someone with the Telegram account on another device.
- * Where there is nothing to ask with (Telegram Desktop and web, phones
- * without biometrics) or the user declined Telegram's permission, sends go
- * ahead without it.
+ * Face ID or fingerprint before every send, through Telegram's own prompt
+ * (BiometricManager, Bot API 7.2). Strict: no scan, no send. Where there is
+ * nothing to scan with (Telegram Desktop and web, a phone without Face ID or
+ * fingerprint, a Telegram that does not answer) or the permission was
+ * declined, the wallet can view and receive but not send. It locks the
+ * phone, not the key: the Privy key could still sign on its own.
  */
 
 /** Telegram's BiometricManager, the parts the wallet uses. */
@@ -61,18 +60,26 @@ export function authenticate(manager: BiometricManager, reason: string): Promise
   });
 }
 
-/**
- * Whether a send may go ahead: after a successful scan, or when this phone
- * cannot ask. The first send asks Telegram's permission.
- */
-export async function confirmWithBiometrics(
-  manager: BiometricManager | null,
-  { enabled, reason }: { enabled: boolean; reason: string },
-): Promise<boolean> {
-  if (!manager || !enabled) return true;
+/** Why this device cannot send right now ("ok" when it can ask for a scan). */
+export type SendLock = 'ok' | 'no-telegram' | 'no-biometrics' | 'no-answer' | 'denied';
+
+/** Whether this device can confirm a send with a scan, without asking anything yet. */
+export async function sendLock(manager: BiometricManager | null): Promise<SendLock> {
+  if (!manager) return 'no-telegram';
   await initBiometrics(manager);
-  if (!manager.isInited || !manager.isBiometricAvailable) return true;
-  if (!manager.isAccessRequested && !(await requestBiometricAccess(manager))) return true;
-  if (!manager.isAccessGranted) return true;
-  return authenticate(manager, reason);
+  if (!manager.isInited) return 'no-answer';
+  if (!manager.isBiometricAvailable) return 'no-biometrics';
+  if (manager.isAccessRequested && !manager.isAccessGranted) return 'denied';
+  return 'ok';
+}
+
+/**
+ * The scan before a send: "ok" only after a successful one. The first send
+ * asks Telegram's permission; declining it is "denied".
+ */
+export async function confirmWithBiometrics(manager: BiometricManager | null, reason: string): Promise<SendLock | 'failed'> {
+  const lock = await sendLock(manager);
+  if (lock !== 'ok' || !manager) return lock;
+  if (!manager.isAccessRequested && !(await requestBiometricAccess(manager))) return 'denied';
+  return (await authenticate(manager, reason)) ? 'ok' : 'failed';
 }

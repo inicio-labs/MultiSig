@@ -1,17 +1,17 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccountId } from '@miden-sdk/miden-sdk';
 import { useTokenInfo } from '@/hooks/useTokenInfo';
 import { accountAddress, shortAddress } from '@/lib/address';
-import { confirmWithBiometrics } from '@/lib/biometrics';
+import { confirmWithBiometrics, sendLock, type SendLock } from '@/lib/biometrics';
+import { DEV_LOCAL_SIGNER } from '@/lib/devSigner';
 import { formatError } from '@/lib/errors';
 import { feeLabel } from '@/lib/fees';
 import { toHexAccountId } from '@/lib/helpers';
 import { collectLink } from '@/lib/payLink';
-import { usePref } from '@/lib/prefs';
 import { reportDiag } from '@/lib/remoteDiag';
-import { canScanQr, haptic, scanQr, shareLink, telegramBiometrics } from '@/lib/telegram';
+import { canScanQr, haptic, onAppActiveChange, scanQr, shareLink, telegramBiometrics } from '@/lib/telegram';
 import { formatTokenAmount, parseTokenAmount } from '@/lib/tokenAmounts';
 import { Icon } from './Icon';
 import { ProgressSteps } from './ProgressSteps';
@@ -24,6 +24,31 @@ import { useWallet } from './WalletProvider';
 
 
 type Step = 'to' | 'amount' | 'sending' | 'sent';
+
+// Development with the browser-held key (never a production build): no Telegram to scan with.
+const SKIP_SCAN = DEV_LOCAL_SIGNER;
+
+/** Why sending is off here, and what fixes it. */
+const LOCKED: Record<Exclude<SendLock, 'ok'>, { title: string; text: string; action?: 'settings' | 'retry' }> = {
+  'no-telegram': {
+    title: 'Send from your phone',
+    text: 'Every send is confirmed with Face ID or a fingerprint, so sending works in Telegram on your phone. Here you can see and receive.',
+  },
+  'no-biometrics': {
+    title: 'Set up Face ID or a fingerprint',
+    text: 'Every send is confirmed with Face ID or a fingerprint. Turn one on in your phone’s settings, then come back.',
+  },
+  'no-answer': {
+    title: 'Couldn’t check Face ID',
+    text: 'Telegram didn’t answer. Try again in a moment.',
+    action: 'retry',
+  },
+  denied: {
+    title: 'Allow Face ID for this wallet',
+    text: 'Every send is confirmed with Face ID or a fingerprint. Allow it in Telegram’s settings for this wallet.',
+    action: 'settings',
+  },
+};
 
 /**
  * Fees are paid in the fee token (USDCX on testnet), from the same balance, so
@@ -74,7 +99,18 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
   const [shake, setShake] = useState(0);
   const [sent, setSent] = useState('');
   const [fee, setFee] = useState<bigint | null>(null);
-  const [biometricSends] = usePref('biometricSends');
+  // Checked on opening (and on coming back from settings): a device that
+  // cannot scan does not get as far as the slide.
+  const [lock, setLock] = useState<SendLock | null>(null);
+  const checkLock = useCallback(() => {
+    if (SKIP_SCAN) return setLock('ok');
+    void sendLock(telegramBiometrics()).then(setLock);
+  }, []);
+  useEffect(() => {
+    if (!open) return;
+    checkLock();
+    return onAppActiveChange((active) => { if (active) checkLock(); });
+  }, [open, checkLock]);
 
   const balances = snapshot.balances;
   const balance = balances.find((b) => b.faucetId === faucetId);
@@ -181,9 +217,12 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
     setSent(label);
     // Face ID first, while the first step ("Confirming it’s you") shows.
     const go = async () => {
-      if (!(await confirmWithBiometrics(telegramBiometrics(), { enabled: biometricSends !== false, reason: `Send ${label}` }))) {
+      const scan = SKIP_SCAN ? 'ok' : await confirmWithBiometrics(telegramBiometrics(), `Send ${label}`);
+      if (scan !== 'ok') {
         setStep('amount');
-        return fail('Not confirmed. Slide to try again.');
+        if (scan === 'failed') return fail('Not confirmed. Slide to try again.');
+        setLock(scan);
+        return;
       }
       const result = await engine.send(recipient.hex, faucetId, units, { private: isPrivate });
       setFee(result.fee);
@@ -221,7 +260,21 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
         aria-label="Amount"
       />
 
-      {step === 'to' && (
+      {lock && lock !== 'ok' && (step === 'to' || step === 'amount') && (
+        <div className="center locked">
+          <div className="done locked-icon"><Icon name="lock" /></div>
+          <div className="page-title">{LOCKED[lock].title}</div>
+          <div className="sub">{LOCKED[lock].text}</div>
+          {LOCKED[lock].action === 'settings' && (
+            <button className="btn" onClick={() => telegramBiometrics()?.openSettings()}>Open settings</button>
+          )}
+          {LOCKED[lock].action === 'retry' && (
+            <button className="btn soft" onClick={checkLock}>Try again</button>
+          )}
+        </div>
+      )}
+
+      {(!lock || lock === 'ok') && step === 'to' && (
         <>
           <div className="page-title">Send</div>
           <div className="field-wrap">
@@ -254,7 +307,7 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
         </>
       )}
 
-      {step === 'amount' && recipient && (
+      {(!lock || lock === 'ok') && step === 'amount' && recipient && (
         <>
           <div className="page-title">To <span className="to-addr">{shortAddress(recipient.address)}</span></div>
           <button key={shake} className={`amount${shake ? ' shake' : ''}`} onClick={() => amountInput.current?.focus()}>

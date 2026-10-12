@@ -13,8 +13,6 @@ import { telegramCloud } from './telegram';
 export const PREFS = {
   hideAmounts: { key: 'hide_amounts', fallback: false },
   sound: { key: 'sound', fallback: true },
-  // Face ID / fingerprint before each send, where the phone has it (biometrics.ts).
-  biometricSends: { key: 'biometric_sends', fallback: true },
 } as const;
 
 type PrefName = keyof typeof PREFS;

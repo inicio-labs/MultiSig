@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { biometricName, confirmWithBiometrics, type BiometricManager } from '@/lib/biometrics';
+import { biometricName, confirmWithBiometrics, sendLock, type BiometricManager } from '@/lib/biometrics';
 
 function fakeManager(over: Partial<BiometricManager> = {}, { grant = true, pass = true } = {}) {
   const calls: string[] = [];
@@ -23,61 +23,55 @@ function fakeManager(over: Partial<BiometricManager> = {}, { grant = true, pass 
   return { manager, calls };
 }
 
-describe('Face ID before a send', () => {
-  it('goes ahead without asking where Telegram has no biometrics', async () => {
-    expect(await confirmWithBiometrics(null, { enabled: true, reason: 'Send 1 USDCX' })).toBe(true);
+describe('Face ID before every send (strict)', () => {
+  const granted = { isInited: true, isAccessRequested: true, isAccessGranted: true };
+
+  it('cannot send without Telegram’s biometrics (Desktop, web)', async () => {
+    expect(await confirmWithBiometrics(null, 'Send 1 USDCX')).toBe('no-telegram');
+    expect(await sendLock(null)).toBe('no-telegram');
   });
 
-  it('goes ahead without asking when turned off', async () => {
-    const { manager, calls } = fakeManager({ isInited: true, isAccessRequested: true, isAccessGranted: true });
-    expect(await confirmWithBiometrics(manager, { enabled: false, reason: 'Send 1 USDCX' })).toBe(true);
-    expect(calls).toEqual([]);
-  });
-
-  it('goes ahead on a phone without Face ID or fingerprint', async () => {
+  it('cannot send on a phone without Face ID or fingerprint', async () => {
     const { manager, calls } = fakeManager({ isBiometricAvailable: false });
-    expect(await confirmWithBiometrics(manager, { enabled: true, reason: 'Send 1 USDCX' })).toBe(true);
+    expect(await confirmWithBiometrics(manager, 'Send 1 USDCX')).toBe('no-biometrics');
     expect(calls).toEqual(['init']);
   });
 
-  it('asks Telegram’s permission on the first send, then scans', async () => {
-    const { manager, calls } = fakeManager();
-    expect(await confirmWithBiometrics(manager, { enabled: true, reason: 'Send 1 USDCX' })).toBe(true);
-    expect(calls).toEqual(['init', 'access:Confirm your payments with a glance or a touch', 'auth:Send 1 USDCX']);
-  });
-
-  it('goes ahead without a scan when the permission is declined, now or before', async () => {
-    const declined = fakeManager({}, { grant: false });
-    expect(await confirmWithBiometrics(declined.manager, { enabled: true, reason: 'Send 1 USDCX' })).toBe(true);
-    expect(declined.calls.some((c) => c.startsWith('auth'))).toBe(false);
-
-    const before = fakeManager({ isInited: true, isAccessRequested: true, isAccessGranted: false });
-    expect(await confirmWithBiometrics(before.manager, { enabled: true, reason: 'Send 1 USDCX' })).toBe(true);
-    expect(before.calls).toEqual([]);
-  });
-
-  it('goes ahead when Telegram never answers whether it has biometrics', async () => {
+  it('cannot send when Telegram never answers', async () => {
     vi.useFakeTimers();
     try {
-      const { manager, calls } = fakeManager({ init() { calls.push('init'); } });
-      const result = confirmWithBiometrics(manager, { enabled: true, reason: 'Send 1 USDCX' });
+      const { manager } = fakeManager({ init() {} });
+      const result = confirmWithBiometrics(manager, 'Send 1 USDCX');
       await vi.advanceTimersByTimeAsync(2_000);
-      await expect(result).resolves.toBe(true);
-      expect(calls).toEqual(['init']);
+      await expect(result).resolves.toBe('no-answer');
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it('stops the send when the scan fails', async () => {
-    const { manager, calls } = fakeManager({ isInited: true, isAccessRequested: true, isAccessGranted: true }, { pass: false });
-    expect(await confirmWithBiometrics(manager, { enabled: true, reason: 'Send 1 USDCX' })).toBe(false);
-    expect(calls).toEqual(['auth:Send 1 USDCX']);
+  it('asks Telegram’s permission on the first send, then scans', async () => {
+    const { manager, calls } = fakeManager();
+    expect(await confirmWithBiometrics(manager, 'Send 1 USDCX')).toBe('ok');
+    expect(calls).toEqual(['init', 'access:Confirm your payments with a glance or a touch', 'auth:Send 1 USDCX']);
+  });
+
+  it('cannot send when the permission is declined, now or before', async () => {
+    const declined = fakeManager({}, { grant: false });
+    expect(await confirmWithBiometrics(declined.manager, 'Send 1 USDCX')).toBe('denied');
+    expect(declined.calls.some((c) => c.startsWith('auth'))).toBe(false);
+
+    const before = fakeManager({ isInited: true, isAccessRequested: true, isAccessGranted: false });
+    expect(await sendLock(before.manager)).toBe('denied');
+  });
+
+  it('a failed scan is not a send', async () => {
+    const { manager } = fakeManager(granted, { pass: false });
+    expect(await confirmWithBiometrics(manager, 'Send 1 USDCX')).toBe('failed');
   });
 
   it('keeps the reason within Telegram’s 128 characters', async () => {
-    const { manager, calls } = fakeManager({ isInited: true, isAccessRequested: true, isAccessGranted: true });
-    await confirmWithBiometrics(manager, { enabled: true, reason: 'x'.repeat(200) });
+    const { manager, calls } = fakeManager(granted);
+    await confirmWithBiometrics(manager, 'x'.repeat(200));
     expect(calls[0]).toBe(`auth:${'x'.repeat(128)}`);
   });
 

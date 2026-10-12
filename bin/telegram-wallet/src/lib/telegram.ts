@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useReducer, useRef } from 'react';
-import { biometricName, initBiometrics, type BiometricManager } from './biometrics';
+import { useEffect, useRef } from 'react';
+import type { BiometricManager } from './biometrics';
 import { reportDiag } from './remoteDiag';
 
 interface TelegramWebApp {
@@ -362,34 +362,4 @@ export function telegramBiometrics(): BiometricManager | null {
   const app = webApp();
   const manager = app?.BiometricManager;
   return app && manager && supports(app, '7.2') ? manager : null;
-}
-
-export interface BiometricsState {
-  manager: BiometricManager;
-  /** e.g. "Face ID" */
-  name: string;
-  type: BiometricManager['biometricType'];
-  requested: boolean;
-  granted: boolean;
-}
-
-/** This phone's Face ID / fingerprint, kept current; null until known, or where there is none. */
-export function useTelegramBiometrics(): BiometricsState | null {
-  const [, changed] = useReducer((n: number) => n + 1, 0);
-  const manager = telegramBiometrics();
-  useEffect(() => {
-    const app = webApp();
-    if (!manager || !app) return;
-    void initBiometrics(manager).then(changed);
-    app.onEvent?.('biometricManagerUpdated', changed);
-    return () => app.offEvent?.('biometricManagerUpdated', changed);
-  }, [manager]);
-  if (!manager?.isInited || !manager.isBiometricAvailable) return null;
-  return {
-    manager,
-    name: biometricName(manager.biometricType, webApp()?.platform ?? 'unknown'),
-    type: manager.biometricType,
-    requested: manager.isAccessRequested,
-    granted: manager.isAccessGranted,
-  };
 }
