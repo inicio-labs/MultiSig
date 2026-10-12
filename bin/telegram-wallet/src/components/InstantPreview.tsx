@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { groupByDay, timeOfDay } from '@/lib/activityDays';
 import { readFirstPaint } from '@/lib/firstPaint';
 import { timeAgo } from '@/lib/timeAgo';
 import { Icon } from './Icon';
@@ -46,18 +47,27 @@ export function InstantPreview() {
           <span className="btn ink"><Icon name="receive" />Receive</span>
           <span className="btn"><Icon name="send" />Send</span>
         </div>
-        <div className={`cells updating${blur}`}>
-          <div className="cells-head">Activity</div>
-          {paint.rows.length === 0 && <div className="empty">Your payments show up here.</div>}
-          {paint.rows.map((row, i) => (
-            <div key={i} className="cell">
-              <span className="avatar"><Icon name={row.in ? 'receive' : 'send'} /></span>
-              <span className="cell-main">
-                <span className="cell-title">{row.in ? 'Received' : 'Sent'}</span>
-                <span className="cell-sub">{row.sub}</span>
-              </span>
-              <span className={`cell-value amount-value${row.in ? ' in' : ''}`}>{row.value}</span>
-            </div>
+        <div className={`activity updating${blur}`}>
+          {paint.rows.length === 0 && <div className="cells"><div className="empty">Your payments show up here.</div></div>}
+          {groupByDay(paint.rows, (row) => row.ts).map((day) => (
+            <section key={day.label} aria-label={day.label}>
+              <h2 className="day-head">{day.label}</h2>
+              <div className="cells">
+                {day.items.map((row, i) => (
+                  <div key={i} className="cell">
+                    <span className="avatar"><Icon name={row.in ? 'receive' : 'send'} /></span>
+                    <span className="cell-main">
+                      <span className="cell-title">{row.in ? 'Received' : 'Sent'}</span>
+                      <span className="cell-sub">{row.sub}</span>
+                    </span>
+                    <span className="cell-end">
+                      <span className={`cell-value amount-value${row.in ? ' in' : ''}`}>{row.value}</span>
+                      <span className="cell-time">{timeOfDay(row.ts)}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
           ))}
         </div>
       </main>

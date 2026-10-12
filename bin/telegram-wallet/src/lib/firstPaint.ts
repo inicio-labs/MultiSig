@@ -10,7 +10,8 @@ export interface FirstPaint {
   name: string | null;
   /** As on the card (short). */
   address: string;
-  rows: Array<{ in: boolean; sub: string; value: string }>;
+  /** Newest first; `ts` (ms) for the day headers and times, worked out at paint time. */
+  rows: Array<{ in: boolean; sub: string; value: string; ts: number }>;
   savedAt: number;
 }
 
@@ -38,6 +39,8 @@ export function readFirstPaint(): { paint: FirstPaint; hidden: boolean } | null 
   try {
     const paint = JSON.parse(window.localStorage.getItem(`${KEY}tg:${user}`) ?? 'null') as FirstPaint | null;
     if (!paint || typeof paint.balance !== 'string' || !Array.isArray(paint.rows)) return null;
+    // Saved before rows had times: not worth a jumpy first paint.
+    if (paint.rows.some((row) => typeof row.ts !== 'number')) return null;
     return { paint, hidden: window.localStorage.getItem(HIDE_AMOUNTS_KEY) === '1' };
   } catch {
     return null;

@@ -24,7 +24,8 @@ import {
 import { timeAgo } from '@/lib/timeAgo';
 import { formatTokenAmount, getTokenInfo } from '@/lib/tokenAmounts';
 import type { ActivityItem } from '@/lib/walletEngine';
-import { ActivityList, who } from './ActivityList';
+import { ActivityList, timeOf, who } from './ActivityList';
+import { AlertsNudgeSheet } from './AlertsNudgeSheet';
 import { BURST_LANDS_MS, CoinBurst, type Burst } from './CoinBurst';
 import { Icon } from './Icon';
 import { ReceiveSheet, type Collected } from './ReceiveSheet';
@@ -51,13 +52,15 @@ export function Screens() {
 function WalletHome() {
   const { engine, snapshot } = useWallet();
   const toast = useToast();
-  const [view, setView] = useState<'home' | 'send' | 'receive' | 'settings'>('home');
+  const [view, setView] = useState<'home' | 'send' | 'receive' | 'settings' | 'alerts'>('home');
   const [prefill, setPrefill] = useState<string | null>(null);
   const [cardGone, setCardGone] = useState(false);
   const [away, setAway] = useState(false);
   const [hideAmounts, setHideAmounts] = usePref('hideAmounts');
-  const [alerts, setAlerts] = usePref('alerts');
-  const [alertsAsked, setAlertsAsked] = usePref('alertsAsked');
+  const [alerts, setAlerts, alertsLoaded] = usePref('alerts');
+  const [alertsAsked, setAlertsAsked, askedLoaded] = usePref('alertsAsked');
+  // First payment collected (or "know when money arrives" if not the first).
+  const [firstPayment, setFirstPayment] = useState(true);
   const [burst, setBurst] = useState<Burst | null>(null);
   const [celebration, setCelebration] = useState<{ id: number; text: string } | null>(null);
   // While coins fly, the card keeps the old balance; it rolls up when they land.
@@ -97,15 +100,33 @@ function WalletHome() {
   useEffect(() => {
     if (ready && alerts === true && accountId) void refreshAlerts(accountId);
   }, [ready, alerts, accountId]);
-  const offerAlerts = ready && accountId !== null && alertsAvailable() && alerts === false && alertsAsked === false;
-  const turnOn = () => {
-    if (!accountId) return;
-    haptic('light');
+
+  // The one polite nudge for payment alerts: after a collect, once its coins,
+  // roll and chime are done, and only while nothing else is on screen.
+  const nudge = useRef({ can: false, view });
+  nudge.current = {
+    can: alertsLoaded && askedLoaded && alerts === false && alertsAsked === false && alertsAvailable(),
+    view,
+  };
+  const offerAlertsAfterCollect = () => {
+    const delay = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 1200 : 2400;
+    setTimeout(() => {
+      const { can, view: now } = nudge.current;
+      // Another sheet open, or the app in the background: next collect.
+      if (can && now === 'home' && document.visibilityState === 'visible') setView('alerts');
+    }, delay);
+  };
+  const answerAlerts = (turnOn: boolean) => {
     setAlertsAsked(true);
-    void turnOnAlerts(accountId).then((on) => {
-      setAlerts(on);
-      toast(on ? 'Payment alerts on' : 'Telegram didn’t allow messages, so alerts are off', on ? 'check' : 'alert');
-    });
+    setView('home');
+    if (!turnOn || !accountId) return;
+    // After the sheet has slid away: Telegram's own popup comes next.
+    setTimeout(() => {
+      void turnOnAlerts(accountId).then((on) => {
+        setAlerts(on);
+        toast(on ? 'Payment alerts on' : 'Telegram didn’t allow messages, so alerts are off', on ? 'check' : 'alert');
+      });
+    }, 350);
   };
   useEffect(() => unlockSoundOnFirstTouch(), []);
 
@@ -161,6 +182,8 @@ function WalletHome() {
   // Money collected: coins fly into the card, then it pulses, the balance
   // rolls up and the chime plays.
   const collected = ({ faucetId, amount, from }: Collected) => {
+    setFirstPayment(!snapshot.history.some((item) => item.direction === 'in'));
+    offerAlertsAfterCollect();
     setHeld(main);
     const card = cardSlot.current?.getBoundingClientRect();
     if (card) setBurst({ id: Date.now(), from, to: { x: card.left + card.width * 0.3, y: card.top + card.height * 0.35 } });
@@ -252,16 +275,6 @@ function WalletHome() {
           <button className="btn" onClick={openSend}><Icon name="send" />Send</button>
         </div>
 
-        {offerAlerts && (
-          <div className="notice">
-            <span><strong>Get a Telegram message when money arrives</strong><br /><span className="hint">Just a heads-up, never the amount.</span></span>
-            <div className="actions">
-              <button className="btn soft" onClick={() => setAlertsAsked(true)}>Not now</button>
-              <button className="btn" onClick={turnOn}>Turn on</button>
-            </div>
-          </div>
-        )}
-
         {phase.kind === 'error' && (
           <div className="notice">
             <span>Your wallet couldn’t start. <span className="hint selectable">{phase.message}</span></span>
@@ -281,8 +294,7 @@ function WalletHome() {
         )}
         {snapshot.notice && !busy && <div className="notice hint">{snapshot.notice}</div>}
 
-        <div className={`cells${hidden ? ' amounts-hidden' : ''}${updating ? ' updating' : ''}`}>
-          <div className="cells-head">Activity</div>
+        <div className={`activity${hidden ? ' amounts-hidden' : ''}${updating ? ' updating' : ''}`}>
           <ActivityList items={snapshot.history} loading={updating} />
         </div>
       </main>
@@ -294,6 +306,7 @@ function WalletHome() {
       <SendSheet open={view === 'send'} prefill={prefill} onClose={() => setView('home')} />
       <ReceiveSheet open={view === 'receive'} onClose={() => setView('home')} hidden={hidden} onCollected={collected} />
       <SettingsSheet open={view === 'settings'} onClose={() => setView('home')} accountId={snapshot.accountId} />
+      <AlertsNudgeSheet open={view === 'alerts'} firstPayment={firstPayment} onAnswer={answerAlerts} />
     </>
   );
 }
@@ -322,6 +335,7 @@ function FirstPaintSaver({ balance, history, name, address }: {
         in: item.direction === 'in',
         sub: who(item) + (item.fee ? ` · fee ${feeLabel(item.fee.amount, decimals, symbol)}` : ''),
         value: `${item.direction === 'in' ? '+' : '−'}${formatTokenAmount(item.amount, decimals)} ${symbol}`,
+        ts: timeOf(item),
       })),
       savedAt: Date.now(),
     });

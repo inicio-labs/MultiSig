@@ -48,24 +48,30 @@ function save(name: PrefName, value: boolean): void {
   void telegramCloud()?.set(key, value ? '1' : '0');
 }
 
-/** A setting, shared by every component that reads it; `null` until loaded. */
-export function usePref(name: PrefName): [boolean | null, (value: boolean) => void] {
+/**
+ * A setting, shared by every component that reads it: this device's copy at
+ * first (or null), then Telegram's. `loaded` once Telegram's is in (decisions
+ * that must not flash, like a one-time nudge, wait for it).
+ */
+export function usePref(name: PrefName): [boolean | null, (value: boolean) => void, boolean] {
   const [value, setValue] = useState<boolean | null>(cache.get(name) ?? onDevice(name));
+  const [loaded, setLoaded] = useState(cache.has(name));
   useEffect(() => {
     const set = listeners.get(name) ?? new Set();
     listeners.set(name, set);
-    set.add(setValue);
-    if (!cache.has(name)) {
-      void load(name).then((loaded) => {
-        if (!cache.has(name)) {
-          cache.set(name, loaded);
-          for (const listener of set) listener(loaded);
-        }
+    const listener = (next: boolean) => { setValue(next); setLoaded(true); };
+    set.add(listener);
+    if (cache.has(name)) setLoaded(true);
+    else {
+      void load(name).then((value) => {
+        if (!cache.has(name)) cache.set(name, value);
+        const current = cache.get(name) as boolean;
+        for (const each of set) each(current);
       });
     }
-    return () => { set.delete(setValue); };
+    return () => { set.delete(listener); };
   }, [name]);
-  return [value, useCallback((next: boolean) => save(name, next), [name])];
+  return [value, useCallback((next: boolean) => save(name, next), [name]), loaded];
 }
 
 /** The current value without subscribing (e.g. inside a sound helper). */

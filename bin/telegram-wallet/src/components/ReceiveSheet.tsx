@@ -3,8 +3,10 @@
 import { useEffect, useState, type MouseEvent } from 'react';
 import QRCode from 'qrcode';
 import { accountAddress, shortAddress } from '@/lib/address';
+import { alertsAvailable, turnOnAlerts } from '@/lib/alerts';
 import { formatError } from '@/lib/errors';
 import { payLink } from '@/lib/payLink';
+import { usePref } from '@/lib/prefs';
 import { haptic, shareLink } from '@/lib/telegram';
 import { Icon } from './Icon';
 import { ProgressSteps } from './ProgressSteps';
@@ -111,7 +113,10 @@ export function ReceiveSheet({ open, onClose, hidden, onCollected }: {
           {collecting ? (
             <ProgressSteps kind="claim" step={snapshot.activity?.kind === 'claim' ? snapshot.activity.step : 'preparing'} />
           ) : (
-            <button className="btn" onClick={collect} disabled={snapshot.activity !== null}>Collect</button>
+            <>
+              <button className="btn" onClick={collect} disabled={snapshot.activity !== null}>Collect</button>
+              <AlertsOffRow accountId={snapshot.accountId} />
+            </>
           )}
         </>
       ) : (
@@ -120,5 +125,32 @@ export function ReceiveSheet({ open, onClose, hidden, onCollected }: {
         </div>
       )}
     </Sheet>
+  );
+}
+
+/**
+ * After the one-time nudge was answered "Not now": a quiet reminder under
+ * Collect while payments wait (never during a collect), only while alerts are off.
+ */
+function AlertsOffRow({ accountId }: { accountId: string | null }) {
+  const [alerts, setAlerts, loaded] = usePref('alerts');
+  const [asked] = usePref('alertsAsked');
+  const [done, setDone] = useState<'on' | 'gone' | null>(null);
+  if (done === 'gone' || !accountId || !loaded || alerts !== false || asked !== true || !alertsAvailable()) {
+    return done === 'on' ? <div className="alerts-row on"><Icon name="check" />Alerts on</div> : null;
+  }
+  const turnOn = () => {
+    haptic('light');
+    void turnOnAlerts(accountId).then((on) => {
+      if (!on) return haptic('error');
+      setDone('on');
+      setAlerts(true);
+      setTimeout(() => setDone('gone'), 1500);
+    });
+  };
+  return (
+    <button className="alerts-row" onClick={turnOn}>
+      <Icon name="bellOff" /><span className="hint">Alerts are off ·</span><strong>Turn on</strong>
+    </button>
   );
 }

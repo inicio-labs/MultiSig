@@ -190,6 +190,23 @@ button.cell:active { background: var(--bg); }
 .cell-sub { font-size: 13px; color: var(--hint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cell-value { margin-left: auto; font-family: var(--rounded); font-size: 16px; font-weight: 600; white-space: nowrap; }
 .cell-value.in { color: var(--green); }
+/* Activity by day (ActivityList): a header over a card per day; the time under the amount. */
+.activity { display: flex; flex-direction: column; transition: opacity .3s; }
+.activity.updating { opacity: .6; }
+.activity > section + section { margin-top: 2px; }
+.day-head { margin: 0; padding: 18px 16px 6px; font-size: 13px; font-weight: 600; color: var(--hint); }
+.cell-end { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex: none; }
+.cell-end .cell-value { margin-left: 0; }
+.cell-time { font-size: 13px; color: var(--hint); font-variant-numeric: tabular-nums; }
+/* The one-time alerts nudge, and its quiet reminder in Receive. */
+.nudge { gap: 10px; padding-top: 14px; }
+.nudge .sub { max-width: 300px; font-size: 15px; line-height: 1.45; }
+.nudge-icon { width: 64px; height: 64px; border-radius: 50%; background: var(--or); color: var(--ink); display: grid; place-items: center; font-size: 30px; }
+.text-btn { min-height: 44px; width: 100%; font-size: 16px; font-weight: 600; color: var(--hint); }
+.alerts-row { min-height: 44px; width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 8px; font-size: 13px; color: var(--ink); transition: opacity .2s; }
+.alerts-row .icon { color: var(--hint); font-size: 15px; }
+.alerts-row strong { font-weight: 600; }
+.alerts-row.on { color: var(--green); }
 .empty { text-align: center; padding: 22px 16px 26px; color: var(--hint); font-size: 14px; }
 
 /* Bottom sheet (Receive) */
@@ -290,7 +307,7 @@ button.cell:active { background: var(--bg); }
   to { left: calc(100% - 30px); opacity: 0; transform: scale(.6); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .flow-note, .row-in { animation: none !important; }
+  .flow-note, .row-in, .card.card-pulse, .card.card-pulse .card-sweep, .card-plus, .bell.ring, .badge, .done { animation: none !important; }
   .flow.is-sending .flow-note:first-child { opacity: 1; left: calc(50% - 15px); }
 }
 .progress { list-style: none; margin: 0; padding: 4px 4px 6px; display: grid; gap: 12px; }
