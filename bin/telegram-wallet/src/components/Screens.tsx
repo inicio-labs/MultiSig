@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { VaultBalance } from '@openzeppelin/miden-multisig-client';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { useTokenInfo } from '@/hooks/useTokenInfo';
+import { alertsAvailable, refreshAlerts, turnOnAlerts } from '@/lib/alerts';
 import { feeLabel } from '@/lib/fees';
 import { saveFirstPaint } from '@/lib/firstPaint';
 import { viewKeyFor } from '@/lib/savedView';
@@ -55,6 +56,8 @@ function WalletHome() {
   const [cardGone, setCardGone] = useState(false);
   const [away, setAway] = useState(false);
   const [hideAmounts, setHideAmounts] = usePref('hideAmounts');
+  const [alerts, setAlerts] = usePref('alerts');
+  const [alertsAsked, setAlertsAsked] = usePref('alertsAsked');
   const [burst, setBurst] = useState<Burst | null>(null);
   const [celebration, setCelebration] = useState<{ id: number; text: string } | null>(null);
   // While coins fly, the card keeps the old balance; it rolls up when they land.
@@ -88,6 +91,22 @@ function WalletHome() {
   });
 
   useEffect(() => onAppActiveChange((active) => setAway(!active)), []);
+
+  // Payment alerts on: link this wallet's address again on each open.
+  const accountId = snapshot.accountId;
+  useEffect(() => {
+    if (ready && alerts === true && accountId) void refreshAlerts(accountId);
+  }, [ready, alerts, accountId]);
+  const offerAlerts = ready && accountId !== null && alertsAvailable() && alerts === false && alertsAsked === false;
+  const turnOn = () => {
+    if (!accountId) return;
+    haptic('light');
+    setAlertsAsked(true);
+    void turnOnAlerts(accountId).then((on) => {
+      setAlerts(on);
+      toast(on ? 'Payment alerts on' : 'Telegram didn’t allow messages, so alerts are off', on ? 'check' : 'alert');
+    });
+  };
   useEffect(() => unlockSoundOnFirstTouch(), []);
 
   // Once the card scrolls away, its balance rides in the top bar.
@@ -233,6 +252,16 @@ function WalletHome() {
           <button className="btn" onClick={openSend}><Icon name="send" />Send</button>
         </div>
 
+        {offerAlerts && (
+          <div className="notice">
+            <span><strong>Get a Telegram message when money arrives</strong><br /><span className="hint">Just a heads-up, never the amount.</span></span>
+            <div className="actions">
+              <button className="btn soft" onClick={() => setAlertsAsked(true)}>Not now</button>
+              <button className="btn" onClick={turnOn}>Turn on</button>
+            </div>
+          </div>
+        )}
+
         {phase.kind === 'error' && (
           <div className="notice">
             <span>Your wallet couldn’t start. <span className="hint selectable">{phase.message}</span></span>
@@ -264,7 +293,7 @@ function WalletHome() {
       <CoinBurst burst={burst} />
       <SendSheet open={view === 'send'} prefill={prefill} onClose={() => setView('home')} />
       <ReceiveSheet open={view === 'receive'} onClose={() => setView('home')} hidden={hidden} onCollected={collected} />
-      <SettingsSheet open={view === 'settings'} onClose={() => setView('home')} />
+      <SettingsSheet open={view === 'settings'} onClose={() => setView('home')} accountId={snapshot.accountId} />
     </>
   );
 }

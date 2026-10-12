@@ -43,6 +43,7 @@ interface TelegramWebApp {
     selectionChanged(): void;
   };
   openTelegramLink?(url: string): void;
+  requestWriteAccess?(callback: (allowed: boolean) => void): void;
 }
 
 function webApp(): TelegramWebApp | undefined {
@@ -50,9 +51,10 @@ function webApp(): TelegramWebApp | undefined {
 }
 
 // Read at module load, before Privy consumes the launch URL (it strips
-// tgWebAppData), and kept only in this page's memory: never log, persist or
-// send it anywhere. Privy verifies it for login; we only need to know it exists
-// and to put it back for a retry.
+// tgWebAppData), and kept only in this page's memory: never log or persist it.
+// Privy verifies it for login, and the payment-alerts server (alerts.ts) to
+// know which Telegram user is asking; otherwise it only shows we are inside
+// Telegram and is put back for a retry.
 const launchUrl = new URL(window.location.href);
 const launchData =
   webApp()?.initData ||
@@ -362,4 +364,16 @@ export function telegramBiometrics(): BiometricManager | null {
   const app = webApp();
   const manager = app?.BiometricManager;
   return app && manager && supports(app, '7.2') ? manager : null;
+}
+
+/** Telegram's signed launch data, for our own server to check who is asking; null outside Telegram. */
+export function telegramInitData(): string | null {
+  return launchData || null;
+}
+
+/** Telegram's "allow the bot to message you?" (Bot API 6.9); true when it may. */
+export function requestTelegramWriteAccess(): Promise<boolean> {
+  const app = webApp();
+  if (!app?.requestWriteAccess || !supports(app, '6.9')) return Promise.resolve(false);
+  return new Promise((resolve) => app.requestWriteAccess?.((allowed) => resolve(allowed)));
 }

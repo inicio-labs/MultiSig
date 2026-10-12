@@ -13,6 +13,9 @@ import { telegramCloud } from './telegram';
 export const PREFS = {
   hideAmounts: { key: 'hide_amounts', fallback: false },
   sound: { key: 'sound', fallback: true },
+  // Payment alerts from the bot (alerts.ts); "asked" hides the home card once answered.
+  alerts: { key: 'payment_alerts', fallback: false },
+  alertsAsked: { key: 'payment_alerts_asked', fallback: false },
 } as const;
 
 type PrefName = keyof typeof PREFS;

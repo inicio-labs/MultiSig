@@ -6,6 +6,7 @@ import { useTokenInfo } from '@/hooks/useTokenInfo';
 import { accountAddress, shortAddress } from '@/lib/address';
 import { confirmWithBiometrics, sendLock, type SendLock } from '@/lib/biometrics';
 import { DEV_LOCAL_SIGNER } from '@/lib/devSigner';
+import { alertRecipient } from '@/lib/alerts';
 import { formatError } from '@/lib/errors';
 import { feeLabel } from '@/lib/fees';
 import { toHexAccountId } from '@/lib/helpers';
@@ -225,6 +226,7 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
         return;
       }
       const result = await engine.send(recipient.hex, faucetId, units, { private: isPrivate });
+      alertRecipient(recipient.hex);
       setFee(result.fee);
       haptic('success');
       setStep('sent');
