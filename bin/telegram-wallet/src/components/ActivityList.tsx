@@ -2,10 +2,8 @@
 
 import { useEffect, useRef } from 'react';
 import { useToday } from '@/hooks/useToday';
-import { useTokenInfo } from '@/hooks/useTokenInfo';
 import { groupByDay, timeOfDay } from '@/lib/activityDays';
 import { accountAddress, shortAddress } from '@/lib/address';
-import { feeLabel } from '@/lib/fees';
 import type { ActivityItem } from '@/lib/walletEngine';
 import { Icon } from './Icon';
 import { TokenAmount } from './TokenAmount';
@@ -59,7 +57,7 @@ export function ActivityList({ items, loading = false }: { items: ActivityItem[]
                 <span className="avatar"><Icon name={item.direction === 'in' ? 'receive' : 'send'} /></span>
                 <span className="cell-main">
                   <span className="cell-title">{item.direction === 'in' ? 'Received' : 'Sent'}</span>
-                  <span className="cell-sub">{who(item)}{item.fee && <Fee fee={item.fee} />}</span>
+                  <span className="cell-sub">{who(item)}</span>
                 </span>
                 <span className="cell-end">
                   <span className={`cell-value amount-value${item.direction === 'in' ? ' in' : ''}`}>
@@ -75,11 +73,4 @@ export function ActivityList({ items, loading = false }: { items: ActivityItem[]
       ))}
     </>
   );
-}
-
-/** " · fee under 1¢": what the transaction cost. */
-function Fee({ fee }: { fee: NonNullable<ActivityItem['fee']> }) {
-  const token = useTokenInfo(fee.faucetId);
-  if (token.status !== 'ready') return null;
-  return <> · fee {feeLabel(fee.amount, token.info.decimals, token.info.symbol)}</>;
 }

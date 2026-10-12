@@ -5,7 +5,6 @@ import type { VaultBalance } from '@openzeppelin/miden-multisig-client';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { useTokenInfo } from '@/hooks/useTokenInfo';
 import { alertsAvailable, refreshAlerts, turnOnAlerts } from '@/lib/alerts';
-import { feeLabel } from '@/lib/fees';
 import { saveFirstPaint } from '@/lib/firstPaint';
 import { viewKeyFor } from '@/lib/savedView';
 import { accountAddress, shortAddress } from '@/lib/address';
@@ -333,7 +332,7 @@ function FirstPaintSaver({ balance, history, name, address }: {
       address,
       rows: history.slice(0, 8).map((item) => ({
         in: item.direction === 'in',
-        sub: who(item) + (item.fee ? ` · fee ${feeLabel(item.fee.amount, decimals, symbol)}` : ''),
+        sub: who(item),
         value: `${item.direction === 'in' ? '+' : '−'}${formatTokenAmount(item.amount, decimals)} ${symbol}`,
         ts: timeOf(item),
       })),
