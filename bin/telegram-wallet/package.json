@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev -p 3005",
     "build": "next build && node scripts/copy-worker-wasm.mjs",
+    "build:static": "NEXT_STATIC_EXPORT=1 NEXT_PUBLIC_REMOTE_DIAGNOSTICS=0 NEXT_DIST_DIR=.next-static next build && node scripts/copy-worker-wasm.mjs .next-static/_next/static",
     "start": "next start -p 3005",
     "typecheck": "tsc --noEmit --incremental false",
     "test": "vitest run"

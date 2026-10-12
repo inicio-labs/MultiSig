@@ -11,9 +11,15 @@ const securityHeaders = [
   { key: 'Referrer-Policy', value: 'no-referrer' },
 ];
 
+// The permanent site (npm run build:static): plain files for static hosting
+// (Amplify); its headers are set there. Without the test-only diagnostics route.
+const staticExport = process.env.NEXT_STATIC_EXPORT === '1';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'standalone',
+  output: staticExport ? 'export' : 'standalone',
+  // route.diag.ts (remote diagnostics) exists only in server builds.
+  pageExtensions: staticExport ? ['tsx', 'ts'] : ['diag.ts', 'tsx', 'ts'],
   // A second local copy (e.g. the development signer beside a production
   // build) needs its own build folder: two Next processes must not share one.
   distDir: process.env.NEXT_DIST_DIR || '.next',
@@ -21,9 +27,11 @@ const nextConfig = {
   outputFileTracingRoot: __dirname,
   // `next dev` behind a tunnel (Telegram needs https): allow its host to load dev assets.
   allowedDevOrigins: ['*.trycloudflare.com'],
-  async headers() {
-    return [{ source: '/:path*', headers: securityHeaders }];
-  },
+  ...(staticExport ? {} : {
+    async headers() {
+      return [{ source: '/:path*', headers: securityHeaders }];
+    },
+  }),
   webpack: (config, { webpack }) => {
     config.experiments = { ...config.experiments, asyncWebAssembly: true };
     config.module.rules.push({ test: /\.wasm$/, type: 'asset/resource' });
