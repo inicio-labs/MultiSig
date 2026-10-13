@@ -5,6 +5,7 @@ import type { VaultBalance } from '@openzeppelin/miden-multisig-client';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { useTokenInfo } from '@/hooks/useTokenInfo';
 import { alertsAvailable, refreshAlerts, turnOnAlerts } from '@/lib/alerts';
+import { useContacts, type Contacts } from '@/lib/contacts';
 import { completeRegistration, directoryAvailable, isRegistrationLaunch, lookupSelf, startRegistration } from '@/lib/directory';
 import { saveFirstPaint } from '@/lib/firstPaint';
 import { viewKeyFor } from '@/lib/savedView';
@@ -61,6 +62,7 @@ function WalletHome() {
   const [alerts, setAlerts, alertsLoaded] = usePref('alerts');
   const [directory, setDirectory, directoryLoaded] = usePref('directory');
   const [newSeen, setNewSeen, newSeenLoaded] = usePref('newUsernameSeen');
+  const contacts = useContacts(snapshot.accountId);
   const [alertsAsked, setAlertsAsked, askedLoaded] = usePref('alertsAsked');
   // First payment collected (or "know when money arrives" if not the first).
   const [firstPayment, setFirstPayment] = useState(true);
@@ -341,12 +343,12 @@ function WalletHome() {
         {snapshot.notice && !busy && <div className="notice hint">{snapshot.notice}</div>}
 
         <div className={`activity${hidden ? ' amounts-hidden' : ''}${updating ? ' updating' : ''}`}>
-          <ActivityList items={snapshot.history} loading={updating} />
+          <ActivityList items={snapshot.history} loading={updating} contacts={contacts} />
         </div>
       </main>
 
       {ready && main && (
-        <FirstPaintSaver balance={main} history={snapshot.history} name={name} address={address ? shortAddress(address) : ''} />
+        <FirstPaintSaver balance={main} history={snapshot.history} name={name} address={address ? shortAddress(address) : ''} contacts={contacts} />
       )}
       <CoinBurst burst={burst} />
       <SendSheet open={view === 'send'} prefill={prefill} onClose={() => setView('home')} />
@@ -362,11 +364,12 @@ function WalletHome() {
  * After every refresh: this screen as plain text, for the next open's
  * instant first paint (firstPaint.ts). Inside Telegram only (keyed by user).
  */
-function FirstPaintSaver({ balance, history, name, address }: {
+function FirstPaintSaver({ balance, history, name, address, contacts }: {
   balance: VaultBalance;
   history: ActivityItem[];
   name: string | null;
   address: string;
+  contacts: Contacts;
 }) {
   const token = useTokenInfo(balance.faucetId);
   useEffect(() => {
@@ -380,12 +383,12 @@ function FirstPaintSaver({ balance, history, name, address }: {
       address,
       rows: history.slice(0, 8).map((item) => ({
         in: item.direction === 'in',
-        sub: who(item),
+        sub: who(item, contacts),
         value: `${item.direction === 'in' ? '+' : '−'}${formatTokenAmount(item.amount, decimals)} ${symbol}`,
         ts: timeOf(item),
       })),
       savedAt: Date.now(),
     });
-  }, [balance, history, name, address, token]);
+  }, [balance, history, name, address, token, contacts]);
   return null;
 }

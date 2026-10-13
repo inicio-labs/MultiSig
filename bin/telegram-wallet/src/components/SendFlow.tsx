@@ -10,7 +10,7 @@ export type FlowStage = 'confirming' | 'sending' | 'landed';
  * and lands on their side only once the payment is through. Sealed with a
  * lock when private. Still frames with reduced motion.
  */
-export function SendFlow({ stage, to, isPrivate }: { stage: FlowStage; to: string; isPrivate: boolean }) {
+export function SendFlow({ stage, to, toLabel, isPrivate }: { stage: FlowStage; to: string; toLabel?: string; isPrivate: boolean }) {
   return (
     <div className={`flow is-${stage}`} aria-hidden>
       <div className="flow-end">
@@ -26,7 +26,7 @@ export function SendFlow({ stage, to, isPrivate }: { stage: FlowStage; to: strin
       </div>
       <div className="flow-end">
         <span className="avatar flow-to"><Icon name={stage === 'landed' ? 'check' : 'user'} /></span>
-        <span className="flow-label">…{to.slice(-4)}</span>
+        <span className="flow-label">{toLabel ?? `…${to.slice(-4)}`}</span>
       </div>
     </div>
   );

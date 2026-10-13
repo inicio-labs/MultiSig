@@ -4,14 +4,19 @@ import { useEffect, useRef } from 'react';
 import { useToday } from '@/hooks/useToday';
 import { groupByDay, timeOfDay } from '@/lib/activityDays';
 import { accountAddress, shortAddress } from '@/lib/address';
+import { contactFor, contactLabel, type Contacts } from '@/lib/contacts';
 import type { ActivityItem } from '@/lib/walletEngine';
 import { Icon } from './Icon';
 import { TokenAmount } from './TokenAmount';
 
-export function who(item: ActivityItem): string {
+export function who(item: ActivityItem, contacts: Contacts = {}): string {
   if (!item.counterparty) return 'Private payment';
+  const direction = item.direction === 'in' ? 'from' : 'to';
+  // Paid by Telegram name before: the name, not the address.
+  const contact = contactFor(contacts, item.counterparty);
+  if (contact) return `${direction} ${contactLabel(contact)}`;
   try {
-    return `${item.direction === 'in' ? 'from' : 'to'} ${shortAddress(accountAddress(item.counterparty))}`;
+    return `${direction} ${shortAddress(accountAddress(item.counterparty))}`;
   } catch {
     return 'Private payment';
   }
@@ -24,7 +29,7 @@ export const timeOf = (item: ActivityItem): number => Date.parse(item.timestamp)
  * 6 Oct") over a card of that day's payments, each with its local time under
  * the amount. Times stay visible when amounts are hidden.
  */
-export function ActivityList({ items, loading = false }: { items: ActivityItem[]; loading?: boolean }) {
+export function ActivityList({ items, loading = false, contacts = {} }: { items: ActivityItem[]; loading?: boolean; contacts?: Contacts }) {
   const today = useToday();
   // Rows already there on the first render (the saved view) do not fade in;
   // payments that arrive later do.
@@ -57,7 +62,7 @@ export function ActivityList({ items, loading = false }: { items: ActivityItem[]
                 <span className="avatar"><Icon name={item.direction === 'in' ? 'receive' : 'send'} /></span>
                 <span className="cell-main">
                   <span className="cell-title">{item.direction === 'in' ? 'Received' : 'Sent'}</span>
-                  <span className="cell-sub">{who(item)}</span>
+                  <span className="cell-sub">{who(item, contacts)}</span>
                 </span>
                 <span className="cell-end">
                   <span className={`cell-value amount-value${item.direction === 'in' ? ' in' : ''}`}>

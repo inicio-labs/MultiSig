@@ -7,6 +7,7 @@ import { accountAddress, shortAddress } from '@/lib/address';
 import { confirmWithBiometrics, sendLock, type SendLock } from '@/lib/biometrics';
 import { DEV_LOCAL_SIGNER } from '@/lib/devSigner';
 import { alertRecipient } from '@/lib/alerts';
+import { contactFor, contactLabel, matchContacts, saveContact, useContacts } from '@/lib/contacts';
 import { lookupUsername } from '@/lib/directory';
 import { formatError } from '@/lib/errors';
 import { feeLabel } from '@/lib/fees';
@@ -93,7 +94,8 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
   const amountInput = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<Step>('to');
   const [input, setInput] = useState('');
-  const [recipient, setRecipient] = useState<{ hex: string; address: string; label?: string } | null>(null);
+  // `person`: paid by Telegram name (now or before), remembered for next time.
+  const [recipient, setRecipient] = useState<{ hex: string; address: string; label?: string; person?: { name: string; username: string | null } } | null>(null);
   // "@alex": looked up in the Telegram directory, checked on this phone.
   const [found, setFound] = useState<DirectoryEntry | 'looking' | 'none' | null>(null);
   const [faucetId, setFaucetId] = useState('');
@@ -139,9 +141,17 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
 
   // Called from the tap or keystroke that picked the recipient: iOS opens the
   // keyboard only for a focus made while handling the user's own input.
-  const pick = (value: string, { quiet = false, label }: { quiet?: boolean; label?: string } = {}): boolean => {
+  const contacts = useContacts(snapshot.accountId);
+  const pick = (value: string, { quiet = false, person }: { quiet?: boolean; person?: { name: string; username: string | null } } = {}): boolean => {
     try {
-      setRecipient({ ...parseRecipient(value, snapshot.accountId), label });
+      const parsed = parseRecipient(value, snapshot.accountId);
+      // A known person, however they were picked (typed address, recents, QR).
+      const known = person ?? contactFor(contacts, parsed.hex);
+      setRecipient({
+        ...parsed,
+        label: known ? (known.username ? `@${known.username}` : known.name) : undefined,
+        person: known ? { name: known.name, username: known.username } : undefined,
+      });
     } catch (e) {
       if (!quiet) fail(formatError(e));
       return false;
@@ -168,6 +178,11 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
     // Only on opening: later balance updates must not reset the form.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, prefill]);
+
+  // People paid by name before, as soon as a few letters match.
+  const suggestions = step === 'to' && input.trim() && !input.trim().startsWith('mtst') && !input.trim().startsWith('0x')
+    ? matchContacts(contacts, input)
+    : [];
 
   // Typing @username: look it up after a short pause.
   const handle = /^@[A-Za-z0-9_]{4,32}$/.test(input.trim()) ? input.trim() : null;
@@ -242,6 +257,9 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
       }
       const result = await engine.send(recipient.hex, faucetId, units, { private: isPrivate });
       alertRecipient(recipient.hex);
+      if (recipient.person && snapshot.accountId) {
+        saveContact(snapshot.accountId, { address: recipient.hex, ...recipient.person });
+      }
       setFee(result.fee);
       haptic('success');
       setStep('sent');
@@ -312,13 +330,27 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
               <button className="field-icon" onClick={scan} aria-label="Scan a QR code"><Icon name="scan" /></button>
             )}
           </div>
-          {handle && (
+          {suggestions.length > 0 && (
+            <div className="cells">
+              <div className="cells-head">People you paid</div>
+              {suggestions.map((c) => (
+                <button key={c.address} className="cell" onClick={() => pick(c.address, { person: c })}>
+                  <span className="avatar">{c.name.slice(0, 1).toUpperCase()}</span>
+                  <span className="cell-main">
+                    <span className="cell-title">{c.name}</span>
+                    <span className="cell-sub">{c.username ? `@${c.username}` : shortAddress(accountAddress(c.address))}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+          {handle && !(found && typeof found === 'object' && suggestions.some((c) => c.address === found.address)) && (
             <div className="cells">
               {found === 'looking' && <div className="empty">Looking up {handle}…</div>}
               {found === 'none' && <div className="empty">{handle} can’t be paid by username yet.</div>}
               {found && typeof found === 'object' && (
                 found.address === snapshot.accountId?.toLowerCase() ? <div className="empty">That’s you</div> : (
-                  <button className="cell" onClick={() => pick(found.address, { label: `@${found.username}` })}>
+                  <button className="cell" onClick={() => pick(found.address, { person: { name: found.name, username: found.username } })}>
                     <span className="avatar">{found.name.slice(0, 1).toUpperCase()}</span>
                     <span className="cell-main">
                       <span className="cell-title">{found.name}</span>
@@ -329,15 +361,24 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
               )}
             </div>
           )}
-          {!handle && recents.length > 0 && (
+          {!input.trim() && recents.length > 0 && (
             <div className="cells">
               <div className="cells-head">Recent</div>
-              {recents.map((id) => (
-                <button key={id} className="cell" onClick={() => pick(id)}>
-                  <span className="avatar"><Icon name="user" /></span>
-                  <span className="cell-main"><span className="cell-title mono-ish">{shortAddress(accountAddress(id))}</span></span>
-                </button>
-              ))}
+              {recents.map((id) => {
+                const contact = contactFor(contacts, id);
+                return (
+                  <button key={id} className="cell" onClick={() => pick(id)}>
+                    <span className="avatar">{contact ? contact.name.slice(0, 1).toUpperCase() : <Icon name="user" />}</span>
+                    <span className="cell-main">
+                      {contact ? (
+                        <><span className="cell-title">{contact.name}</span><span className="cell-sub">{contactLabel(contact)}</span></>
+                      ) : (
+                        <span className="cell-title mono-ish">{shortAddress(accountAddress(id))}</span>
+                      )}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           )}
           <p className="error">{error}</p>
@@ -385,6 +426,7 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
             <SendFlow
               stage={sendStep === 'preparing' || sendStep === 'signing' ? 'confirming' : 'sending'}
               to={recipient.address}
+              toLabel={recipient.label}
               isPrivate={isPrivate}
             />
           )}
@@ -396,9 +438,9 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
       {step === 'sent' && recipient && (
         <>
           <div className="center">
-            <SendFlow stage="landed" to={recipient.address} isPrivate={isPrivate} />
+            <SendFlow stage="landed" to={recipient.address} toLabel={recipient.label} isPrivate={isPrivate} />
             <div className="page-title">Sent {sent}{isPrivate ? ' privately' : ''}</div>
-            <div className="sub">to {shortAddress(recipient.address)}</div>
+            <div className="sub">to {recipient.label ?? shortAddress(recipient.address)}</div>
             {fee !== null && token.status === 'ready' && (
               <div className="sub">Fee {feeLabel(fee, decimals, symbol)}</div>
             )}
