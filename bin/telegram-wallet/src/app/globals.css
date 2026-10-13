@@ -244,6 +244,9 @@ button.cell:active { background: var(--bg); }
 .sheet .locked { gap: 12px; padding-bottom: 8px; }
 .sheet .locked .sub { max-width: 300px; line-height: 1.45; }
 .locked-icon { width: 64px; height: 64px; font-size: 30px; animation: none; }
+.set-head { margin: 0; padding: 14px 4px 6px; font-size: 13px; font-weight: 600; color: var(--hint); }
+.cell-sub.wrap { white-space: normal; line-height: 1.35; }
+.sub.fine { font-size: 12px; line-height: 1.4; padding: 0 6px; text-align: left; }
 .pill.quiet { background: transparent; color: var(--hint); font-weight: 600; }
 .field-wrap { position: relative; }
 .field { background: var(--surface); border: 0; border-radius: 14px; padding: 0 52px 0 16px; height: 52px; width: 100%; outline: none; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 15px; box-shadow: 0 0 0 1px var(--line) inset; }

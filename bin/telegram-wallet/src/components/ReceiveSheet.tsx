@@ -3,6 +3,7 @@
 import { useEffect, useState, type MouseEvent } from 'react';
 import QRCode from 'qrcode';
 import { accountAddress, shortAddress } from '@/lib/address';
+import { useDirectory } from '@/hooks/useDirectory';
 import { alertsAvailable, turnOnAlerts } from '@/lib/alerts';
 import { formatError } from '@/lib/errors';
 import { payLink } from '@/lib/payLink';
@@ -10,6 +11,7 @@ import { usePref } from '@/lib/prefs';
 import { haptic, shareLink } from '@/lib/telegram';
 import { Icon } from './Icon';
 import { ProgressSteps } from './ProgressSteps';
+import { DirectoryToggle } from './SettingsSheet';
 import { Sheet } from './Sheet';
 import { TokenAmount } from './TokenAmount';
 import { useToast } from './Toast';
@@ -44,6 +46,7 @@ export function ReceiveSheet({ open, onClose, hidden, onCollected }: {
   const [qr, setQr] = useState<string | null>(null);
   const [collecting, setCollecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const directory = useDirectory(snapshot.accountId);
   // The network's funding note is collected automatically during setup.
   const waiting = snapshot.phase.kind === 'ready' ? snapshot.incoming : [];
 
@@ -63,7 +66,11 @@ export function ReceiveSheet({ open, onClose, hidden, onCollected }: {
   const share = () => {
     haptic('light');
     const link = payLink(address);
-    void shareLink(link ?? address, link ? 'Pay me on Miden' : 'My Miden address').catch(() => undefined);
+    // In the directory: friends can also just type the username.
+    const text = directory.on && directory.username
+      ? `Pay me in PrivPay: @${directory.username}`
+      : link ? 'Pay me on Miden' : 'My Miden address';
+    void shareLink(link ?? address, text).catch(() => undefined);
   };
 
   const collect = (e: MouseEvent<HTMLButtonElement>) => {
@@ -94,6 +101,16 @@ export function ReceiveSheet({ open, onClose, hidden, onCollected }: {
         <button className="chip" onClick={copy}><Icon name="copy" />Copy</button>
         <button className="chip" onClick={share}><Icon name="share" />Share</button>
       </div>
+
+      {/* Where people look when they want to get paid: here, not hidden in settings. */}
+      {directory.available && (
+        <>
+          <div className="cells"><DirectoryToggle directory={directory} /></div>
+          {directory.username && (
+            <div className="sub fine">Anyone who knows your username can find this address. Your balance and payments stay private.</div>
+          )}
+        </>
+      )}
 
       {waiting.length > 0 ? (
         <>

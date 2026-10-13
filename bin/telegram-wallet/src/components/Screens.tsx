@@ -13,7 +13,6 @@ import { isCollectLink, payLinkAddress } from '@/lib/payLink';
 import { usePref } from '@/lib/prefs';
 import { playChime, playTick, unlockSoundOnFirstTouch } from '@/lib/sound';
 import {
-  hasTelegramSettingsButton,
   haptic,
   onAppActiveChange,
   setClosingConfirmation,
@@ -198,7 +197,6 @@ function WalletHome() {
     setView('settings');
   };
   useTelegramSettingsButton(openSettings);
-  const settingsInMenu = hasTelegramSettingsButton();
 
   // Money collected: coins fly into the card, then it pulses, the balance
   // rolls up and the chime plays.
@@ -262,9 +260,8 @@ function WalletHome() {
           <button className="bell" onClick={toggleHidden} aria-label={hideAmounts ? 'Show amounts' : 'Hide amounts'} aria-pressed={hideAmounts === true}>
             <Icon name={hideAmounts ? 'eyeOff' : 'eye'} />
           </button>
-          {!settingsInMenu && (
-            <button className="bell" onClick={openSettings} aria-label="Settings"><Icon name="settings" /></button>
-          )}
+          {/* Inside Telegram too: its own menu item alone is too hidden. */}
+          <button className="bell" onClick={openSettings} aria-label="Settings"><Icon name="settings" /></button>
           <button
             key={bellRing}
             className={`bell${bellRing ? ' ring' : ''}`}
