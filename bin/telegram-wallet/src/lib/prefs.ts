@@ -18,6 +18,8 @@ export const PREFS = {
   alertsAsked: { key: 'payment_alerts_asked', fallback: false },
   // In the Telegram directory: friends can pay you by @username (directory.ts).
   directory: { key: 'directory', fallback: false },
+  // "New in PrivPay: get paid by @username", shown once to existing users.
+  newUsernameSeen: { key: 'new_username_seen', fallback: false },
 } as const;
 
 type PrefName = keyof typeof PREFS;

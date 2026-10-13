@@ -322,6 +322,8 @@ export function watchDeviceTilt(onTilt: (x: number, y: number) => void): () => v
  * across the user's Telegram devices. Settings only, never anything secret.
  * Null outside Telegram or on older clients.
  */
+const CLOUD_TIMEOUT_MS = 3_000;
+
 export function telegramCloud(): {
   get(key: string): Promise<string | null>;
   set(key: string, value: string): Promise<void>;
@@ -330,8 +332,13 @@ export function telegramCloud(): {
   const cloud = app?.CloudStorage;
   if (!app || !cloud || !supports(app, '6.9')) return null;
   return {
+    // A Telegram that never answers must not hold settings forever: this device's copy then.
     get: (key) => new Promise((resolve) => {
-      cloud.getItem(key, (error, value) => resolve(error ? null : (value || null)));
+      const timer = setTimeout(() => resolve(null), CLOUD_TIMEOUT_MS);
+      cloud.getItem(key, (error, value) => {
+        clearTimeout(timer);
+        resolve(error ? null : (value || null));
+      });
     }),
     set: (key, value) => new Promise((resolve) => {
       cloud.setItem(key, value, () => resolve());

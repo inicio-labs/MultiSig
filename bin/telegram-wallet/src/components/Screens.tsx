@@ -5,7 +5,7 @@ import type { VaultBalance } from '@openzeppelin/miden-multisig-client';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { useTokenInfo } from '@/hooks/useTokenInfo';
 import { alertsAvailable, refreshAlerts, turnOnAlerts } from '@/lib/alerts';
-import { completeRegistration, isRegistrationLaunch, lookupSelf } from '@/lib/directory';
+import { completeRegistration, directoryAvailable, isRegistrationLaunch, lookupSelf, startRegistration } from '@/lib/directory';
 import { saveFirstPaint } from '@/lib/firstPaint';
 import { viewKeyFor } from '@/lib/savedView';
 import { accountAddress, shortAddress } from '@/lib/address';
@@ -18,6 +18,7 @@ import {
   setClosingConfirmation,
   telegramStartParam,
   telegramUserName,
+  telegramUsername,
   useTelegramSettingsButton,
 } from '@/lib/telegram';
 import { timeAgo } from '@/lib/timeAgo';
@@ -25,6 +26,7 @@ import { formatTokenAmount, getTokenInfo } from '@/lib/tokenAmounts';
 import type { ActivityItem } from '@/lib/walletEngine';
 import { ActivityList, timeOf, who } from './ActivityList';
 import { AlertsNudgeSheet } from './AlertsNudgeSheet';
+import { WhatsNewSheet } from './WhatsNewSheet';
 import { BURST_LANDS_MS, CoinBurst, type Burst } from './CoinBurst';
 import { Icon } from './Icon';
 import { ReceiveSheet, type Collected } from './ReceiveSheet';
@@ -51,13 +53,14 @@ export function Screens() {
 function WalletHome() {
   const { engine, snapshot } = useWallet();
   const toast = useToast();
-  const [view, setView] = useState<'home' | 'send' | 'receive' | 'settings' | 'alerts'>('home');
+  const [view, setView] = useState<'home' | 'send' | 'receive' | 'settings' | 'alerts' | 'new'>('home');
   const [prefill, setPrefill] = useState<string | null>(null);
   const [cardGone, setCardGone] = useState(false);
   const [away, setAway] = useState(false);
   const [hideAmounts, setHideAmounts] = usePref('hideAmounts');
   const [alerts, setAlerts, alertsLoaded] = usePref('alerts');
   const [directory, setDirectory, directoryLoaded] = usePref('directory');
+  const [newSeen, setNewSeen, newSeenLoaded] = usePref('newUsernameSeen');
   const [alertsAsked, setAlertsAsked, askedLoaded] = usePref('alertsAsked');
   // First payment collected (or "know when money arrives" if not the first).
   const [firstPayment, setFirstPayment] = useState(true);
@@ -176,6 +179,31 @@ function WalletHome() {
       void engine.refresh().catch(() => undefined);
     }
   }, [ready, engine]);
+
+  // "New in PrivPay: get paid by @username": once, to someone who already had
+  // a wallet (payments in their history), has a Telegram username and has not
+  // turned it on; after the start, with nothing else open, not when opened
+  // from a link. Seen as soon as it shows, so it never comes back.
+  const username = useRef(telegramUsername()).current;
+  const whatsNewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const due = ready && newSeenLoaded && directoryLoaded && newSeen === false && directory === false
+      && Boolean(username) && directoryAvailable() && snapshot.history.length > 0 && !telegramStartParam();
+    if (!due || whatsNewTimer.current) return;
+    whatsNewTimer.current = setTimeout(() => {
+      if (nudge.current.view !== 'home' || document.visibilityState !== 'visible') {
+        whatsNewTimer.current = null;
+        return;
+      }
+      setNewSeen(true);
+      setView('new');
+    }, 1200);
+  }, [ready, newSeenLoaded, directoryLoaded, newSeen, directory, username, snapshot.history.length, setNewSeen]);
+  const answerWhatsNew = (turnOn: boolean) => {
+    setView('home');
+    // After the sheet has slid away: the wallet reopens for Telegram to sign.
+    if (turnOn && accountId) setTimeout(() => startRegistration(accountId), 350);
+  };
 
   // In the directory: check once per open that the entry is still there and
   // names this wallet (the server can drop or serve an old one; it cannot fake one).
@@ -325,6 +353,7 @@ function WalletHome() {
       <ReceiveSheet open={view === 'receive'} onClose={() => setView('home')} hidden={hidden} onCollected={collected} />
       <SettingsSheet open={view === 'settings'} onClose={() => setView('home')} accountId={snapshot.accountId} />
       <AlertsNudgeSheet open={view === 'alerts'} firstPayment={firstPayment} onAnswer={answerAlerts} />
+      {username && <WhatsNewSheet open={view === 'new'} username={username} onAnswer={answerWhatsNew} />}
     </>
   );
 }
