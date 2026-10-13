@@ -7,6 +7,7 @@ import { accountAddress, shortAddress } from '@/lib/address';
 import { confirmWithBiometrics, sendLock, type SendLock } from '@/lib/biometrics';
 import { DEV_LOCAL_SIGNER } from '@/lib/devSigner';
 import { alertRecipient } from '@/lib/alerts';
+import { lookupUsername } from '@/lib/directory';
 import { formatError } from '@/lib/errors';
 import { feeLabel } from '@/lib/fees';
 import { toHexAccountId } from '@/lib/helpers';
@@ -15,6 +16,7 @@ import { canScanQr, haptic, onAppActiveChange, scanQr, shareText, telegramBiomet
 import { formatTokenAmount, parseTokenAmount } from '@/lib/tokenAmounts';
 import { Icon } from './Icon';
 import { ProgressSteps } from './ProgressSteps';
+import type { DirectoryEntry } from '@/lib/telegramProof';
 import { RollingNumber } from './RollingNumber';
 import { SendFlow } from './SendFlow';
 import { Sheet } from './Sheet';
@@ -91,7 +93,9 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
   const amountInput = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<Step>('to');
   const [input, setInput] = useState('');
-  const [recipient, setRecipient] = useState<{ hex: string; address: string } | null>(null);
+  const [recipient, setRecipient] = useState<{ hex: string; address: string; label?: string } | null>(null);
+  // "@alex": looked up in the Telegram directory, checked on this phone.
+  const [found, setFound] = useState<DirectoryEntry | 'looking' | 'none' | null>(null);
   const [faucetId, setFaucetId] = useState('');
   const [amount, setAmount] = useState('');
   const [isPrivate, setPrivate] = useState(true);
@@ -135,9 +139,9 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
 
   // Called from the tap or keystroke that picked the recipient: iOS opens the
   // keyboard only for a focus made while handling the user's own input.
-  const pick = (value: string, { quiet = false } = {}): boolean => {
+  const pick = (value: string, { quiet = false, label }: { quiet?: boolean; label?: string } = {}): boolean => {
     try {
-      setRecipient(parseRecipient(value, snapshot.accountId));
+      setRecipient({ ...parseRecipient(value, snapshot.accountId), label });
     } catch (e) {
       if (!quiet) fail(formatError(e));
       return false;
@@ -164,6 +168,18 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
     // Only on opening: later balance updates must not reset the form.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, prefill]);
+
+  // Typing @username: look it up after a short pause.
+  const handle = /^@[A-Za-z0-9_]{4,32}$/.test(input.trim()) ? input.trim() : null;
+  useEffect(() => {
+    if (!handle) return setFound(null);
+    setFound('looking');
+    let current = true;
+    const timer = setTimeout(() => {
+      void lookupUsername(handle).then((entry) => { if (current) setFound(entry ?? 'none'); });
+    }, 450);
+    return () => { current = false; clearTimeout(timer); };
+  }, [handle]);
 
   const busy = step === 'sending';
   // Face ID runs before the engine starts: that is still "confirming it's you".
@@ -284,7 +300,7 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
           <div className="field-wrap">
             <input
               className="field"
-              placeholder="Miden address"
+              placeholder="@username or Miden address"
               value={input}
               autoComplete="off"
               autoCapitalize="off"
@@ -296,7 +312,24 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
               <button className="field-icon" onClick={scan} aria-label="Scan a QR code"><Icon name="scan" /></button>
             )}
           </div>
-          {recents.length > 0 && (
+          {handle && (
+            <div className="cells">
+              {found === 'looking' && <div className="empty">Looking up {handle}…</div>}
+              {found === 'none' && <div className="empty">{handle} can’t be paid by username yet.</div>}
+              {found && typeof found === 'object' && (
+                found.address === snapshot.accountId?.toLowerCase() ? <div className="empty">That’s you</div> : (
+                  <button className="cell" onClick={() => pick(found.address, { label: `@${found.username}` })}>
+                    <span className="avatar">{found.name.slice(0, 1).toUpperCase()}</span>
+                    <span className="cell-main">
+                      <span className="cell-title">{found.name}</span>
+                      <span className="cell-sub">@{found.username} · verified by Telegram</span>
+                    </span>
+                  </button>
+                )
+              )}
+            </div>
+          )}
+          {!handle && recents.length > 0 && (
             <div className="cells">
               <div className="cells-head">Recent</div>
               {recents.map((id) => (
@@ -313,7 +346,7 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
 
       {(!lock || lock === 'ok') && step === 'amount' && recipient && (
         <>
-          <div className="page-title">To <span className="to-addr">{shortAddress(recipient.address)}</span></div>
+          <div className="page-title">To <span className="to-addr">{recipient.label ?? shortAddress(recipient.address)}</span></div>
           <button key={shake} className={`amount${shake ? ' shake' : ''}`} onClick={() => amountInput.current?.focus()}>
             <RollingNumber value={amount || '0'} className="fast" />
             <span className="caret" />

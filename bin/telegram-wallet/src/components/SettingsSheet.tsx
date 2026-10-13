@@ -1,8 +1,9 @@
 'use client';
 
 import { alertsAvailable, turnOffAlerts, turnOnAlerts } from '@/lib/alerts';
+import { directoryAvailable, startRegistration, unregister } from '@/lib/directory';
 import { usePref } from '@/lib/prefs';
-import { haptic, telegramCloud } from '@/lib/telegram';
+import { haptic, telegramCloud, telegramUsername } from '@/lib/telegram';
 import { Icon, type IconName } from './Icon';
 import { Sheet } from './Sheet';
 
@@ -12,7 +13,20 @@ export function SettingsSheet({ open, onClose, accountId }: { open: boolean; onC
   const [sound, setSound] = usePref('sound');
   const [alerts, setAlerts] = usePref('alerts');
   const [, setAlertsAsked] = usePref('alertsAsked');
+  const [directory, setDirectory] = usePref('directory');
   const synced = telegramCloud() !== null;
+  const username = telegramUsername();
+
+  const switchDirectory = (next: boolean) => {
+    if (!accountId) return;
+    if (next) {
+      // The wallet reopens from its registration link; Telegram signs it there.
+      startRegistration(accountId);
+      return;
+    }
+    setDirectory(false);
+    void unregister();
+  };
 
   const switchAlerts = (next: boolean) => {
     if (!accountId) return;
@@ -34,6 +48,15 @@ export function SettingsSheet({ open, onClose, accountId }: { open: boolean; onC
       <div className="cells">
         <Toggle icon="eye" label="Hide amounts" hint="Blur balances and payments" on={hideAmounts === true} set={setHideAmounts} />
         <Toggle icon="bell" label="Sound" hint="A chime when money comes in" on={sound !== false} set={setSound} />
+        {directoryAvailable() && accountId && (
+          <Toggle
+            icon="user"
+            label="Pay me by @username"
+            hint={username ? `Friends type @${username} to pay you. Verified by Telegram.` : 'Set a username in Telegram first.'}
+            on={directory === true}
+            set={username ? switchDirectory : () => haptic('error')}
+          />
+        )}
         {alertsAvailable() && accountId && (
           <Toggle icon="send" label="Payment alerts" hint="A Telegram message when someone pays you" on={alerts === true} set={switchAlerts} />
         )}

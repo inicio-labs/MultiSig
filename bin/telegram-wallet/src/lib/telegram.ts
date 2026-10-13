@@ -241,6 +241,16 @@ export function telegramUserId(): string | null {
   }
 }
 
+/** The user's Telegram @username (without @), if they have one. */
+export function telegramUsername(): string | null {
+  try {
+    const user = JSON.parse(new URLSearchParams(launchData).get('user') ?? 'null') as { username?: string } | null;
+    return user?.username || null;
+  } catch {
+    return null;
+  }
+}
+
 export function telegramUserName(): string | null {
   const user = webApp()?.initDataUnsafe?.user;
   const name = [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim();
@@ -393,4 +403,11 @@ export function requestTelegramWriteAccess(): Promise<boolean> {
   const app = webApp();
   if (!app?.requestWriteAccess || !supports(app, '6.9')) return Promise.resolve(false);
   return new Promise((resolve) => app.requestWriteAccess?.((allowed) => resolve(allowed)));
+}
+
+/** A t.me link, opened by Telegram itself (falls back to a new tab outside Telegram). */
+export function openTelegramLink(url: string): void {
+  const app = webApp();
+  if (app?.openTelegramLink && supports(app, '6.1')) app.openTelegramLink(url);
+  else window.open(url, '_blank');
 }

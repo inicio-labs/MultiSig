@@ -1,12 +1,23 @@
-// PrivPay payment alerts (AWS Lambda, function URL). A wallet that opts in
+// PrivPay server (AWS Lambda, function URL): payment alerts and the
+// Telegram directory ("pay @username").
+//
+// Alerts: a wallet that opts in
 // registers its address for its Telegram user; after a send, the sender's
 // wallet asks for the recipient to be alerted, and the bot messages them:
 // no amount, nothing about the payment beyond "you received one".
+// Directory: a wallet that opts in stores a proof signed by Telegram that its
+// user registered its address (reg_<address> start parameter, Ed25519); payers
+// fetch the proof and check Telegram's signature on their own phone, so this
+// server can withhold or serve an old entry but never forge one.
 // Every request carries Telegram's signed launch data (verify.mjs).
 import { DeleteItemCommand, DynamoDBClient, GetItemCommand, PutItemCommand, UpdateItemCommand } from '@aws-sdk/client-dynamodb';
-import { verifyInitData } from './verify.mjs';
+import { readDirectoryProof, verifyInitData } from './verify.mjs';
 
 const { TABLE, BOT_TOKEN, OPEN_URL } = process.env;
+// The bot's id: the part of its token before the colon (public).
+const BOT_ID = (BOT_TOKEN ?? '').split(':')[0];
+// Directory lookups one user can make per hour.
+const LOOKUPS_PER_HOUR = 60;
 const db = new DynamoDBClient({});
 // A Miden account id, as the wallet writes it.
 const ACCOUNT_ID = /^0x[0-9a-f]{20,64}$/;
@@ -39,6 +50,9 @@ export async function handler(event) {
     return reply(400, { error: 'bad json' });
   }
   const userId = verifyInitData(body.initData, BOT_TOKEN);
+  // Which launch-data fields this Telegram app sends (names only, never values):
+  // the directory needs Telegram's Ed25519 "signature" field.
+  console.log('initData fields', [...new URLSearchParams(String(body.initData ?? '')).keys()].sort().join(','));
   if (!userId) return reply(401, { error: 'not a Telegram user of this bot' });
 
   switch (event.rawPath) {
@@ -80,6 +94,49 @@ export async function handler(event) {
       const recipient = found.Item?.userId?.S;
       if (recipient && recipient !== userId) await sendAlert(recipient);
       // The same answer either way: whether an address has alerts on is not anyone's business.
+      return reply(200, { ok: true });
+    }
+    case '/directory/register': {
+      // The request's own launch data is the proof: opened from reg_<address>.
+      const proof = readDirectoryProof(body.initData, BOT_ID);
+      if (!proof || proof.userId !== userId) return reply(400, { error: 'not a registration launch' });
+      await db.send(new PutItemCommand({
+        TableName: TABLE,
+        Item: {
+          pk: { S: `tg#${userId}` },
+          proof: { S: body.initData },
+          address: { S: proof.address },
+          updatedAt: { N: String(Date.now()) },
+        },
+      }));
+      if (proof.username) {
+        await db.send(new PutItemCommand({ TableName: TABLE, Item: { pk: { S: `name#${proof.username}` }, userId: { S: userId } } }));
+      }
+      return reply(200, { ok: true, username: proof.username });
+    }
+    case '/directory/lookup': {
+      const hour = Math.floor(Date.now() / 3_600_000);
+      const counted = await db.send(new UpdateItemCommand({
+        TableName: TABLE,
+        Key: { pk: { S: `look#${userId}#${hour}` } },
+        UpdateExpression: 'ADD n :one SET #ttl = :ttl',
+        ExpressionAttributeNames: { '#ttl': 'ttl' },
+        ExpressionAttributeValues: { ':one': { N: '1' }, ':ttl': { N: String((hour + 2) * 3600) } },
+        ReturnValues: 'UPDATED_NEW',
+      }));
+      if (Number(counted.Attributes?.n?.N ?? 0) > LOOKUPS_PER_HOUR) return reply(429, { error: 'too many' });
+      let target = typeof body.userId === 'string' && /^\d{1,20}$/.test(body.userId) ? body.userId : null;
+      const username = typeof body.username === 'string' ? body.username.replace(/^@/, '').toLowerCase() : '';
+      if (!target && /^[a-z0-9_]{4,32}$/.test(username)) {
+        const named = await db.send(new GetItemCommand({ TableName: TABLE, Key: { pk: { S: `name#${username}` } } }));
+        target = named.Item?.userId?.S ?? null;
+      }
+      if (!target) return reply(200, { proof: null });
+      const entry = await db.send(new GetItemCommand({ TableName: TABLE, Key: { pk: { S: `tg#${target}` } } }));
+      return reply(200, { proof: entry.Item?.proof?.S ?? null });
+    }
+    case '/directory/unregister': {
+      await db.send(new DeleteItemCommand({ TableName: TABLE, Key: { pk: { S: `tg#${userId}` } } }));
       return reply(200, { ok: true });
     }
     default:

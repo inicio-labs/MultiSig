@@ -1,4 +1,3 @@
-import { reportDiag } from './remoteDiag';
 import { requestTelegramWriteAccess, telegramInitData } from './telegram';
 
 /**
@@ -8,27 +7,13 @@ import { requestTelegramWriteAccess, telegramInitData } from './telegram';
  * server (alerts/index.mjs); after a send, the sender's wallet asks the server
  * to alert the recipient. Every request carries Telegram's signed launch data.
  */
-const ALERTS_URL = (process.env.NEXT_PUBLIC_ALERTS_URL ?? '').trim().replace(/\/$/, '');
+import { postToServer, SERVER_URL } from './privpayServer';
+
+const call = async (path: string, body: Record<string, string>): Promise<boolean> => (await postToServer(path, body)) !== null;
 
 /** Alerts can work here: inside Telegram, with the server configured. */
-export const alertsAvailable = (): boolean => Boolean(ALERTS_URL) && telegramInitData() !== null;
+export const alertsAvailable = (): boolean => Boolean(SERVER_URL) && telegramInitData() !== null;
 
-async function call(path: string, body: Record<string, string>): Promise<boolean> {
-  const initData = telegramInitData();
-  if (!ALERTS_URL || !initData) return false;
-  try {
-    const response = await fetch(`${ALERTS_URL}${path}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ ...body, initData }),
-    });
-    if (!response.ok) reportDiag('alerts', `${path}: ${response.status}`);
-    return response.ok;
-  } catch (error) {
-    reportDiag('alerts', error);
-    return false;
-  }
-}
 
 /** Telegram asks the user to let the bot message them; then the address is linked. */
 export async function turnOnAlerts(accountId: string): Promise<boolean> {

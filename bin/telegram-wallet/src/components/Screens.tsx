@@ -5,6 +5,7 @@ import type { VaultBalance } from '@openzeppelin/miden-multisig-client';
 import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { useTokenInfo } from '@/hooks/useTokenInfo';
 import { alertsAvailable, refreshAlerts, turnOnAlerts } from '@/lib/alerts';
+import { completeRegistration, isRegistrationLaunch, lookupSelf } from '@/lib/directory';
 import { saveFirstPaint } from '@/lib/firstPaint';
 import { viewKeyFor } from '@/lib/savedView';
 import { accountAddress, shortAddress } from '@/lib/address';
@@ -57,6 +58,7 @@ function WalletHome() {
   const [away, setAway] = useState(false);
   const [hideAmounts, setHideAmounts] = usePref('hideAmounts');
   const [alerts, setAlerts, alertsLoaded] = usePref('alerts');
+  const [directory, setDirectory, directoryLoaded] = usePref('directory');
   const [alertsAsked, setAlertsAsked, askedLoaded] = usePref('alertsAsked');
   // First payment collected (or "know when money arrives" if not the first).
   const [firstPayment, setFirstPayment] = useState(true);
@@ -161,7 +163,13 @@ function WalletHome() {
     linkHandled.current = true;
     const param = telegramStartParam();
     const to = payLinkAddress(param);
-    if (to) {
+    if (snapshot.accountId && isRegistrationLaunch(snapshot.accountId)) {
+      // Reopened from our own registration link: Telegram has signed it.
+      void completeRegistration().then((ok) => {
+        if (ok) setDirectory(true);
+        toast(ok ? 'Friends can now pay you by your @username' : 'Couldn’t turn on pay-by-username. Try again.', ok ? 'check' : 'alert');
+      });
+    } else if (to) {
       setPrefill(to);
       setView('send');
     } else if (isCollectLink(param)) {
@@ -169,6 +177,20 @@ function WalletHome() {
       void engine.refresh().catch(() => undefined);
     }
   }, [ready, engine]);
+
+  // In the directory: check once per open that the entry is still there and
+  // names this wallet (the server can drop or serve an old one; it cannot fake one).
+  const selfChecked = useRef(false);
+  useEffect(() => {
+    if (!ready || !directoryLoaded || directory !== true || selfChecked.current || !accountId) return;
+    if (isRegistrationLaunch(accountId)) return;
+    selfChecked.current = true;
+    void lookupSelf().then((entry) => {
+      if (entry?.address === accountId.toLowerCase()) return;
+      setDirectory(false);
+      toast('Pay-by-username was reset. Turn it on again in Settings.', 'alert');
+    });
+  }, [ready, directory, directoryLoaded, accountId, setDirectory, toast]);
 
   // Settings live in Telegram's own menu for the app; a gear outside Telegram.
   const openSettings = () => {

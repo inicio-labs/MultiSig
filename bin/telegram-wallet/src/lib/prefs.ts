@@ -16,6 +16,8 @@ export const PREFS = {
   // Payment alerts from the bot (alerts.ts); "asked" hides the home card once answered.
   alerts: { key: 'payment_alerts', fallback: false },
   alertsAsked: { key: 'payment_alerts_asked', fallback: false },
+  // In the Telegram directory: friends can pay you by @username (directory.ts).
+  directory: { key: 'directory', fallback: false },
 } as const;
 
 type PrefName = keyof typeof PREFS;
