@@ -246,6 +246,7 @@ button.cell:active { background: var(--bg); }
 .locked-icon { width: 64px; height: 64px; font-size: 30px; animation: none; }
 .new-pill { display: inline-flex; padding: 4px 10px; border-radius: 999px; background: var(--or-soft); color: var(--ink); font-size: 12px; font-weight: 700; }
 .sub.fine-center { font-size: 13px; line-height: 1.4; max-width: 300px; }
+.btn-tag { margin-left: 4px; padding: 2px 7px; border-radius: 999px; background: rgba(23, 17, 13, .14); font-size: 11px; font-weight: 700; }
 .set-head { margin: 0; padding: 14px 4px 6px; font-size: 13px; font-weight: 600; color: var(--hint); }
 .cell-sub.wrap { white-space: normal; line-height: 1.35; }
 .sub.fine { font-size: 12px; line-height: 1.4; padding: 0 6px; text-align: left; }

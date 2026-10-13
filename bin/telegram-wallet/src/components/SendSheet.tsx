@@ -13,7 +13,7 @@ import { formatError } from '@/lib/errors';
 import { feeLabel } from '@/lib/fees';
 import { toHexAccountId } from '@/lib/helpers';
 import { reportDiag } from '@/lib/remoteDiag';
-import { canScanQr, haptic, onAppActiveChange, scanQr, shareText, telegramBiometrics } from '@/lib/telegram';
+import { canScanQr, haptic, onAppActiveChange, onDesktop, scanQr, shareText, telegramBiometrics } from '@/lib/telegram';
 import { formatTokenAmount, parseTokenAmount } from '@/lib/tokenAmounts';
 import { Icon } from './Icon';
 import { ProgressSteps } from './ProgressSteps';
@@ -34,8 +34,8 @@ const SKIP_SCAN = DEV_LOCAL_SIGNER;
 /** Why sending is off here, and what fixes it. */
 const LOCKED: Record<Exclude<SendLock, 'ok'>, { title: string; text: string; action?: 'settings' | 'retry' }> = {
   'no-telegram': {
-    title: 'Send from your phone',
-    text: 'Every send is confirmed with Face ID or a fingerprint, so sending works in Telegram on your phone. Here you can see and receive.',
+    title: 'Sending works on your phone',
+    text: 'Every send is confirmed with Face ID or a fingerprint, so open this wallet in Telegram on your phone to send. Here you can see your balance and receive.',
   },
   'no-biometrics': {
     title: 'Set up Face ID or a fingerprint',
@@ -110,6 +110,8 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
   const [lock, setLock] = useState<SendLock | null>(null);
   const checkLock = useCallback(() => {
     if (SKIP_SCAN) return setLock('ok');
+    // Desktop: known at once, no prompt to wait for.
+    if (onDesktop()) return setLock('no-telegram');
     void sendLock(telegramBiometrics()).then(setLock);
   }, []);
   useEffect(() => {
@@ -300,7 +302,7 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
 
       {lock && lock !== 'ok' && (step === 'to' || step === 'amount') && (
         <div className="center locked">
-          <div className="done locked-icon"><Icon name="lock" /></div>
+          <div className="done locked-icon"><Icon name={lock === 'no-telegram' ? 'phone' : 'lock'} /></div>
           <div className="page-title">{LOCKED[lock].title}</div>
           <div className="sub">{LOCKED[lock].text}</div>
           {LOCKED[lock].action === 'settings' && (

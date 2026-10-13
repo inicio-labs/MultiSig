@@ -418,3 +418,14 @@ export function openTelegramLink(url: string): void {
   if (app?.openTelegramLink && supports(app, '6.1')) app.openTelegramLink(url);
   else window.open(url, '_blank');
 }
+
+// Telegram Desktop, its macOS app and Telegram Web: no Face ID or fingerprint
+// prompt for mini apps, so no sending there.
+const DESKTOP_PLATFORMS = new Set(['tdesktop', 'macos', 'weba', 'webk', 'web', 'unigram']);
+
+/** Not on a phone: Telegram Desktop or Web, or a browser outside Telegram. */
+export function onDesktop(): boolean {
+  if (!insideTelegram) return true;
+  const platform = webApp()?.platform || new URLSearchParams(launchUrl.hash.slice(1)).get('tgWebAppPlatform') || '';
+  return DESKTOP_PLATFORMS.has(platform);
+}

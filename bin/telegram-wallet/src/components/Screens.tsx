@@ -7,6 +7,7 @@ import { useTokenInfo } from '@/hooks/useTokenInfo';
 import { alertsAvailable, refreshAlerts, turnOnAlerts } from '@/lib/alerts';
 import { useContacts, type Contacts } from '@/lib/contacts';
 import { completeRegistration, directoryAvailable, isRegistrationLaunch, lookupSelf, startRegistration } from '@/lib/directory';
+import { DEV_LOCAL_SIGNER } from '@/lib/devSigner';
 import { saveFirstPaint } from '@/lib/firstPaint';
 import { viewKeyFor } from '@/lib/savedView';
 import { accountAddress, shortAddress } from '@/lib/address';
@@ -20,6 +21,7 @@ import {
   telegramStartParam,
   telegramUserName,
   telegramUsername,
+  onDesktop,
   useTelegramSettingsButton,
 } from '@/lib/telegram';
 import { timeAgo } from '@/lib/timeAgo';
@@ -63,6 +65,8 @@ function WalletHome() {
   const [directory, setDirectory, directoryLoaded] = usePref('directory');
   const [newSeen, setNewSeen, newSeenLoaded] = usePref('newUsernameSeen');
   const contacts = useContacts(snapshot.accountId);
+  // Sending needs a phone (Face ID or fingerprint): say so on desktop before the tap.
+  const phoneOnly = !DEV_LOCAL_SIGNER && onDesktop();
   const [alertsAsked, setAlertsAsked, askedLoaded] = usePref('alertsAsked');
   // First payment collected (or "know when money arrives" if not the first).
   const [firstPayment, setFirstPayment] = useState(true);
@@ -320,7 +324,9 @@ function WalletHome() {
 
         <div className="actions">
           <button className="btn ink" onClick={openReceive}><Icon name="receive" />Receive</button>
-          <button className="btn" onClick={openSend}><Icon name="send" />Send</button>
+          <button className="btn" onClick={openSend}>
+            <Icon name="send" />Send{phoneOnly && <span className="btn-tag">Phone only</span>}
+          </button>
         </div>
 
         {phase.kind === 'error' && (
