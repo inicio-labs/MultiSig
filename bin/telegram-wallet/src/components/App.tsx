@@ -13,6 +13,7 @@ import { Fatal, Splash } from './Splash';
 import { DevSignerGate } from './DevSignerGate';
 import { DEV_LOCAL_SIGNER } from '@/lib/devSigner';
 import { InstantPreview } from './InstantPreview';
+import { isPasskeyCheck, PasskeyCheck } from './PasskeyCheck';
 import { installRemoteDiag } from '@/lib/remoteDiag';
 import { hasSavedView, viewKeyFor } from '@/lib/savedView';
 
@@ -36,6 +37,9 @@ export default function App() {
     // On failure the sign-in (which loads it too) shows the error.
     getWasmOrThrow().then(() => setWasmReady(true), (e: unknown) => console.warn('Miden WebAssembly failed to load', e));
   }, []);
+
+  // The passkey test page (t.me/<bot>?startapp=passkey_check), instead of the wallet.
+  if (bridgeReady && isPasskeyCheck()) return <PasskeyCheck />;
 
   if (CONFIG_ERRORS.length > 0) {
     return <Fatal title="Not configured" message={CONFIG_ERRORS.join(' ')} />;
