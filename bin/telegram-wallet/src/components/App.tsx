@@ -14,6 +14,7 @@ import { DevSignerGate } from './DevSignerGate';
 import { DEV_LOCAL_SIGNER } from '@/lib/devSigner';
 import { InstantPreview } from './InstantPreview';
 import { isPasskeyCheck, PasskeyCheck } from './PasskeyCheck';
+import { isPrivyPasskeyTest, PrivyPasskeyTest } from './PrivyPasskeyTest';
 import { installRemoteDiag } from '@/lib/remoteDiag';
 import { hasSavedView, viewKeyFor } from '@/lib/savedView';
 
@@ -44,6 +45,8 @@ export default function App() {
   if (CONFIG_ERRORS.length > 0) {
     return <Fatal title="Not configured" message={CONFIG_ERRORS.join(' ')} />;
   }
+  // The Privy passkey-MFA test (?privy_passkey_test=1, Safari only), instead of the wallet.
+  if (bridgeReady && isPrivyPasskeyTest()) return <PrivyPasskeyTest />;
   const gate = !bridgeReady
     ? null
     : DEV_LOCAL_SIGNER

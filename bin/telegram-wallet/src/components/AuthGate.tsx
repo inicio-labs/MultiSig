@@ -148,7 +148,8 @@ function LoginScreen({ onRetry }: { onRetry(): void }) {
   );
 }
 
-function EmailLogin() {
+/** Privy email login (development builds, and the hidden Privy passkey test page). */
+export function EmailLogin({ label = 'Development: email login' }: { label?: string }) {
   const { sendCode, loginWithCode, state } = useLoginWithEmail();
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
@@ -164,7 +165,7 @@ function EmailLogin() {
 
   return (
     <form onSubmit={submit} style={{ width: '100%', maxWidth: 300, display: 'grid', gap: 8, marginTop: 16 }}>
-      <p className="hint">Development: email login</p>
+      <p className="hint">{label}</p>
       {codeSent ? (
         <input className="field" inputMode="numeric" placeholder="Code from the email" value={code} onChange={(e) => setCode(e.target.value)} />
       ) : (

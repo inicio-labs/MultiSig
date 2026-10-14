@@ -43,6 +43,7 @@ interface TelegramWebApp {
     selectionChanged(): void;
   };
   openTelegramLink?(url: string): void;
+  openLink?(url: string, options?: { try_instant_view?: boolean; try_browser?: string }): void;
   requestWriteAccess?(callback: (allowed: boolean) => void): void;
 }
 
@@ -417,6 +418,27 @@ export function openTelegramLink(url: string): void {
   const app = webApp();
   if (app?.openTelegramLink && supports(app, '6.1')) app.openTelegramLink(url);
   else window.open(url, '_blank');
+}
+
+/**
+ * Test pages only: Telegram's openLink (Bot API 6.1; options from 6.4, try_browser
+ * from 7.6), which opens a link in a browser outside the mini app. Returns
+ * what happened, for the test's results.
+ */
+export function openLinkInBrowser(
+  url: string,
+  options: { try_instant_view?: boolean; try_browser?: string } | undefined,
+  minVersion: string,
+): string {
+  const app = webApp();
+  if (!app?.openLink) return 'not inside Telegram (no openLink)';
+  if (!supports(app, minVersion)) return `this Telegram (${app.version}) is older than Bot API ${minVersion}`;
+  try {
+    app.openLink(url, options);
+    return 'called';
+  } catch (error) {
+    return `threw ${error instanceof Error ? error.message : String(error)}`;
+  }
 }
 
 // Telegram Desktop, its macOS app and Telegram Web: no Face ID or fingerprint
