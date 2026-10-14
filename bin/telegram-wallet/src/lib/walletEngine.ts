@@ -45,6 +45,12 @@ export interface WalletEngineDeps<C extends WalletMidenClient, M extends WalletM
   registerNoteTag(midenClient: C, accountId: string): Promise<void>;
   /** How long each step of a transaction took (diagnostics). */
   trace?(label: string, ms: number): void;
+  /**
+   * A Guardian session on this client (resumed from the phone, else started
+   * with one wallet signature): reads and proposal requests are then signed by
+   * a browser key instead of the wallet. Failing is fine: the wallet signs.
+   */
+  startSession?(multisigClient: M): Promise<string | void>;
   /** Waits between automatic start retries (tests pass zeros). */
   startRetryDelaysMs?: number[];
   /** Private sends: note delivery and the check before each transaction. */
@@ -318,10 +324,15 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
       this.privateNotes ??= this.deps.createPrivateNotes?.(midenClient) ?? null;
       const multisigClient = this.deps.createMultisigClient(midenClient);
       this.update({ phase: { kind: 'finding' } });
+      // Before the account loads: its reads then need no wallet signature.
+      if (this.deps.startSession) {
+        await this.timed('guardian session', () => this.deps.startSession!(multisigClient))
+          .catch((error: unknown) => console.warn('No Guardian session; the wallet signs requests', error));
+      }
 
       const multisig = this.multisig ?? await this.findOrCreate(multisigClient);
       this.multisig = multisig;
-      this.deps.storage?.set(LAST_ACCOUNT_KEY, multisig.accountId);
+      this.deps.storage?.set(this.rememberedKey(), multisig.accountId);
       this.update({ accountId: multisig.accountId });
 
       // The account's note tag before the first sync: a sync without it moves
@@ -346,12 +357,32 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
     }
   }
 
+  // The account last used here, per key (another Telegram user on this phone has their own).
+  private rememberedKey(): string {
+    return `${LAST_ACCOUNT_KEY}:${(this.deps.signer.commitment ?? '').toLowerCase()}`;
+  }
+
+  private remembered(): string | undefined {
+    return (this.deps.storage?.get(this.rememberedKey()) ?? this.deps.storage?.get(LAST_ACCOUNT_KEY))?.toLowerCase();
+  }
+
   private async findOrCreate(multisigClient: M): Promise<Multisig> {
+    // Known on this phone: load it straight away. The lookup is always
+    // wallet-signed (not a session request), so skipping it makes reopening
+    // signature-free. Not this key's account, or gone: look it up.
+    const known = this.remembered();
+    if (known) {
+      try {
+        return await this.deps.loadAccount(multisigClient, known, this.deps.signer, this.hooks);
+      } catch (error) {
+        console.warn('The account remembered here did not load; looking it up', error);
+      }
+    }
     const matches = await multisigClient.recoverByKey(this.deps.signer);
     if (matches.length > 0) {
       // A key normally has one account; an interrupted first start can leave
       // a second. Prefer the one last used here, else the latest updated.
-      const remembered = this.deps.storage?.get(LAST_ACCOUNT_KEY)?.toLowerCase();
+      const remembered = known;
       const chosen = matches.find((m) => m.accountId.toLowerCase() === remembered)
         ?? [...matches].sort((a, b) => Date.parse(b.state.updatedAt) - Date.parse(a.state.updatedAt))[0];
       return this.deps.loadAccount(multisigClient, chosen.accountId, this.deps.signer, this.hooks);

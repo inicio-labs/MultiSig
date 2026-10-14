@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
 import { MidenClient } from '@miden-sdk/miden-sdk';
-import type { Signer } from '@openzeppelin/miden-multisig-client';
+import { IndexedDbSessionKeyStore, type Signer } from '@openzeppelin/miden-multisig-client';
 import {
   CONFIG_ERRORS,
   MIDEN_DB_NAME,
@@ -23,6 +23,11 @@ import { reportDiag } from '@/lib/remoteDiag';
 import { viewKeyFor } from '@/lib/savedView';
 import { storage } from '@/lib/storage';
 import { WalletEngine, type WalletSnapshot } from '@/lib/walletEngine';
+
+// The Guardian session key, kept on this phone (non-extractable) so reopening
+// within its lifetime (at most 8 h on Guardian) needs no wallet signature.
+const SESSION_STORE = typeof indexedDB === 'undefined' ? undefined : new IndexedDbSessionKeyStore('privpay-guardian-session-keys');
+const RESUME_TIMEOUT_MS = 2_000;
 
 // Refresh balances and incoming notes while the app is open and visible.
 const REFRESH_INTERVAL_MS = 20_000;
@@ -70,6 +75,33 @@ export function WalletProvider({ signer, children }: { signer: Signer | null; ch
     registerNoteTag: registerAccountNoteTag,
     createPrivateNotes,
     storage,
+    startSession: async (client) => {
+      if (!signer || !SESSION_STORE) return;
+      // Expired, revoked or rejected: requests go back to the wallet; a new
+      // session starts on the next open.
+      const onEnded = (reason: string) => {
+        console.info('Guardian session ended:', reason);
+        reportDiag('session.ended', reason);
+      };
+      // Resuming is quick and saves the wallet a signature per read: wait for
+      // it, but never hold the start on it (a blocked IndexedDB never answers).
+      const resumed = await Promise.race([
+        client.resumeSession(signer, SESSION_STORE, { onEnded }).catch(() => null),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), RESUME_TIMEOUT_MS)),
+      ]);
+      if (resumed) return 'resumed';
+      // Starting one takes a few seconds: let the account load meanwhile (its
+      // first reads are wallet-signed) and use the session once it is up.
+      void client.startSession(signer, {
+        store: SESSION_STORE,
+        onEnded,
+        // Required for wallets that sign a bare hash, so a person can check the
+        // grant first. Privy's embedded wallet signs silently here: there is
+        // no one to show it to, and the grant names this site.
+        confirm: () => true,
+      }).catch((error: unknown) => console.warn('No Guardian session; the wallet signs requests', error));
+      return 'starting';
+    },
     trace: (label, ms) => {
       if (process.env.NODE_ENV === 'production' && process.env.NEXT_PUBLIC_REMOTE_DIAGNOSTICS !== '1') return;
       console.info(`[wallet] ${label}: ${ms} ms`);

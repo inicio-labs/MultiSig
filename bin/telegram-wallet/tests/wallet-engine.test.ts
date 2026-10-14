@@ -144,7 +144,8 @@ describe('WalletEngine.start', () => {
       'startMidenClient', 'createAccount', 'registerOnGuardian', 'registerNoteTag', 'sync', 'syncState', 'registerOnNode',
       'ensureDelivered', // in the background: a private payment an earlier session left undelivered
     ]);
-    expect(store.get('miden-tg-wallet:last-account')).toBe(engine.getSnapshot().accountId);
+    // Remembered per key: another Telegram user on this phone has their own.
+    expect(store.get(`miden-tg-wallet:last-account:0x${'0c'.repeat(32)}`)).toBe(engine.getSnapshot().accountId);
     expect(engine.getSnapshot().balances).toEqual([{ faucetId: FEE, amount: 5n }]);
   });
 
@@ -242,9 +243,39 @@ describe('WalletEngine.start', () => {
     await latest.engine.start();
     expect(latest.log).toContain('load:0xB');
 
+    // Remembered here: loaded straight away, without the (wallet-signed) lookup.
     const remembered = setup({ nonce: 1n, existing, remembered: '0xa' });
     await remembered.engine.start();
-    expect(remembered.log).toContain('load:0xA');
+    expect(remembered.log).toContain('load:0xa');
+    expect(remembered.lookups).toEqual([]);
+  });
+
+  it('looks the account up when the one remembered here does not load', async () => {
+    const ctx = setup({ nonce: 1n, existing: [{ accountId: '0xB', updatedAt: '2026-10-05T00:00:00Z' }], remembered: '0xgone' });
+    const load = ctx.deps.loadAccount;
+    ctx.deps.loadAccount = async (client, accountId, ...rest) => {
+      if (accountId === '0xgone') throw new Error('authorization_failed');
+      return load(client, accountId, ...rest);
+    };
+    await ctx.engine.start();
+    expect(ctx.lookups).toHaveLength(1);
+    expect(ctx.log).toContain('load:0xB');
+    expect(ctx.engine.getSnapshot().phase).toEqual({ kind: 'ready' });
+  });
+
+  it('starts a Guardian session before loading the account, and carries on without one', async () => {
+    const order: string[] = [];
+    const ok = setup({ nonce: 1n, existing: [{ accountId: '0xacc', updatedAt: '2026-10-01T00:00:00Z' }] });
+    ok.deps.startSession = async () => { order.push('session'); };
+    const load = ok.deps.loadAccount;
+    ok.deps.loadAccount = async (...args) => { order.push('load'); return load(...args); };
+    await ok.engine.start();
+    expect(order).toEqual(['session', 'load']);
+
+    const down = setup({ nonce: 1n, existing: [{ accountId: '0xacc', updatedAt: '2026-10-01T00:00:00Z' }] });
+    down.deps.startSession = async () => { throw new Error('sessions not configured'); };
+    await down.engine.start();
+    expect(down.engine.getSnapshot().phase).toEqual({ kind: 'ready' });
   });
 
   it('reports a failed start, and a retry resumes the same account', async () => {
