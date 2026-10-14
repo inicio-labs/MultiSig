@@ -10,7 +10,28 @@ import { onDesktop, telegramStartParam } from '@/lib/telegram';
  * the mini app. Plain WebAuthn, nothing sent anywhere, the wallet untouched;
  * a successful create saves a "PrivPay passkey test" passkey on the phone.
  */
-export const isPasskeyCheck = (): boolean => telegramStartParam() === 'passkey_check';
+const FLAG = 'privpay-passkey-check';
+
+/** From the test link, or from Settings (which reloads the app into this page). */
+export function isPasskeyCheck(): boolean {
+  if (telegramStartParam() === 'passkey_check') return true;
+  try {
+    return window.sessionStorage.getItem(FLAG) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** Settings › Passkey check: reload into the test page. */
+export function openPasskeyCheck(): void {
+  try { window.sessionStorage.setItem(FLAG, '1'); } catch { /* the link still works */ }
+  window.location.reload();
+}
+
+function backToWallet(): void {
+  try { window.sessionStorage.removeItem(FLAG); } catch { /* nothing to clear */ }
+  window.location.reload();
+}
 
 type Line = { step: string; result: string };
 
@@ -102,6 +123,7 @@ export function PasskeyCheck() {
       <button className="btn" onClick={() => void create()}>1. Create test passkey</button>
       <button className="btn soft" onClick={() => void use()} disabled={!credential}>2. Use it</button>
       <button className="btn ink" onClick={copy}>{copied ? 'Copied' : 'Copy results'}</button>
+      <button className="text-btn" onClick={backToWallet}>Back to wallet</button>
     </main>
   );
 }
