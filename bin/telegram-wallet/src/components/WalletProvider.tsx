@@ -21,7 +21,6 @@ import {
 import { createPrivateNotes } from '@/lib/privateSend';
 import { reportDiag } from '@/lib/remoteDiag';
 import { viewKeyFor } from '@/lib/savedView';
-import { setSessionStatus } from '@/lib/sessionStatus';
 import { storage } from '@/lib/storage';
 import { WalletEngine, type WalletSnapshot } from '@/lib/walletEngine';
 
@@ -83,7 +82,6 @@ export function WalletProvider({ signer, children }: { signer: Signer | null; ch
       const onEnded = (reason: string) => {
         console.info('Guardian session ended:', reason);
         reportDiag('session.ended', reason);
-        setSessionStatus({ state: 'ended', reason });
       };
       // Resuming is quick and saves the wallet a signature per read: wait for
       // it, but never hold the start on it (a blocked IndexedDB never answers).
@@ -91,11 +89,7 @@ export function WalletProvider({ signer, children }: { signer: Signer | null; ch
         client.resumeSession(signer, SESSION_STORE, { onEnded }).catch(() => null),
         new Promise<null>((resolve) => setTimeout(() => resolve(null), RESUME_TIMEOUT_MS)),
       ]);
-      if (resumed) {
-        setSessionStatus({ state: 'active', expiresAt: resumed.expiresAt });
-        return 'resumed';
-      }
-      setSessionStatus({ state: 'starting' });
+      if (resumed) return 'resumed';
       // Starting one takes a few seconds: let the account load meanwhile (its
       // first reads are wallet-signed) and use the session once it is up.
       void client.startSession(signer, {
@@ -105,13 +99,7 @@ export function WalletProvider({ signer, children }: { signer: Signer | null; ch
         // grant first. Privy's embedded wallet signs silently here: there is
         // no one to show it to, and the grant names this site.
         confirm: () => true,
-      }).then(
-        (session) => setSessionStatus({ state: 'active', expiresAt: session.expiresAt }),
-        (error: unknown) => {
-          console.warn('No Guardian session; the wallet signs requests', error);
-          setSessionStatus({ state: 'off', reason: error instanceof Error ? error.message : String(error) });
-        },
-      );
+      }).catch((error: unknown) => console.warn('No Guardian session; the wallet signs requests', error));
       return 'starting';
     },
     trace: (label, ms) => {
