@@ -95,24 +95,10 @@ export function ReceiveSheet({ open, onClose, hidden, onCollected }: {
   return (
     <Sheet open={open} onClose={onClose} locked={collecting}>
       <div className="sh-t">Receive</div>
-      {qr ? <img className="qr" src={qr} alt="QR code of your address" /> : <div className="qr" />}
-      <button className="addr-full" onClick={copy}>{address}</button>
-      <div className="chips">
-        <button className="chip" onClick={copy}><Icon name="copy" />Copy</button>
-        <button className="chip" onClick={share}><Icon name="share" />Share</button>
-      </div>
 
-      {/* Where people look when they want to get paid: here, not hidden in settings. */}
-      {directory.available && (
-        <>
-          <div className="cells"><DirectoryToggle directory={directory} /></div>
-          {directory.username && (
-            <div className="sub fine">Anyone who knows your username can find this address. Your balance and payments stay private.</div>
-          )}
-        </>
-      )}
-
-      {waiting.length > 0 ? (
+      {/* Payments waiting: collecting is what to do, so it comes first (and
+          stays on screen on small phones); the address and QR follow. */}
+      {waiting.length > 0 && (
         <>
           <div className="cells">
             <div className="cells-head">Waiting for you · {waiting.length}</div>
@@ -135,8 +121,28 @@ export function ReceiveSheet({ open, onClose, hidden, onCollected }: {
               <AlertsOffRow accountId={snapshot.accountId} />
             </>
           )}
+          <h2 className="set-head">Your address</h2>
         </>
-      ) : (
+      )}
+
+      {qr ? <img className="qr" src={qr} alt="QR code of your address" /> : <div className="qr" />}
+      <button className="addr-full" onClick={copy}>{address}</button>
+      <div className="chips">
+        <button className="chip" onClick={copy}><Icon name="copy" />Copy</button>
+        <button className="chip" onClick={share}><Icon name="share" />Share</button>
+      </div>
+
+      {/* Where people look when they want to get paid: here, not hidden in settings. */}
+      {directory.available && (
+        <>
+          <div className="cells"><DirectoryToggle directory={directory} /></div>
+          {directory.username && (
+            <div className="sub fine">Anyone who knows your username can find this address. Your balance and payments stay private.</div>
+          )}
+        </>
+      )}
+
+      {waiting.length === 0 && (
         <div className="sub" style={{ padding: '4px 12px 8px' }}>
           New payments to {address ? shortAddress(address) : 'you'} show up here and on the bell.
         </div>
