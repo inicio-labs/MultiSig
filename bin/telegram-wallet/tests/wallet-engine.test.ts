@@ -464,4 +464,16 @@ describe('toActivity', () => {
       { faucetId: FEE, amount: 126n },
     ]);
   });
+
+  it('lists newest first by time, whatever order Guardian’s page has', () => {
+    const at = (nonce: number, timestamp: string, id: string) => ({
+      nonce, status: 'canonical' as const, timestamp, inputNotes: [], outputNotes: [note(id, '1', { recipient: RECIPIENT })], decodeWarnings: [],
+    });
+    const items = toActivity([
+      at(3, '2026-10-12T07:07:01.693626046+00:00', 'a'),
+      at(2, '2026-10-11T21:42:28.687229785+00:00', 'b'),
+      at(9, '2026-10-14T09:06:28.382322679+00:00', 'c'),
+    ]);
+    expect(items.map((item) => item.id.split(':')[1])).toEqual(['c', 'a', 'b']);
+  });
 });

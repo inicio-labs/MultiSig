@@ -92,7 +92,7 @@ export interface ActivityItem {
 }
 
 /**
- * Received and sent assets per transaction, newest first (Guardian's order).
+ * Received and sent assets per transaction, newest first.
  * Output notes without a recipient are the transaction fee, not a payment.
  */
 export function toActivity(entries: HistoryEntry[]): ActivityItem[] {
@@ -127,7 +127,11 @@ export function toActivity(entries: HistoryEntry[]): ActivityItem[] {
     }
     if (fee && items[first]) items[first] = { ...items[first], fee };
   }
-  return items;
+  // Newest first by time: Guardian's page is not always in that order.
+  return items
+    .map((item, i) => ({ item, i, t: Date.parse(item.timestamp) }))
+    .sort((a, b) => (b.t || 0) - (a.t || 0) || a.i - b.i)
+    .map(({ item }) => item);
 }
 
 export interface WalletSnapshot {
