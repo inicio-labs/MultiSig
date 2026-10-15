@@ -15,6 +15,7 @@ import { DEV_LOCAL_SIGNER } from '@/lib/devSigner';
 import { InstantPreview } from './InstantPreview';
 import { isPasskeyCheck, PasskeyCheck } from './PasskeyCheck';
 import { isPrivyPasskeyTest, PrivyPasskeyTest } from './PrivyPasskeyTest';
+import { isEmailRecoverySpike, SpikeEmailRecovery } from './SpikeEmailRecovery';
 import { installRemoteDiag } from '@/lib/remoteDiag';
 import { freshStart } from '@/lib/freshStart';
 import { hasSavedView, viewKeyFor } from '@/lib/savedView';
@@ -43,6 +44,8 @@ export default function App() {
     getWasmOrThrow().then(() => setWasmReady(true), (e: unknown) => console.warn('Miden WebAssembly failed to load', e));
   }, []);
 
+  // Development spike (never in production): email recovery, 2-of-3 on testnet.
+  if (bridgeReady && isEmailRecoverySpike()) return <SpikeEmailRecovery />;
   // The passkey test page (t.me/<bot>?startapp=passkey_check), instead of the wallet.
   if (bridgeReady && isPasskeyCheck()) return <PasskeyCheck />;
 

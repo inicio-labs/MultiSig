@@ -2,6 +2,7 @@ import {
   MultisigClient,
   type Multisig,
   type MultisigConfig,
+  type ProcedureThreshold,
   type Signer,
 } from '@openzeppelin/miden-multisig-client';
 import type { GuardianHttpClient } from '@openzeppelin/guardian-client';
@@ -221,6 +222,13 @@ export function createMultisigClient(midenClient: MidenClient): MultisigClient {
   return new MultisigClient(midenClient, { guardianEndpoint: GUARDIAN_ENDPOINT, midenRpcEndpoint: MIDEN_RPC_URL });
 }
 
+/** Other signers and thresholds than the default 1-of-1 (the email-recovery spike). */
+export interface WalletAccountShape {
+  signerCommitments?: string[];
+  threshold?: number;
+  procedureThresholds?: ProcedureThreshold[];
+}
+
 /**
  * A 1-of-1 Guardian account for this wallet's key: the key alone approves,
  * Guardian co-signs every transaction and keeps the (private) state, which is
@@ -230,11 +238,13 @@ export async function createWalletAccount(
   multisigClient: MultisigClient,
   signer: Signer,
   hooks: MultisigHooks = {},
+  shape: WalletAccountShape = {},
 ): Promise<Multisig> {
   const guardian = await multisigClient.guardianClient.getPubkey('ecdsa');
   const config: MultisigConfig = {
-    threshold: 1,
-    signerCommitments: [normalizeCommitment(signer.commitment)],
+    threshold: shape.threshold ?? 1,
+    signerCommitments: (shape.signerCommitments ?? [signer.commitment]).map(normalizeCommitment),
+    procedureThresholds: shape.procedureThresholds,
     guardianCommitment: guardian.commitment,
     guardianPublicKey: guardian.pubkey,
     storageMode: 'private',

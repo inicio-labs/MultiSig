@@ -35,7 +35,7 @@ const RESUME_TIMEOUT_MS = 2_000;
 // Refresh balances and incoming notes while the app is open and visible.
 const REFRESH_INTERVAL_MS = 20_000;
 
-async function startMidenClient(): Promise<MidenClient> {
+export async function startMidenClient(): Promise<MidenClient> {
   assertConfigured(CONFIG_ERRORS);
   // A local store left by an older SDK can stop the client from starting:
   // it is only a cache of chain data, so reset it once and retry.
