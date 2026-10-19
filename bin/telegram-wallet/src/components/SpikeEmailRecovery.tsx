@@ -24,14 +24,15 @@ import { startMidenClient } from './WalletProvider';
  * local stand-ins here) on testnet. Payments need two keys, collecting one,
  * and recovery adds a new phone with the Telegram and email keys.
  */
-export function isEmailRecoverySpike(): boolean {
-  return DEV_LOCAL_SIGNER && new URLSearchParams(window.location.search).get('spike') === 'email-recovery';
+export function emailRecoverySpike(): 'email-recovery' | 'email-key' | 'side-by-side' | null {
+  if (!DEV_LOCAL_SIGNER) return null;
+  const spike = new URLSearchParams(window.location.search).get('spike');
+  return spike === 'email-recovery' || spike === 'email-key' || spike === 'side-by-side' ? spike : null;
 }
 
 const NAMES = ['phone', 'telegram', 'email', 'newPhone'] as const;
 type Name = (typeof NAMES)[number];
 const KEY = (name: Name) => `miden-tg-wallet:spike-key:${name}`;
-const ACCOUNT = 'miden-tg-wallet:spike-account';
 // The development wallet: where test payments go.
 const PAY_TO = '0x425b318b78c4f6010e225b66b1c3e5';
 
@@ -55,7 +56,17 @@ async function spikeSigner(name: Name): Promise<Signer> {
 
 type Line = { step: string; result: string; ok: boolean };
 
-export function SpikeEmailRecovery() {
+/**
+ * The spike's steps. `overrides` puts real keys in place of local stand-ins
+ * (the email key from a Privy email login); `account` keeps that run's
+ * account apart from the all-local one.
+ */
+export function SpikeEmailRecovery({ overrides = {}, account = 'local', title = 'Email recovery spike (testnet)' }: {
+  overrides?: Partial<Record<Name, Signer>>;
+  account?: string;
+  title?: string;
+}) {
+  const ACCOUNT = `miden-tg-wallet:spike-account:${account}`;
   const [lines, setLines] = useState<Line[]>([]);
   const [busy, setBusy] = useState(false);
   const ctx = useRef<{
@@ -77,7 +88,7 @@ export function SpikeEmailRecovery() {
     c.client ??= await startMidenClient();
     c.multisigClient ??= createMultisigClient(c.client);
     if (!c.signers) {
-      const entries = await Promise.all(NAMES.map(async (n) => [n, await spikeSigner(n)] as const));
+      const entries = await Promise.all(NAMES.map(async (n) => [n, overrides[n] ?? await spikeSigner(n)] as const));
       c.signers = Object.fromEntries(entries) as Record<Name, Signer>;
     }
     return { client: c.client, multisigClient: c.multisigClient, signers: c.signers };
@@ -232,13 +243,12 @@ export function SpikeEmailRecovery() {
       .join(' · ') || 'none';
   });
 
-  if (!isEmailRecoverySpike()) return null;
   const button = (label: string, action: () => void) => (
     <button className="btn soft" disabled={busy} onClick={action}>{label}</button>
   );
   return (
     <main className="screen" style={{ display: 'grid', gap: 8 }}>
-      <div className="page-title">Email recovery spike (testnet)</div>
+      <div className="page-title">{title}</div>
       {button('1. Show keys', keys)}
       {button('2. Create 2-of-3 account', create)}
       {button('3. Status', status)}

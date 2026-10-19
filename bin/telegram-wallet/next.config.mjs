@@ -6,7 +6,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Telegram Web (web.telegram.org) shows mini apps in an iframe; the native
 // Telegram apps use a webview. Only Telegram may frame this app.
 const securityHeaders = [
-  { key: 'Content-Security-Policy', value: "frame-ancestors 'self' https://web.telegram.org" },
+  // DEV_FRAME_ANCESTORS: development only, e.g. the email-key spike framed by another local port.
+  { key: 'Content-Security-Policy', value: `frame-ancestors 'self' https://web.telegram.org ${process.env.DEV_FRAME_ANCESTORS ?? ''}`.trim() },
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'Referrer-Policy', value: 'no-referrer' },
 ];

@@ -15,7 +15,9 @@ import { DEV_LOCAL_SIGNER } from '@/lib/devSigner';
 import { InstantPreview } from './InstantPreview';
 import { isPasskeyCheck, PasskeyCheck } from './PasskeyCheck';
 import { isPrivyPasskeyTest, PrivyPasskeyTest } from './PrivyPasskeyTest';
-import { isEmailRecoverySpike, SpikeEmailRecovery } from './SpikeEmailRecovery';
+import { emailRecoverySpike, SpikeEmailRecovery } from './SpikeEmailRecovery';
+import { SpikeEmailKey, SpikeSideBySide } from './SpikeEmailKey';
+import { EmailKeyFrame, emailRecoveryTest, EmailRecoveryTest } from './EmailRecoveryTest';
 import { installRemoteDiag } from '@/lib/remoteDiag';
 import { freshStart } from '@/lib/freshStart';
 import { hasSavedView, viewKeyFor } from '@/lib/savedView';
@@ -44,8 +46,16 @@ export default function App() {
     getWasmOrThrow().then(() => setWasmReady(true), (e: unknown) => console.warn('Miden WebAssembly failed to load', e));
   }, []);
 
+  // The hidden email recovery test on the live site (?test=email-recovery in
+  // Telegram, with ?test=email-key embedded from the recovery subdomain).
+  const emailTest = bridgeReady ? emailRecoveryTest() : null;
+  if (emailTest === 'parent') return <EmailRecoveryTest />;
+  if (emailTest === 'frame') return <EmailKeyFrame />;
   // Development spike (never in production): email recovery, 2-of-3 on testnet.
-  if (bridgeReady && isEmailRecoverySpike()) return <SpikeEmailRecovery />;
+  const spike = bridgeReady ? emailRecoverySpike() : null;
+  if (spike === 'email-recovery') return <SpikeEmailRecovery />;
+  if (spike === 'email-key') return <SpikeEmailKey />;
+  if (spike === 'side-by-side') return <SpikeSideBySide />;
   // The passkey test page (t.me/<bot>?startapp=passkey_check), instead of the wallet.
   if (bridgeReady && isPasskeyCheck()) return <PasskeyCheck />;
 
