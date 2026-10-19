@@ -9,7 +9,7 @@ import { PRIVY_APP_ID, PRIVY_CLIENT_ID } from '@/config/psm';
 import { formatError } from '@/lib/errors';
 import { createPrivySigner, type RawHashProvider } from '@/lib/privySigner';
 import { storage } from '@/lib/storage';
-import { insideTelegram } from '@/lib/telegram';
+import { insideTelegram, telegramStartParam } from '@/lib/telegram';
 import { EmailLogin } from './AuthGate';
 import { SpikeEmailRecovery } from './SpikeEmailRecovery';
 
@@ -27,7 +27,9 @@ import { SpikeEmailRecovery } from './SpikeEmailRecovery';
  */
 export function emailRecoveryTest(): 'parent' | 'frame' | null {
   const test = new URLSearchParams(window.location.search).get('test');
-  return test === 'email-recovery' ? 'parent' : test === 'email-key' ? 'frame' : null;
+  // In Telegram: t.me/<bot>?startapp=test_email_recovery.
+  if (test === 'email-recovery' || telegramStartParam() === 'test_email_recovery') return 'parent';
+  return test === 'email-key' ? 'frame' : null;
 }
 
 const APP_ORIGIN = process.env.NEXT_PUBLIC_TEST_APP_ORIGIN || 'https://privpay.forkchoice.xyz';
