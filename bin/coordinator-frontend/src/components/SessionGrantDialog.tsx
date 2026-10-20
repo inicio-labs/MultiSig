@@ -39,7 +39,7 @@ function utcDay(date: Date): string {
   return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
 }
 
-/** Rows shown elsewhere in the dialog, not in the details grid. */
+/** Rows the duration banner already shows, or that the dialog leaves out. */
 const SHOWN_ELSEWHERE = new Set(["Valid from", "Expires", "Scope"]);
 
 function HexValue({ value }: { value: string }) {
@@ -209,18 +209,6 @@ export function SessionGrantDialog() {
                     </div>
                   ))}
               </dl>
-            </div>
-
-            <div className="flex flex-col gap-1 px-3">
-              {valueOf("Scope") && (
-                <p className="text-[12px] leading-snug text-[#111]">
-                  <span className="font-[600]">Scope: </span>
-                  {valueOf("Scope")}.
-                </p>
-              )}
-              <p className="text-[11px] leading-snug text-[rgba(0,0,0,0.55)]">
-                Your wallet may show only a hash of these values, so check them here before approving.
-              </p>
             </div>
           </div>
 
