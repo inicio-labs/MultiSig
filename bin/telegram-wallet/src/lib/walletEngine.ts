@@ -41,7 +41,15 @@ export interface WalletEngineDeps<C extends WalletMidenClient, M extends WalletM
   createMultisigClient(midenClient: C): M;
   createAccount(multisigClient: M, signer: Signer, hooks: MultisigHooks): Promise<Multisig>;
   loadAccount(multisigClient: M, accountId: string, signer: Signer, hooks: MultisigHooks): Promise<Multisig>;
-  registerOnNode(midenClient: C, accountId: string): Promise<void>;
+  /** Registers a new account with the node; `invitationCode` on an invite-only network. */
+  registerOnNode(midenClient: C, accountId: string, invitationCode?: string): Promise<void>;
+  /**
+   * Invite-only network (private mainnet): true when this new account still
+   * needs a code from the user before it can register. Absent: never asks.
+   */
+  needsInvitation?(midenClient: C, accountId: string): Promise<boolean>;
+  /** Whether the node would accept this invite code (unknown or used: false); asked before registering. */
+  checkInvitationCode?(midenClient: C, code: string): Promise<boolean>;
   registerNoteTag(midenClient: C, accountId: string): Promise<void>;
   /** How long each step of a transaction took (diagnostics). */
   trace?(label: string, ms: number): void;
@@ -68,6 +76,8 @@ export type WalletPhase =
   | { kind: 'creating' }
   /** Registering the never-used account with the node. */
   | { kind: 'registering' }
+  /** Invite-only network: waiting for the user's invitation code (`error`: the last one was refused). */
+  | { kind: 'invite'; error?: string }
   | { kind: 'ready' }
   | { kind: 'error'; message: string };
 
@@ -348,17 +358,53 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
         // account registers here; one whose first start was interrupted is
         // registered again (idempotent). Whatever the network sends a new
         // account arrives as an ordinary incoming payment.
+        // An invite-only network registers only with the user's code: wait for it.
+        if (await this.deps.needsInvitation?.(midenClient, multisig.accountId)) {
+          this.update({ phase: { kind: 'invite' } });
+          return;
+        }
         this.update({ phase: { kind: 'registering' } });
         await this.deps.registerOnNode(midenClient, multisig.accountId);
       }
-      this.update({ phase: { kind: 'ready' } });
-      // A private payment whose delivery the app did not finish (closed meanwhile).
-      const privateNotes = this.privateNotes;
-      if (privateNotes) {
-        void this.exclusive(() => this.checkDeliveries(multisig, privateNotes))
-          .catch((error) => console.warn('An earlier private payment is not delivered yet', error));
-      }
+      this.becomeReady(multisig);
     }
+  }
+
+  private becomeReady(multisig: Multisig): void {
+    this.update({ phase: { kind: 'ready' } });
+    // A private payment whose delivery the app did not finish (closed meanwhile).
+    const privateNotes = this.privateNotes;
+    if (privateNotes) {
+      void this.exclusive(() => this.checkDeliveries(multisig, privateNotes))
+        .catch((error) => console.warn('An earlier private payment is not delivered yet', error));
+    }
+  }
+
+  /**
+   * Invite-only network: registers the new account with the user's code and
+   * opens the wallet. A refused code goes back to `invite` with the reason.
+   */
+  async submitInvitationCode(code: string): Promise<void> {
+    const { midenClient, multisig } = this;
+    const trimmed = code.trim();
+    if (!midenClient || !multisig || this.snapshot.phase.kind !== 'invite') return;
+    if (!trimmed) {
+      this.update({ phase: { kind: 'invite', error: 'Enter your invite code.' } });
+      return;
+    }
+    this.update({ phase: { kind: 'registering' } });
+    try {
+      // A clear answer for a mistyped or used code, before anything is sent.
+      if (this.deps.checkInvitationCode && !(await this.deps.checkInvitationCode(midenClient, trimmed))) {
+        this.update({ phase: { kind: 'invite', error: 'That code isn’t valid, or it was already used. Check it and try again.' } });
+        return;
+      }
+      await this.deps.registerOnNode(midenClient, multisig.accountId, trimmed);
+    } catch (error) {
+      this.update({ phase: { kind: 'invite', error: formatError(error, 'That code didn’t work') } });
+      return;
+    }
+    this.becomeReady(multisig);
   }
 
   // The account last used here, per key (another Telegram user on this phone has their own).

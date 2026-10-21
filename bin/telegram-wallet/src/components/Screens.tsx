@@ -30,6 +30,7 @@ import type { ActivityItem } from '@/lib/walletEngine';
 import { ActivityList, timeOf, who } from './ActivityList';
 import { AlertsNudgeSheet } from './AlertsNudgeSheet';
 import { WhatsNewSheet } from './WhatsNewSheet';
+import { InviteScreen } from './InviteScreen';
 import { BURST_LANDS_MS, CoinBurst, type Burst } from './CoinBurst';
 import { Icon } from './Icon';
 import { ReceiveSheet, type Collected } from './ReceiveSheet';
@@ -80,6 +81,13 @@ function WalletHome() {
   const indicator = useRef<HTMLDivElement>(null);
   const { phase } = snapshot;
   const ready = phase.kind === 'ready';
+  // Private mainnet: the invite screen, from the moment a code is needed until
+  // one is accepted (it stays up while the code is being checked).
+  const [inviting, setInviting] = useState(false);
+  useEffect(() => {
+    if (phase.kind === 'invite') setInviting(true);
+    else if (phase.kind === 'ready' || phase.kind === 'error') setInviting(false);
+  }, [phase.kind]);
   // Starting: the screen shows what this phone saw last time, if anything,
   // while the wallet catches up (a few seconds).
   const updating = phase.kind !== 'ready' && phase.kind !== 'error';
@@ -361,6 +369,7 @@ function WalletHome() {
       <ReceiveSheet open={view === 'receive'} onClose={() => setView('home')} hidden={hidden} onCollected={collected} />
       <SettingsSheet open={view === 'settings'} onClose={() => setView('home')} accountId={snapshot.accountId} />
       <AlertsNudgeSheet open={view === 'alerts'} firstPayment={firstPayment} onAnswer={answerAlerts} />
+      {inviting && <InviteScreen />}
       {username && <WhatsNewSheet open={view === 'new'} username={username} onAnswer={answerWhatsNew} />}
     </>
   );

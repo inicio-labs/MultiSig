@@ -42,14 +42,30 @@ export function defaultInvitationCode(network: MidenNetwork, configured: string)
   return configured;
 }
 
-export function invitationCodeRequired(network: MidenNetwork): boolean {
+/**
+ * Invite-only: each new account registers with a code its user enters (the
+ * private mainnet). NEXT_PUBLIC_INVITE_ONLY "1" or "0" decides; unset, only
+ * mainnet is. Public mainnet sets "0" and the code screen goes away.
+ */
+export function inviteOnly(network: MidenNetwork, flag: string | undefined): boolean {
+  if (flag === '1') return true;
+  if (flag === '0') return false;
   return network === 'mainnet';
 }
 
+export function invitationCodeRequired(network: MidenNetwork, invite = network === 'mainnet'): boolean {
+  return invite;
+}
+
 /** The code to send: the creator's if given, else the network default; an error if one is required and missing. */
-export function registrationInvitationCode(network: MidenNetwork, configured: string, provided?: string): string {
+export function registrationInvitationCode(
+  network: MidenNetwork,
+  configured: string,
+  provided?: string,
+  required = invitationCodeRequired(network),
+): string {
   const code = provided?.trim() || defaultInvitationCode(network, configured);
-  if (!code && invitationCodeRequired(network)) {
+  if (!code && required) {
     throw new Error('An invitation code is required to register an account on this network.');
   }
   return code;

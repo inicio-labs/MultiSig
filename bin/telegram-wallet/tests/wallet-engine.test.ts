@@ -134,6 +134,63 @@ function setup(opts: FakeOptions & {
 }
 
 describe('WalletEngine.start', () => {
+  it('on an invite-only network, a new account waits for its code, then registers with it', async () => {
+    const { engine, deps, log } = setup();
+    const codes: Array<string | undefined> = [];
+    let refuse = true;
+    const inviting = new WalletEngine({
+      ...deps,
+      needsInvitation: async () => true,
+      registerOnNode: async (_c, _id, code) => {
+        codes.push(code);
+        if (refuse) {
+          refuse = false;
+          throw new Error('invalid invitation code');
+        }
+      },
+    });
+    await inviting.start();
+    expect(inviting.getSnapshot().phase).toEqual({ kind: 'invite' });
+    expect(codes).toEqual([]);
+
+    await inviting.submitInvitationCode('   ');
+    expect(inviting.getSnapshot().phase).toEqual({ kind: 'invite', error: 'Enter your invite code.' });
+
+    await inviting.submitInvitationCode(' BAD-1 ');
+    expect(inviting.getSnapshot().phase).toMatchObject({ kind: 'invite', error: expect.stringContaining('invalid invitation code') });
+
+    await inviting.submitInvitationCode('GOOD-2');
+    expect(inviting.getSnapshot().phase).toEqual({ kind: 'ready' });
+    expect(codes).toEqual(['BAD-1', 'GOOD-2']);
+    void engine;
+    void log;
+  });
+
+  it('refuses an unknown or used code before registering', async () => {
+    const { deps } = setup();
+    const codes: Array<string | undefined> = [];
+    const inviting = new WalletEngine({
+      ...deps,
+      needsInvitation: async () => true,
+      checkInvitationCode: async (_c, code) => code === 'GOOD',
+      registerOnNode: async (_c, _id, code) => { codes.push(code); },
+    });
+    await inviting.start();
+    await inviting.submitInvitationCode('USED');
+    expect(inviting.getSnapshot().phase).toMatchObject({ kind: 'invite', error: expect.stringContaining('already used') });
+    expect(codes).toEqual([]);
+    await inviting.submitInvitationCode('GOOD');
+    expect(inviting.getSnapshot().phase).toEqual({ kind: 'ready' });
+    expect(codes).toEqual(['GOOD']);
+  });
+
+  it('never asks for a code when the account is already allowed (or the network is open)', async () => {
+    const { deps } = setup();
+    const opened = new WalletEngine({ ...deps, needsInvitation: async () => false });
+    await opened.start();
+    expect(opened.getSnapshot().phase).toEqual({ kind: 'ready' });
+  });
+
   it('creates a new account, registers it on Guardian and the node, and is ready without transacting', async () => {
     const { engine, log, phases, store } = setup();
     await engine.start();

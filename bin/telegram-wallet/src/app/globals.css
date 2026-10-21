@@ -327,3 +327,9 @@ button.cell:active { background: var(--bg); }
 .progress-dot { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 15px; flex: none; box-shadow: inset 0 0 0 2px var(--line); }
 .progress-step.is-done .progress-dot { background: var(--or); color: var(--ink); box-shadow: none; animation: pop .3s cubic-bezier(.3, 1.6, .5, 1); }
 .progress-step.is-now .progress-dot { box-shadow: inset 0 0 0 3px var(--line); border-top: 3px solid var(--or); box-sizing: border-box; animation: spin .8s linear infinite; }
+
+/* Private mainnet: the invite code screen (InviteScreen). */
+.invite { max-width: 320px; margin: 0 auto; width: 100%; }
+.invite .btn { width: 100%; }
+.invite-code { text-align: center; font-size: 18px; letter-spacing: 0.04em; }
+.invite-code::placeholder { letter-spacing: normal; }

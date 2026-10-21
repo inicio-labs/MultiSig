@@ -28,5 +28,17 @@ describe('registration invitation code per network', () => {
     expect(registrationInvitationCode('testnet', 'guardian', '')).toBe('00000');
     expect(registrationInvitationCode('mainnet', 'guardian', ' typed ')).toBe('typed');
     expect(() => registrationInvitationCode('mainnet', 'guardian', '  ')).toThrow(/invitation code is required/);
+    // Public mainnet (invite-only switched off): no code required.
+    expect(registrationInvitationCode('mainnet', 'guardian', '', false)).toBe('');
+  });
+});
+
+describe('inviteOnly', () => {
+  it('is on for mainnet by default, and the flag decides when set', async () => {
+    const { inviteOnly } = await import('../src/lib/midenNetwork');
+    expect(inviteOnly('mainnet', undefined)).toBe(true);
+    expect(inviteOnly('mainnet', '0')).toBe(false);
+    expect(inviteOnly('testnet', undefined)).toBe(false);
+    expect(inviteOnly('testnet', '1')).toBe(true);
   });
 });

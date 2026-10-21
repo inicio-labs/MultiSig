@@ -1,4 +1,4 @@
-import { parseMidenNetwork, type MidenNetwork } from '@/lib/midenNetwork';
+import { inviteOnly, parseMidenNetwork, type MidenNetwork } from '@/lib/midenNetwork';
 
 // Every network endpoint comes from env as a full URL: the code holds no
 // devnet/testnet addresses. Missing or invalid values are collected in
@@ -45,6 +45,8 @@ export const MIDEN_PROVER_URL = process.env.NEXT_PUBLIC_MIDEN_PROVER_URL?.trim()
   : 'local';
 
 export const MIDEN_REGISTRATION_CODE = process.env.NEXT_PUBLIC_MIDEN_REGISTRATION_CODE || '';
+/** New accounts register with a code their user enters (private mainnet); see inviteOnly(). */
+export const INVITE_ONLY = inviteOnly(MIDEN_NETWORK, process.env.NEXT_PUBLIC_INVITE_ONLY?.trim());
 export const MIDEN_DB_NAME = 'MidenTelegramWalletDB';
 
 export const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID?.trim() ?? '';

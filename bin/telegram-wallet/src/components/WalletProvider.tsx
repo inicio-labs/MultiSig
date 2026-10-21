@@ -5,6 +5,7 @@ import { MidenClient } from '@miden-sdk/miden-sdk';
 import { IndexedDbSessionKeyStore, type Signer } from '@openzeppelin/miden-multisig-client';
 import {
   CONFIG_ERRORS,
+  INVITE_ONLY,
   MIDEN_DB_NAME,
   MIDEN_NOTE_TRANSPORT_URL,
   MIDEN_PROVER_URL,
@@ -71,7 +72,11 @@ export function WalletProvider({ signer, children }: { signer: Signer | null; ch
     createMultisigClient,
     createAccount: createWalletAccount,
     loadAccount: loadWalletAccount,
-    registerOnNode: (client, accountId) => registerAccountOnNode(client, accountId),
+    registerOnNode: (client, accountId, code) => registerAccountOnNode(client, accountId, code),
+    // Private mainnet: a new account waits for its user's invite code, unless
+    // the node already allows it (registered on an earlier open).
+    needsInvitation: INVITE_ONLY ? async (client, accountId) => !(await client.accounts.isAllowed(accountId)) : undefined,
+    checkInvitationCode: (client, code) => client.accounts.isInvitationCodeValid(code),
     registerNoteTag: registerAccountNoteTag,
     createPrivateNotes,
     storage,

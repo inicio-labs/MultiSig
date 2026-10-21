@@ -17,7 +17,7 @@ import {
   type Note,
   type NoteInclusionProof,
 } from '@miden-sdk/miden-sdk';
-import { GUARDIAN_ENDPOINT, MIDEN_NETWORK, MIDEN_REGISTRATION_CODE, MIDEN_RPC_URL } from '@/config/psm';
+import { GUARDIAN_ENDPOINT, INVITE_ONLY, MIDEN_NETWORK, MIDEN_REGISTRATION_CODE, MIDEN_RPC_URL } from '@/config/psm';
 import { normalizeCommitment } from '@/lib/helpers';
 import { registerNodeAccount } from './nodeRegistration';
 import { registrationInvitationCode } from './midenNetwork';
@@ -44,7 +44,7 @@ export function registerAccountOnNode(
 
   let code: string;
   try {
-    code = registrationInvitationCode(MIDEN_NETWORK, MIDEN_REGISTRATION_CODE, userInvitationCode);
+    code = registrationInvitationCode(MIDEN_NETWORK, MIDEN_REGISTRATION_CODE, userInvitationCode, INVITE_ONLY);
   } catch (error) {
     return Promise.reject(error);
   }
