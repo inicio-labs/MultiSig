@@ -11,7 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@miden-sdk/miden-sdk": "0.17.3",
+    "@miden-sdk/miden-sdk": "0.17.5",
     "@noble/curves": "1.9.7",
     "@openzeppelin/guardian-client": "0.18.1",
     "@openzeppelin/miden-multisig-client": "0.18.1",
