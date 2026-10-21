@@ -4,7 +4,7 @@
 // not set ("accept header validation failed"). So: read both from Status, then
 // call RegisterAccount with them. Mirrors Guardian's register-account script.
 //
-// 0.17 nodes serve the RPC as miden.node.v1.NodeService; older ones as rpc.Api.
+// 0.17 and 0.18 nodes serve the RPC as miden.node.v1.NodeService; older ones as rpc.Api.
 const SERVICES = ['miden.node.v1.NodeService', 'rpc.Api'] as const;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -117,8 +117,9 @@ export async function readNodeIdentity(rpcUrl: string): Promise<NodeIdentity> {
       const status = fields(await call(rpcUrl, service, 'Status', new Uint8Array()));
       const version = decoder.decode(status.get(1));
       const genesis = fields(status.get(2) ?? new Uint8Array()).get(1);
-      // Do not silently claim compatibility with a different protocol generation.
-      if (!/^0\.17\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version)) {
+      // Do not silently claim compatibility with a different protocol generation:
+      // 0.17 and 0.18 nodes (testnet moved to 0.18 in October 2026) only.
+      if (!/^0\.1[78]\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version)) {
         throw new Error(`Unsupported node version: ${version || 'missing'}`);
       }
       if (genesis?.length !== 32) throw new Error('Node Status is missing a valid genesis commitment');
