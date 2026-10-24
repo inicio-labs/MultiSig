@@ -1,30 +1,91 @@
 "use client";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../../hooks/useAuth";
 import { useMultisig } from "@/contexts/MultisigContext";
+import { MIDEN_NETWORK } from "@/config/psm";
+import { accountIdFromInput, lookupErrorMessage, type FoundAccount } from "@/lib/findAccounts";
+import type { WalletSource } from "@/wallets/types";
 import { toast } from "sonner";
 
 // Force dynamic rendering to avoid WASM loading issues during build
 export const dynamic = 'force-dynamic';
 
+type Lookup =
+    | { phase: "idle" }
+    | { phase: "waiting" }
+    | { phase: "found"; accounts: FoundAccount[] }
+    | { phase: "none" }
+    | { phase: "failed"; message: string };
+
+/** What the button says while the wallet asks for the lookup signature. */
+const CHECK_WALLET: Record<WalletSource, string> = {
+    "miden-wallet": "Check Miden Wallet",
+    para: "Check Para",
+    ledger: "Approve on Ledger",
+    local: "Signing",
+};
+
+const SearchIcon = () => (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true"
+        className="h-4 w-4 shrink-0 text-[rgba(255,85,0,1)]">
+        <circle cx="9" cy="9" r="6" />
+        <path d="M13.5 13.5 18 18" />
+    </svg>
+);
+
+const CheckIcon = ({ shown }: { shown: boolean }) => (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={2.2} aria-hidden="true"
+        className={`h-4 w-4 shrink-0 text-[rgba(255,85,0,1)] ${shown ? "visible" : "invisible"}`}>
+        <path d="M4.5 10.5 8.5 14.5 15.5 6.5" />
+    </svg>
+);
+
 const LoadExistingWallet = () => {
     const router = useRouter();
     const { setWalletId } = useAuth();
-    const { handleLoad, loadingAccount, error: multisigError, activeScheme } = useMultisig();
-    const [accountId, setAccountId] = useState("");
+    const {
+        handleLoad, findMyAccounts, loadingAccount, error: multisigError,
+        activeScheme, activeCommitment, walletSource,
+    } = useMultisig();
+    const [accountAddress, setAccountAddress] = useState("");
     const [accountName, setAccountName] = useState("");
     const [localError, setLocalError] = useState<string | null>(null);
+    const [lookup, setLookup] = useState<Lookup>({ phase: "idle" });
+
+    // Accounts found for another wallet's key do not belong to this one.
+    useEffect(() => {
+        setLookup({ phase: "idle" });
+    }, [activeCommitment]);
+
+    const findAccounts = async () => {
+        setLookup({ phase: "waiting" });
+        try {
+            const accounts = await findMyAccounts();
+            setLookup(accounts.length ? { phase: "found", accounts } : { phase: "none" });
+        } catch (error) {
+            setLookup({ phase: "failed", message: lookupErrorMessage(error) });
+        }
+    };
 
     const handleLoadWallet = async () => {
-        if (!accountId.trim() || !accountName.trim()) {
-            setLocalError("Please enter both account name and account ID.");
+        if (!accountAddress.trim() || !accountName.trim()) {
+            setLocalError("Please enter both account name and account address.");
+            return;
+        }
+
+        // A Miden address (mm1… on mainnet) or a hex account ID.
+        let accountId: string;
+        try {
+            accountId = accountIdFromInput(accountAddress, MIDEN_NETWORK);
+        } catch (error) {
+            setLocalError(error instanceof Error ? error.message : String(error));
             return;
         }
 
         setLocalError(null);
         try {
-            await handleLoad(accountId.trim(), activeScheme);
+            await handleLoad(accountId, activeScheme);
 
             // Store walletFormData with just walletName
             const walletFormData = {
@@ -37,14 +98,8 @@ const LoadExistingWallet = () => {
             };
             localStorage.setItem("walletFormData", JSON.stringify(walletFormData));
 
-            // Normalize account ID for storage
-            let normalizedId = accountId.trim();
-            if (!normalizedId.startsWith('0x')) {
-                normalizedId = `0x${normalizedId}`;
-            }
-
-            setWalletId(normalizedId);
-            localStorage.setItem("currentWalletId", normalizedId);
+            setWalletId(accountId);
+            localStorage.setItem("currentWalletId", accountId);
             router.push("/dashboard/home");
         } catch (error) {
             const msg = error instanceof Error ? error.message : "Failed to load account";
@@ -54,6 +109,11 @@ const LoadExistingWallet = () => {
     };
 
     const displayError = localError || multisigError;
+    const lookupNote = !activeCommitment
+        ? "Connect a wallet first"
+        : lookup.phase === "none"
+            ? "No accounts found"
+            : lookup.phase === "failed" ? lookup.message : null;
 
     return (
         <>
@@ -71,13 +131,71 @@ const LoadExistingWallet = () => {
                 <div className="w-full flex flex-col lg:space-y-6 md:space-y-5 sm:space-y-4 space-y-3">
                     <div className="w-full border border-[rgba(0,0,0,0.12)] rounded-[10px] h-auto flex flex-col p-8 lg:space-y-6 md:space-y-5 sm:space-y-4 space-y-4">
                         <div className="w-full flex flex-col gap-5">
-                            <div>
-                                <div className="lg:text-[22px] md:text-[20px] sm:text-[19px] text-[18px] font-[600] text-[#111]">
-                                    Enter Account ID
+                            {/* Find your accounts: Guardian's lookup by the wallet's key */}
+                            {lookup.phase === "found" ? (
+                                <div className="flex flex-col gap-2">
+                                    <div className="lg:text-[14px] md:text-[13px] sm:text-[12px] text-[12px] font-[500] text-[#111]">
+                                        Your accounts
+                                    </div>
+                                    <ul className="flex flex-col gap-1.5">
+                                        {lookup.accounts.map((account) => {
+                                            const selected = accountAddress === account.address;
+                                            return (
+                                                <li key={account.address}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setAccountAddress(account.address);
+                                                            setLocalError(null);
+                                                        }}
+                                                        aria-pressed={selected}
+                                                        title={account.address}
+                                                        className={`w-full min-h-[42px] flex items-center justify-between gap-2.5 rounded-[8px] border px-3 py-2 font-mono text-[12.5px] text-left text-[#111] transition-colors ${selected ? "border-[rgba(255,85,0,1)] bg-[#FFF6F1]" : "border-[rgba(0,0,0,0.1)] bg-white hover:border-[rgba(255,85,0,0.45)]"}`}
+                                                    >
+                                                        {/* One line: in full when it fits, else shortened in the middle. */}
+                                                        <span className="flex min-w-0">
+                                                            <span className="truncate">{account.address.slice(0, -8)}</span>
+                                                            <span className="shrink-0">{account.address.slice(-8)}</span>
+                                                        </span>
+                                                        <CheckIcon shown={selected} />
+                                                    </button>
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
                                 </div>
-                                <div className="lg:text-[14px] md:text-[13px] sm:text-[12px] text-[11px] font-[400] text-[rgba(0,0,0,0.45)] mt-1">
-                                    Paste the hex account ID of the multisig account you want to load
+                            ) : (
+                                <div className="flex flex-col gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => void findAccounts()}
+                                        disabled={!activeCommitment || lookup.phase === "waiting"}
+                                        className="w-full lg:h-[44px] md:h-[40px] h-[36px] flex items-center justify-center gap-2 rounded-[8px] border border-[rgba(0,0,0,0.14)] bg-white font-[500] lg:text-[14px] md:text-[13px] text-[12px] text-[#111] transition-colors enabled:hover:border-[rgba(255,85,0,1)] enabled:hover:bg-[#FFFAF7] disabled:cursor-not-allowed disabled:text-[rgba(0,0,0,0.42)]"
+                                    >
+                                        {lookup.phase === "waiting" ? (
+                                            <>
+                                                <span aria-hidden="true" className="h-[15px] w-[15px] shrink-0 rounded-full border-2 border-[rgba(255,85,0,0.22)] border-t-[rgba(255,85,0,1)] animate-spin" />
+                                                {CHECK_WALLET[walletSource]}
+                                            </>
+                                        ) : (
+                                            <>
+                                                <SearchIcon />
+                                                Find your accounts
+                                            </>
+                                        )}
+                                    </button>
+                                    {lookupNote && (
+                                        <div className={`text-center text-[12px] ${lookup.phase === "failed" && activeCommitment ? "text-red-600" : "text-[rgba(0,0,0,0.45)]"}`}>
+                                            {lookupNote}
+                                        </div>
+                                    )}
                                 </div>
+                            )}
+
+                            <div className="flex items-center gap-3 text-[12px] text-[rgba(0,0,0,0.35)]">
+                                <span className="h-px flex-1 bg-[rgba(0,0,0,0.09)]" />
+                                or
+                                <span className="h-px flex-1 bg-[rgba(0,0,0,0.09)]" />
                             </div>
 
                             <div className="flex flex-col lg:space-y-2 md:space-y-1.5 space-y-1">
@@ -95,13 +213,15 @@ const LoadExistingWallet = () => {
 
                             <div className="flex flex-col lg:space-y-2 md:space-y-1.5 space-y-1">
                                 <div className="lg:text-[14px] md:text-[13px] sm:text-[12px] text-[12px] font-[500] text-[#111]">
-                                    Account ID
+                                    Account Address
                                 </div>
                                 <input
                                     type="text"
-                                    value={accountId}
-                                    onChange={(e) => setAccountId(e.target.value)}
-                                    placeholder="0x..."
+                                    value={accountAddress}
+                                    onChange={(e) => setAccountAddress(e.target.value)}
+                                    placeholder="mm1… or 0x…"
+                                    spellCheck={false}
+                                    autoCapitalize="off"
                                     className="bg-[rgba(245,245,245,1)] w-full lg:h-[44px] md:h-[40px] sm:h-[36px] h-[32px] border border-[rgba(217,217,217,1)] rounded-[6px] px-3 font-[400] text-[13px]"
                                 />
                             </div>

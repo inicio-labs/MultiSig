@@ -28,6 +28,7 @@ import { GuardianHttpError, type GuardianHttpClient, type SessionGrantFields, ty
 import { Note, NoteType, type MidenClient } from "@miden-sdk/miden-sdk";
 
 import { normalizeCommitment } from "@/lib/helpers";
+import { findAccountsByKey, type FoundAccount } from "@/lib/findAccounts";
 import { formatError, classifyWalletError, describeExecutionError, UserFacingError } from "@/lib/errors";
 import {
   createMidenClient,
@@ -259,6 +260,8 @@ export interface MultisigContextValue {
     accountId: string,
     signatureScheme?: SignatureScheme,
   ) => Promise<void>;
+  /** The accounts on this Guardian whose signers include the connected wallet's key (one wallet signature). */
+  findMyAccounts: () => Promise<FoundAccount[]>;
   handleSync: () => Promise<void>;
   retryGuardianRegistration: () => Promise<void>;
   retryAccountFunding: () => Promise<void>;
@@ -768,6 +771,17 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     await forgetAllSessionKeys();
     await sessions.endAll();
   }, [sessions]);
+
+  /** "Find your accounts": the accounts on this Guardian whose signers include the connected wallet's key. */
+  const findMyAccounts = useCallback(async (): Promise<FoundAccount[]> => {
+    const { multisigClient } = await waitForClient();
+    const walletSigner = createSigner(
+      signerRef.current,
+      walletSource === "ledger" ? "ecdsa" : activeScheme,
+      buildExternalParams(),
+    );
+    return findAccountsByKey(multisigClient.guardianClient, walletSigner, MIDEN_NETWORK);
+  }, [waitForClient, walletSource, activeScheme, buildExternalParams]);
 
   const connectToGuardian = useCallback(
     async (url: string, clientParam?: MidenClient): Promise<GuardianConnectResult> => {
@@ -2313,6 +2327,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
 
       handleCreate,
       handleLoad,
+      findMyAccounts,
       handleSync,
       retryGuardianRegistration,
       retryAccountFunding,
@@ -2408,6 +2423,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       generatingSigner,
       handleCreate,
       handleLoad,
+      findMyAccounts,
       handleSync,
       retryGuardianRegistration,
       retryAccountFunding,
