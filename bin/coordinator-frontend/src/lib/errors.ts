@@ -16,12 +16,27 @@ export function formatError(err: unknown, prefix?: string): string {
   return prefix ? `${prefix}: ${message}` : message;
 }
 
+/**
+ * Whether a wallet error is the user declining the request: the Miden Wallet
+ * answers NOT_GRANTED (but NETWORK_NOT_GRANTED is a wrong network), Ledger
+ * 0x6985, other wallets "user rejected/cancelled/denied".
+ */
+export function isWalletDecline(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  const name = err instanceof Error ? err.name : '';
+  const text = `${msg} ${name}`;
+  if (/(^|[^\w])NOT_GRANTED\b/.test(text)) return true;
+  const lower = text.toLowerCase();
+  return ['user cancelled', 'user canceled', 'user rejected', 'user denied', 'user declined', 'denied by the user', '6985']
+    .some((phrase) => lower.includes(phrase));
+}
+
 export function classifyWalletError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
   const name = err instanceof Error ? err.name : '';
   const lower = (msg + ' ' + name).toLowerCase();
 
-  if (lower.includes('user cancelled') || lower.includes('user rejected') || lower.includes('user denied')) {
+  if (isWalletDecline(err)) {
     return 'Signing was cancelled';
   }
   if (lower.includes('walletnotready') || lower.includes('not detected') || lower.includes('not found') || lower.includes('not installed')) {

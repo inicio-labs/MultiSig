@@ -260,8 +260,11 @@ export interface MultisigContextValue {
     accountId: string,
     signatureScheme?: SignatureScheme,
   ) => Promise<void>;
-  /** The accounts on this Guardian whose signers include the connected wallet's key (one wallet signature). */
-  findMyAccounts: () => Promise<FoundAccount[]>;
+  /**
+   * The accounts on this Guardian whose signers include the connected wallet's
+   * key (one wallet signature); `onAsk` runs just before the wallet is asked.
+   */
+  findMyAccounts: (onAsk?: () => void) => Promise<FoundAccount[]>;
   handleSync: () => Promise<void>;
   retryGuardianRegistration: () => Promise<void>;
   retryAccountFunding: () => Promise<void>;
@@ -772,16 +775,21 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     await sessions.endAll();
   }, [sessions]);
 
-  /** "Find your accounts": the accounts on this Guardian whose signers include the connected wallet's key. */
-  const findMyAccounts = useCallback(async (): Promise<FoundAccount[]> => {
-    const { multisigClient } = await waitForClient();
-    const walletSigner = createSigner(
-      signerRef.current,
-      walletSource === "ledger" ? "ecdsa" : activeScheme,
-      buildExternalParams(),
-    );
-    return findAccountsByKey(multisigClient.guardianClient, walletSigner, MIDEN_NETWORK);
-  }, [waitForClient, walletSource, activeScheme, buildExternalParams]);
+  /**
+   * "Find your accounts": the accounts on this Guardian whose signers include
+   * the connected wallet's key. `onAsk` runs just before the wallet is asked.
+   */
+  const findMyAccounts = useCallback(async (onAsk?: () => void): Promise<FoundAccount[]> => {
+    // The SDK (for the addresses) and the Guardian connection are ready.
+    await waitForClient();
+    const walletSigner = createSigner(signerRef.current, activeScheme, buildExternalParams());
+    // A client of its own: the lookup sets its signer, which must not change
+    // the one a loaded account's Guardian requests use.
+    const { GuardianHttpClient } = await import("@openzeppelin/guardian-client");
+    const guardian = new GuardianHttpClient(guardianUrl);
+    onAsk?.();
+    return findAccountsByKey(guardian, walletSigner, MIDEN_NETWORK);
+  }, [waitForClient, activeScheme, buildExternalParams, guardianUrl]);
 
   const connectToGuardian = useCallback(
     async (url: string, clientParam?: MidenClient): Promise<GuardianConnectResult> => {

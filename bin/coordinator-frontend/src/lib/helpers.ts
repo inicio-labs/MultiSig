@@ -8,7 +8,12 @@ export function toHexAccountId(input: string): string {
   const stripped = trimmed.startsWith('0x') || trimmed.startsWith('0X') ? trimmed.slice(2) : trimmed;
   // Canonical form: 0x-prefixed and lowercase, whether or not the user typed the prefix.
   if (/^[0-9a-fA-F]+$/.test(stripped)) return `0x${stripped.toLowerCase()}`;
-  return AccountId.fromBech32(trimmed).toString();
+  const id = AccountId.fromBech32(trimmed);
+  try {
+    return id.toString();
+  } finally {
+    id.free();
+  }
 }
 
 export function normalizeCommitment(hex: string): string {

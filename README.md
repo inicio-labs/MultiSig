@@ -90,6 +90,7 @@ selected Ledger derivation path so you can reconnect to the same signer.
 | Add signer | Add a second test signer's commitment, retaining threshold 1 initially. Sign and Execute. | Updated account state includes the new signer. |
 | Change threshold | With access to both signers, change threshold to 2; Sign and Execute under the old threshold. Create another proposal. | Account becomes 2-of-2; the next proposal requires both distinct signatures before execution. |
 | Load account | Reload the page, reconnect to the same Ledger address, and Load Existing Account using the saved Miden ID. | Authentication and later transaction signatures still use Ledger. |
+| Find accounts | Without the saved ID: on Load Existing Account, click **Find your accounts** and approve `GuardianLookup` on Ledger. | The accounts that include this Ledger key appear as Miden addresses; picking one fills Account Address, which also takes a hex account ID. |
 | Reject/cancel/unplug | Reject address confirmation; reject a signature; unplug during a prompt; reconnect and retry explicitly. | Unconfirmed addresses are not selected. Invalidated sessions cannot sign; no software-key fallback occurs. |
 | Change address | Use Change Ledger Address and select another address. | Old account session clears; explicitly load an account authorizing the new commitment. |
 

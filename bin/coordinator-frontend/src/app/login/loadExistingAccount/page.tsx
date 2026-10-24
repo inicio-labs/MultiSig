@@ -1,22 +1,15 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../../hooks/useAuth";
 import { useMultisig } from "@/contexts/MultisigContext";
 import { MIDEN_NETWORK } from "@/config/psm";
-import { accountIdFromInput, lookupErrorMessage, type FoundAccount } from "@/lib/findAccounts";
+import { accountIdFromInput, accountLookupRunner, type AccountLookup } from "@/lib/findAccounts";
 import type { WalletSource } from "@/wallets/types";
 import { toast } from "sonner";
 
 // Force dynamic rendering to avoid WASM loading issues during build
 export const dynamic = 'force-dynamic';
-
-type Lookup =
-    | { phase: "idle" }
-    | { phase: "waiting" }
-    | { phase: "found"; accounts: FoundAccount[] }
-    | { phase: "none" }
-    | { phase: "failed"; message: string };
 
 /** What the button says while the wallet asks for the lookup signature. */
 const CHECK_WALLET: Record<WalletSource, string> = {
@@ -51,22 +44,15 @@ const LoadExistingWallet = () => {
     const [accountAddress, setAccountAddress] = useState("");
     const [accountName, setAccountName] = useState("");
     const [localError, setLocalError] = useState<string | null>(null);
-    const [lookup, setLookup] = useState<Lookup>({ phase: "idle" });
+    const [lookup, setLookup] = useState<AccountLookup>({ phase: "idle" });
+    const lookups = useMemo(() => accountLookupRunner(setLookup), []);
+    const lookupBusy = lookup.phase === "starting" || lookup.phase === "asking";
 
-    // Accounts found for another wallet's key do not belong to this one.
+    // Accounts found for another wallet's key do not belong to this one, nor
+    // does a lookup that wallet still has open.
     useEffect(() => {
-        setLookup({ phase: "idle" });
-    }, [activeCommitment]);
-
-    const findAccounts = async () => {
-        setLookup({ phase: "waiting" });
-        try {
-            const accounts = await findMyAccounts();
-            setLookup(accounts.length ? { phase: "found", accounts } : { phase: "none" });
-        } catch (error) {
-            setLookup({ phase: "failed", message: lookupErrorMessage(error) });
-        }
-    };
+        lookups.reset();
+    }, [activeCommitment, lookups]);
 
     const handleLoadWallet = async () => {
         if (!accountAddress.trim() || !accountName.trim()) {
@@ -168,14 +154,14 @@ const LoadExistingWallet = () => {
                                 <div className="flex flex-col gap-2">
                                     <button
                                         type="button"
-                                        onClick={() => void findAccounts()}
-                                        disabled={!activeCommitment || lookup.phase === "waiting"}
+                                        onClick={() => void lookups.run(findMyAccounts)}
+                                        disabled={!activeCommitment || lookupBusy || loadingAccount}
                                         className="w-full lg:h-[44px] md:h-[40px] h-[36px] flex items-center justify-center gap-2 rounded-[8px] border border-[rgba(0,0,0,0.14)] bg-white font-[500] lg:text-[14px] md:text-[13px] text-[12px] text-[#111] transition-colors enabled:hover:border-[rgba(255,85,0,1)] enabled:hover:bg-[#FFFAF7] disabled:cursor-not-allowed disabled:text-[rgba(0,0,0,0.42)]"
                                     >
-                                        {lookup.phase === "waiting" ? (
+                                        {lookupBusy ? (
                                             <>
                                                 <span aria-hidden="true" className="h-[15px] w-[15px] shrink-0 rounded-full border-2 border-[rgba(255,85,0,0.22)] border-t-[rgba(255,85,0,1)] animate-spin" />
-                                                {CHECK_WALLET[walletSource]}
+                                                {lookup.phase === "asking" ? CHECK_WALLET[walletSource] : "Starting…"}
                                             </>
                                         ) : (
                                             <>
@@ -245,7 +231,7 @@ const LoadExistingWallet = () => {
                         </button>
                         <button
                             onClick={handleLoadWallet}
-                            disabled={loadingAccount}
+                            disabled={loadingAccount || lookupBusy}
                             className="bg-[rgba(255,85,0,1)] px-4 min-w-[144px] rounded-[8px] h-full font-[500] lg:text-[14px] md:text-[13px] sm:text-[12px] text-[11px] text-white disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {loadingAccount ? "Loading..." : "Load Account"}

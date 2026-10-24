@@ -5,18 +5,9 @@ import React, { useState, useMemo } from "react";
 import { useMultisig } from "@/contexts/MultisigContext";
 import { truncateHex, copyToClipboard } from "@/lib/helpers";
 import { SignerChip } from "@/components/SignerChip";
-import { AccountId, AccountInterface, NetworkId } from "@miden-sdk/miden-sdk";
+import { AccountId, AccountInterface } from "@miden-sdk/miden-sdk";
 import { MIDEN_NETWORK } from "@/config/psm";
-import { BECH32_PREFIX } from "@/lib/midenNetwork";
-
-function bech32NetworkId(): NetworkId {
-  switch (MIDEN_NETWORK) {
-    case "mainnet": return NetworkId.mainnet();
-    case "testnet": return NetworkId.testnet();
-    case "devnet": return NetworkId.devnet();
-    default: return NetworkId.custom(BECH32_PREFIX[MIDEN_NETWORK]);
-  }
-}
+import { bech32NetworkId } from "@/lib/findAccounts";
 import { toast } from "sonner";
 import { TaskBarProps } from "@/types";
 
@@ -70,7 +61,7 @@ const TaskBar: React.FC<TaskBarProps> = () => {
   const copyBech32 = () => {
     if (!accountId) return;
     try {
-      const bech32 = AccountId.fromHex(accountId).toBech32(bech32NetworkId(), AccountInterface.BasicWallet);
+      const bech32 = AccountId.fromHex(accountId).toBech32(bech32NetworkId(MIDEN_NETWORK), AccountInterface.BasicWallet);
       copyToClipboard(bech32, () => {
         setIsBech32Copied(true);
         setTimeout(() => setIsBech32Copied(false), 2000);
