@@ -6,6 +6,10 @@ import { toHexAccountId } from "@/lib/helpers";
 import { useDashboardUI } from "@/contexts/DashboardUIContext";
 import { useFaucetDecimals } from "@/hooks/useFaucetDecimals";
 import { formatTokenAmount, parseTokenAmount } from "@/lib/tokenAmounts";
+import { MIDEN_NETWORK } from "@/config/psm";
+import { TokenPicker } from "@/components/TokenPicker";
+import { useToken } from "@/hooks/useToken";
+import { imitatedToken } from "@/lib/tokenList";
 
 interface SendModalProps {
   open: boolean;
@@ -65,6 +69,13 @@ const SendModal = ({ open, onClose }: SendModalProps) => {
   const signerCount = detectedConfig?.signerCommitments?.length ?? 0;
 
   const token = useFaucetDecimals(formData.faucetId);
+  const selectedToken = useToken(formData.faucetId);
+  // An unverified token that takes a verified token's symbol (a fake "USDT").
+  const imitated = selectedToken.verification === "unverified" && selectedToken.info
+    ? imitatedToken(selectedToken.info.symbol, MIDEN_NETWORK)
+    : undefined;
+  const [sendAnyway, setSendAnyway] = useState(false);
+  useEffect(() => setSendAnyway(false), [formData.faucetId]);
   const selectedBalance = useMemo(
     () => vaultBalances.find(v => v.faucetId === formData.faucetId)?.amount ?? 0n,
     [formData.faucetId, vaultBalances],
@@ -74,6 +85,7 @@ const SendModal = ({ open, onClose }: SendModalProps) => {
     setError(null);
     if (!formData.recipientId.trim()) { setError("Recipient account ID is required"); return; }
     if (!formData.faucetId.trim()) { setError("Please select a token"); return; }
+    if (imitated && !sendAnyway) { setError(`This is not the verified ${imitated.symbol}`); return; }
     if (token.status !== "ready") {
       setError(token.error ?? "Loading token details, try again in a moment");
       return;
@@ -191,18 +203,29 @@ const SendModal = ({ open, onClose }: SendModalProps) => {
                 <label className="text-[12px] font-[500] text-[rgba(0,0,0,0.5)]">
                   Token
                 </label>
-                <select
+                <TokenPicker
+                  balances={vaultBalances}
                   value={formData.faucetId}
-                  onChange={e => setFormData(p => ({ ...p, faucetId: e.target.value }))}
-                  className="w-full h-10 rounded-[8px] border border-[rgba(0,0,0,0.08)] px-3 text-[12px] text-[#111] focus:outline-hidden focus:ring-1 focus:ring-[#FF5500] bg-white"
-                >
-                  <option value="">Select token…</option>
-                  {vaultBalances.map((b, i) => (
-                    <option key={i} value={b.faucetId}>
-                      {b.faucetId.slice(0, 16)}…
-                    </option>
-                  ))}
-                </select>
+                  onChange={faucetId => setFormData(p => ({ ...p, faucetId }))}
+                />
+                {imitated ? (
+                  <label className="flex items-start gap-2 rounded-[6px] border border-red-200 bg-red-50 px-2.5 py-2 text-[11px] text-red-700">
+                    <input
+                      type="checkbox"
+                      checked={sendAnyway}
+                      onChange={e => setSendAnyway(e.target.checked)}
+                      className="mt-0.5 accent-red-600"
+                    />
+                    <span>
+                      This is not the verified {imitated.symbol}: anyone can create a token called {imitated.symbol}.
+                      Send it anyway
+                    </span>
+                  </label>
+                ) : selectedToken.verification === "unverified" && formData.faucetId ? (
+                  <div className="text-[11px] text-[rgba(0,0,0,0.5)]">
+                    Unverified token: anyone can create a token with any name.
+                  </div>
+                ) : null}
                 {formData.faucetId && (
                   <div className={`text-[11px] ${token.status === "error" ? "text-red-600" : "text-[rgba(0,0,0,0.4)]"}`}>
                     {token.status === "ready"
@@ -264,7 +287,7 @@ const SendModal = ({ open, onClose }: SendModalProps) => {
                   </button>
                   <button
                     onClick={handleSubmit}
-                    disabled={creatingProposal || !formData.recipientId || !formData.amount || !formData.faucetId || token.status !== "ready"}
+                    disabled={creatingProposal || !formData.recipientId || !formData.amount || !formData.faucetId || token.status !== "ready" || (!!imitated && !sendAnyway)}
                     className="flex-[2] h-10 rounded-[8px] bg-[#FF5500] hover:bg-[#E64A00] text-white text-[13px] font-[500] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   >
                     {creatingProposal
