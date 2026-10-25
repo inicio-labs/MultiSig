@@ -62,6 +62,14 @@ describe('buildContentSecurityPolicy', () => {
     expect(connect.filter((source) => /miden\.io|openzeppelin\.com/.test(source) && source.includes('*'))).toEqual([]);
   });
 
+  it("admits Miden's token list repository, not the whole host", () => {
+    const policy = directives(buildContentSecurityPolicy(base));
+    for (const directive of ['connect-src', 'img-src']) {
+      expect(policy.get(directive)).toContain('https://raw.githubusercontent.com/0xMiden/token-list/');
+      expect(policy.get(directive)).not.toContain('https://raw.githubusercontent.com');
+    }
+  });
+
   it('drops any source that could split the policy (a ";" in a configured URL)', () => {
     const policy = buildContentSecurityPolicy({
       ...base,

@@ -1,11 +1,14 @@
 "use client";
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { useMultisig } from "@/contexts/MultisigContext";
+import { useMultisig, useTokenEnv } from "@/contexts/MultisigContext";
 import { toHexAccountId } from "@/lib/helpers";
 import { useDashboardUI } from "@/contexts/DashboardUIContext";
 import { useFaucetDecimals } from "@/hooks/useFaucetDecimals";
 import { formatTokenAmount, parseTokenAmount } from "@/lib/tokenAmounts";
+import { MIDEN_NETWORK } from "@/config/psm";
+import { TokenPicker } from "@/components/TokenPicker";
+import { sendableTokens } from "@/lib/tokenList";
 
 interface SendModalProps {
   open: boolean;
@@ -65,6 +68,19 @@ const SendModal = ({ open, onClose }: SendModalProps) => {
   const signerCount = detectedConfig?.signerCommitments?.length ?? 0;
 
   const token = useFaucetDecimals(formData.faucetId);
+  // Send offers the fee token and Miden's listed tokens, with a balance above zero.
+  const { sdkReady, nativeFaucetId, tokenListRevision } = useTokenEnv();
+  const sendable = useMemo(() => {
+    if (!sdkReady) return { tokens: [], pending: true };
+    try {
+      return sendableTokens(vaultBalances, MIDEN_NETWORK, nativeFaucetId);
+    } catch {
+      return { tokens: [], pending: true };
+    }
+    // tokenListRevision: the live list changed what is listed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sdkReady, vaultBalances, nativeFaucetId, tokenListRevision]);
+  const tokenOffered = sendable.tokens.some(t => t.faucetId === formData.faucetId);
   const selectedBalance = useMemo(
     () => vaultBalances.find(v => v.faucetId === formData.faucetId)?.amount ?? 0n,
     [formData.faucetId, vaultBalances],
@@ -74,6 +90,7 @@ const SendModal = ({ open, onClose }: SendModalProps) => {
     setError(null);
     if (!formData.recipientId.trim()) { setError("Recipient account ID is required"); return; }
     if (!formData.faucetId.trim()) { setError("Please select a token"); return; }
+    if (!tokenOffered) { setError("Choose a token from the list"); return; }
     if (token.status !== "ready") {
       setError(token.error ?? "Loading token details, try again in a moment");
       return;
@@ -191,18 +208,12 @@ const SendModal = ({ open, onClose }: SendModalProps) => {
                 <label className="text-[12px] font-[500] text-[rgba(0,0,0,0.5)]">
                   Token
                 </label>
-                <select
+                <TokenPicker
+                  balances={sendable.tokens}
+                  pending={sendable.pending}
                   value={formData.faucetId}
-                  onChange={e => setFormData(p => ({ ...p, faucetId: e.target.value }))}
-                  className="w-full h-10 rounded-[8px] border border-[rgba(0,0,0,0.08)] px-3 text-[12px] text-[#111] focus:outline-hidden focus:ring-1 focus:ring-[#FF5500] bg-white"
-                >
-                  <option value="">Select token…</option>
-                  {vaultBalances.map((b, i) => (
-                    <option key={i} value={b.faucetId}>
-                      {b.faucetId.slice(0, 16)}…
-                    </option>
-                  ))}
-                </select>
+                  onChange={faucetId => setFormData(p => ({ ...p, faucetId }))}
+                />
                 {formData.faucetId && (
                   <div className={`text-[11px] ${token.status === "error" ? "text-red-600" : "text-[rgba(0,0,0,0.4)]"}`}>
                     {token.status === "ready"
@@ -264,7 +275,7 @@ const SendModal = ({ open, onClose }: SendModalProps) => {
                   </button>
                   <button
                     onClick={handleSubmit}
-                    disabled={creatingProposal || !formData.recipientId || !formData.amount || !formData.faucetId || token.status !== "ready"}
+                    disabled={creatingProposal || !formData.recipientId || !formData.amount || !formData.faucetId || token.status !== "ready" || !tokenOffered}
                     className="flex-[2] h-10 rounded-[8px] bg-[#FF5500] hover:bg-[#E64A00] text-white text-[13px] font-[500] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   >
                     {creatingProposal

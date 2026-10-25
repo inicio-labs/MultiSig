@@ -15,6 +15,8 @@ export function useTokenInfo(faucetId: string): TokenInfoState {
   useEffect(() => {
     let cancelled = false;
     setState({ status: 'loading', info: null, error: null });
+    // No token chosen yet (the Send form before a pick).
+    if (!faucetId.trim()) return;
     getTokenInfo(faucetId).then(
       (info) => { if (!cancelled) setState({ status: 'ready', info, error: null }); },
       (err: unknown) => {

@@ -251,6 +251,15 @@ Proposal rows show `signed/required` directly. Actions are derived from Guardian
 - `src/hooks/useMidenWallet.ts` — Miden Wallet extension adapter
 - `src/hooks/useParaSession.ts` — Para signer integration
 - `src/config/psm.ts` — runtime endpoint and network configuration
+- `src/lib/tokenList.ts` — Miden's verified token list (names, logos, the Unverified tag)
+
+## Verified tokens
+
+Tokens show their name and logo from [Miden's verified token list](https://github.com/0xMiden/token-list), as the Miden Wallet does; a token not on the list for this network (other than the network's fee token) is tagged **Unverified**. Send offers only the fee token and listed tokens, each with a balance above zero. The app ships a copy of the list in `src/config/tokenList/` and, like the Miden Wallet, also reads the live list when it starts and on every receive (at most once a minute), using it when it is valid and not older than the copy; the security policy admits only `raw.githubusercontent.com/0xMiden/token-list/`. To update the shipped copy to a newer list commit:
+
+```bash
+node scripts/update-token-list.mjs <0xMiden/token-list commit sha>
+```
 
 ## Troubleshooting
 

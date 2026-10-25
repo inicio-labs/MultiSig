@@ -29,6 +29,7 @@ import { Note, NoteType, type MidenClient } from "@miden-sdk/miden-sdk";
 
 import { normalizeCommitment } from "@/lib/helpers";
 import { findAccountsByKey, type FoundAccount } from "@/lib/findAccounts";
+import { refreshTokenList } from "@/lib/tokenList";
 import { formatError, classifyWalletError, describeExecutionError, UserFacingError } from "@/lib/errors";
 import {
   createMidenClient,
@@ -350,6 +351,25 @@ export interface MultisigContextValue {
 }
 
 const MultisigContext = createContext<MultisigContextValue | null>(null);
+
+/**
+ * What token display needs from the client, kept apart from the rest of the
+ * context so token components re-render only when it changes.
+ */
+export interface TokenEnv {
+  /** The Miden SDK is ready: the client has started. */
+  sdkReady: boolean;
+  /** The network's fee token (always verified), once the synced store reports it. */
+  nativeFaucetId: string | null;
+  /** Bumped when the live token list changes what is listed. */
+  tokenListRevision: number;
+}
+
+const TokenEnvContext = createContext<TokenEnv>({ sdkReady: false, nativeFaucetId: null, tokenListRevision: 0 });
+
+export function useTokenEnv(): TokenEnv {
+  return useContext(TokenEnvContext);
+}
 
 export function useMultisig(): MultisigContextValue {
   const ctx = useContext(MultisigContext);
@@ -2469,9 +2489,54 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     ],
   );
 
+  // The fee token: the SDK reports it once the store has synced, whichever
+  // path synced it, so ask until it answers.
+  const [nativeFaucetId, setNativeFaucetId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!midenClient || nativeFaucetId) return;
+    let cancelled = false;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    const ask = () => {
+      midenClient.feeFaucetId().then(
+        (faucet) => {
+          const id = faucet.toString().toLowerCase();
+          faucet.free();
+          if (!cancelled) setNativeFaucetId(id);
+        },
+        () => {
+          if (!cancelled) retry = setTimeout(ask, 3000);
+        },
+      );
+    };
+    ask();
+    return () => {
+      cancelled = true;
+      clearTimeout(retry);
+    };
+  }, [midenClient, nativeFaucetId]);
+  // Miden's live token list: read when the app starts and on every receive
+  // (the account's balances change), at most once a minute (tokenList.ts);
+  // the copy shipped with the app stays in use when it can't be read.
+  const [tokenListRevision, setTokenListRevision] = useState(0);
+  const balancesKey = useMemo(
+    () => (detectedConfig?.vaultBalances ?? []).map((b) => `${b.faucetId}:${b.amount}`).join(","),
+    [detectedConfig?.vaultBalances],
+  );
+  useEffect(() => {
+    void refreshTokenList(MIDEN_NETWORK).then((changed) => {
+      if (changed) setTokenListRevision((revision) => revision + 1);
+    });
+  }, [balancesKey]);
+  const tokenEnv = useMemo<TokenEnv>(
+    () => ({ sdkReady: midenClient !== null, nativeFaucetId, tokenListRevision }),
+    [midenClient, nativeFaucetId, tokenListRevision],
+  );
+
   return (
     <MultisigContext.Provider value={value}>
-      {children}
+      <TokenEnvContext.Provider value={tokenEnv}>
+        {children}
+      </TokenEnvContext.Provider>
     </MultisigContext.Provider>
   );
 }
