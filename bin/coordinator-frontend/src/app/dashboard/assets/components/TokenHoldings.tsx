@@ -38,8 +38,8 @@ function HoldingRow({ faucetId, balance }: { faucetId: string; balance: string |
               type="button"
               onClick={copyAddress}
               className="flex h-5 w-5 items-center justify-center rounded-sm text-gray-500 transition-colors duration-150 hover:bg-gray-100"
-              title="Copy token address"
-              aria-label="Copy token address"
+              title="Copy the token's Miden address"
+              aria-label="Copy the token's Miden address"
             >
               {copied ? (
                 <svg className="w-3 h-3 text-green-600" fill="currentColor" viewBox="0 0 20 20" aria-hidden>

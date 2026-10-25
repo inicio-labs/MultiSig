@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { AccountId } from '@miden-sdk/miden-sdk';
 import mainnet from '../../src/config/tokenList/mainnet.json';
 import testnet from '../../src/config/tokenList/testnet.json';
-import { hasTokenList, imitatedToken, listedToken, tokenVerification } from '../../src/lib/tokenList';
+import { hasTokenList, listedToken, sendableTokens, tokenVerification } from '../../src/lib/tokenList';
 import { BECH32_PREFIX } from '../../src/lib/midenNetwork';
 
 const hexOf = (address: string) => {
@@ -66,11 +66,27 @@ describe('tokenVerification', () => {
   });
 });
 
-describe('imitatedToken', () => {
-  it("names the verified token whose symbol another one takes, in any case", () => {
-    expect(imitatedToken(' usdt ', 'mainnet')?.name).toBe('Tether USD');
-    expect(imitatedToken('NOTLISTED', 'mainnet')).toBeUndefined();
-    expect(imitatedToken('', 'mainnet')).toBeUndefined();
-    expect(imitatedToken('USDT', 'devnet')).toBeUndefined();
+describe('sendableTokens', () => {
+  const usdt = hexOf(mainnet.tokens.find((token) => token.symbol === 'USDT')!.faucetId);
+  const eth = hexOf(mainnet.tokens.find((token) => token.symbol === 'ETH')!.faucetId);
+  const fee = '0xe69e6ca6e39df1b10c1e5399399feb';
+  const balances = [
+    { faucetId: usdt, amount: 5n },
+    { faucetId: eth, amount: 0n },
+    { faucetId: fee, amount: 9n },
+    { faucetId: unlisted, amount: 7n },
+  ];
+
+  it('offers the fee token and listed tokens with a balance, nothing else', () => {
+    expect(sendableTokens(balances, 'mainnet', fee)).toEqual({ tokens: [balances[0], balances[2]], pending: false });
+  });
+
+  it('is pending while the fee token is unknown and an unlisted token could be it', () => {
+    expect(sendableTokens(balances, 'mainnet', null)).toEqual({ tokens: [balances[0]], pending: true });
+    expect(sendableTokens([balances[0]], 'mainnet', null)).toEqual({ tokens: [balances[0]], pending: false });
+  });
+
+  it('offers every token with a balance on a network without a list', () => {
+    expect(sendableTokens(balances, 'devnet', null)).toEqual({ tokens: [balances[0], balances[2], balances[3]], pending: false });
   });
 });

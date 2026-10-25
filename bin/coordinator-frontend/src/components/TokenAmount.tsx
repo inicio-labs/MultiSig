@@ -12,7 +12,7 @@ export function UnverifiedTag() {
   return (
     <span
       title={UNVERIFIED_WHY}
-      className="inline-flex shrink-0 items-center rounded-full bg-[rgba(0,0,0,0.06)] px-1.5 text-[10px] font-[500] leading-[16px] text-[rgba(0,0,0,0.55)]"
+      className="inline-block whitespace-nowrap rounded-full bg-[rgba(0,0,0,0.06)] px-1.5 align-middle text-[10px] font-[500] leading-[16px] text-[rgba(0,0,0,0.55)]"
     >
       Unverified
     </span>
@@ -50,9 +50,9 @@ export function TokenAmount({ faucetId, amount, className }: {
   const token = useToken(faucetId);
   if (token.status === 'ready' && token.info) {
     return (
-      <span className={`inline-flex items-center gap-1.5 ${className ?? ''}`}>
-        <span>{formatTokenAmount(amount, token.info.decimals)} {token.symbol}</span>
-        {token.verification === 'unverified' && <UnverifiedTag />}
+      <span className={className}>
+        {formatTokenAmount(amount, token.info.decimals)} {token.symbol}
+        {token.verification === 'unverified' && <> <UnverifiedTag /></>}
       </span>
     );
   }

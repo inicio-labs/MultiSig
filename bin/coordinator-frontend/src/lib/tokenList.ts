@@ -47,12 +47,6 @@ export function listedToken(faucetId: string, network: MidenNetwork): ListedToke
   return list.find((token) => token.faucetId === address);
 }
 
-/** The verified token on `network` whose symbol another token uses, if any. */
-export function imitatedToken(symbol: string, network: MidenNetwork): ListedToken | undefined {
-  const wanted = symbol.trim().toLowerCase();
-  return wanted ? LISTS[network]?.find((token) => token.symbol.toLowerCase() === wanted) : undefined;
-}
-
 /**
  * Verified when listed or the fee token; unverified when the network has a
  * list, the token is not on it and is not the fee token; unknown when there is
@@ -69,4 +63,27 @@ export function tokenVerification(
   if (!hasTokenList(network) || !listing) return 'unknown';
   if (listing.token) return 'verified';
   return nativeFaucetId ? 'unverified' : 'unknown';
+}
+
+/**
+ * The tokens Send offers: those with a balance above zero that are listed for
+ * this network or are its fee token; on a network without a list, every one
+ * with a balance. `pending` while the fee token is not known and an unlisted
+ * token could be it. Throws while the Miden SDK cannot convert IDs.
+ */
+export function sendableTokens<T extends { faucetId: string; amount: bigint }>(
+  balances: readonly T[],
+  network: MidenNetwork,
+  nativeFaucetId: string | null,
+): { tokens: T[]; pending: boolean } {
+  const held = balances.filter((balance) => balance.amount > 0n);
+  if (!hasTokenList(network)) return { tokens: held, pending: false };
+  let pending = false;
+  const tokens = held.filter((balance) => {
+    if (nativeFaucetId && balance.faucetId.toLowerCase() === nativeFaucetId.toLowerCase()) return true;
+    if (listedToken(balance.faucetId, network)) return true;
+    if (!nativeFaucetId) pending = true;
+    return false;
+  });
+  return { tokens, pending };
 }

@@ -351,6 +351,23 @@ export interface MultisigContextValue {
 
 const MultisigContext = createContext<MultisigContextValue | null>(null);
 
+/**
+ * What token display needs from the client, kept apart from the rest of the
+ * context so token components re-render only when it changes.
+ */
+export interface TokenEnv {
+  /** The Miden SDK is ready: the client has started. */
+  sdkReady: boolean;
+  /** The network's fee token (always verified), once the synced store reports it. */
+  nativeFaucetId: string | null;
+}
+
+const TokenEnvContext = createContext<TokenEnv>({ sdkReady: false, nativeFaucetId: null });
+
+export function useTokenEnv(): TokenEnv {
+  return useContext(TokenEnvContext);
+}
+
 export function useMultisig(): MultisigContextValue {
   const ctx = useContext(MultisigContext);
   if (!ctx) throw new Error("useMultisig must be used within MultisigProvider");
@@ -2469,9 +2486,41 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     ],
   );
 
+  // The fee token: the SDK reports it once the store has synced, whichever
+  // path synced it, so ask until it answers.
+  const [nativeFaucetId, setNativeFaucetId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!midenClient || nativeFaucetId) return;
+    let cancelled = false;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    const ask = () => {
+      midenClient.feeFaucetId().then(
+        (faucet) => {
+          const id = faucet.toString().toLowerCase();
+          faucet.free();
+          if (!cancelled) setNativeFaucetId(id);
+        },
+        () => {
+          if (!cancelled) retry = setTimeout(ask, 3000);
+        },
+      );
+    };
+    ask();
+    return () => {
+      cancelled = true;
+      clearTimeout(retry);
+    };
+  }, [midenClient, nativeFaucetId]);
+  const tokenEnv = useMemo<TokenEnv>(
+    () => ({ sdkReady: midenClient !== null, nativeFaucetId }),
+    [midenClient, nativeFaucetId],
+  );
+
   return (
     <MultisigContext.Provider value={value}>
-      {children}
+      <TokenEnvContext.Provider value={tokenEnv}>
+        {children}
+      </TokenEnvContext.Provider>
     </MultisigContext.Provider>
   );
 }

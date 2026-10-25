@@ -255,7 +255,7 @@ Proposal rows show `signed/required` directly. Actions are derived from Guardian
 
 ## Verified tokens
 
-Tokens show their name and logo from [Miden's verified token list](https://github.com/0xMiden/token-list), as the Miden Wallet does; a token not on the list for this network (other than the network's fee token) is tagged **Unverified**, and Send asks once before sending an unverified token that uses a listed token's symbol. The app ships a copy of the list in `src/config/tokenList/`. To update it to a newer list commit:
+Tokens show their name and logo from [Miden's verified token list](https://github.com/0xMiden/token-list), as the Miden Wallet does; a token not on the list for this network (other than the network's fee token) is tagged **Unverified**. Send offers only the fee token and listed tokens, each with a balance above zero. The app ships a copy of the list in `src/config/tokenList/`. To update it to a newer list commit:
 
 ```bash
 node scripts/update-token-list.mjs <0xMiden/token-list commit sha>

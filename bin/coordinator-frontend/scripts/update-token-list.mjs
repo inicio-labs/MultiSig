@@ -7,7 +7,7 @@
 //
 // The app ships this snapshot, as the Miden Wallet does, so it needs no
 // network call and no change to its security policy.
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -20,9 +20,10 @@ if (!/^[0-9a-f]{40}$/.test(ref ?? '')) {
 }
 
 const out = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'config', 'tokenList');
-const logoDir = join(out, 'logos');
-await rm(logoDir, { recursive: true, force: true });
-await mkdir(logoDir, { recursive: true });
+// Everything is downloaded here first, so a failed run leaves the copy as it was.
+const staging = join(out, '.update');
+await rm(staging, { recursive: true, force: true });
+await mkdir(join(staging, 'logos'), { recursive: true });
 
 async function fetchOk(url) {
   const response = await fetch(url);
@@ -41,10 +42,10 @@ for (const network of NETWORKS) {
     if (token.logoURI !== expected) throw new Error(`${token.faucetId}: unexpected logoURI ${token.logoURI}`);
     const png = Buffer.from(await (await fetchOk(`${REPO}/${ref}/logos/${token.faucetId}/logo.png`)).arrayBuffer());
     if (png.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') throw new Error(`${token.faucetId}: logo is not a PNG`);
-    await writeFile(join(logoDir, `${token.faucetId}.png`), png);
+    await writeFile(join(staging, 'logos', `${token.faucetId}.png`), png);
     logos.push(token.faucetId);
   }
-  await writeFile(join(out, `${network}.json`), `${JSON.stringify(list, null, 2)}\n`);
+  await writeFile(join(staging, `${network}.json`), `${JSON.stringify(list, null, 2)}\n`);
 }
 
 const lines = [
@@ -60,5 +61,11 @@ const lines = [
   '};',
   '',
 ];
-await writeFile(join(out, 'logos.ts'), lines.join('\n'));
+await writeFile(join(staging, 'logos.ts'), lines.join('\n'));
+
+await rm(join(out, 'logos'), { recursive: true, force: true });
+for (const name of ['logos', 'logos.ts', ...NETWORKS.map((network) => `${network}.json`)]) {
+  await rename(join(staging, name), join(out, name));
+}
+await rm(staging, { recursive: true, force: true });
 console.log(`token list ${ref.slice(0, 12)}: ${NETWORKS.join(', ')}, ${logos.length} logos`);
