@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import type { SessionEndReason } from "@openzeppelin/guardian-client";
 import { useMultisig } from "@/contexts/MultisigContext";
 import { copyToClipboard, truncateHex } from "@/lib/helpers";
+import { untilText } from "@/lib/guardianSession";
 
 const SOURCE_LABEL: Record<string, string> = {
   ledger: "Ledger",
@@ -123,15 +124,6 @@ const ENDED: Record<SessionEndReason, string> = {
   rejected: "Guardian no longer accepts it.",
   logout: "It was ended.",
 };
-
-/** The expiry in local time, with the date when it is not today. */
-function untilText(expiresAt: number): string {
-  const at = new Date(expiresAt * 1000);
-  const sameDay = at.toDateString() === new Date().toDateString();
-  return sameDay
-    ? at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-    : at.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-}
 
 function SessionStatus({ state, onStart }: { state: SessionState; onStart: () => void }) {
   const text =

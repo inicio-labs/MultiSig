@@ -4,6 +4,8 @@ import { GuardianHttpError } from '@openzeppelin/guardian-client';
 import {
   GuardianSessionManager,
   retryIfSessionDied,
+  sessionLengthText,
+  untilText,
   walletUsesSessions,
   type GuardianSessionState,
 } from '../../src/lib/guardianSession';
@@ -183,5 +185,23 @@ describe('retryIfSessionDied', () => {
     calls = 0;
     await expect(retryIfSessionDied(async () => { calls++; throw new Error('other'); })).rejects.toThrow('other');
     expect(calls).toBe(1);
+  });
+});
+
+describe('session times', () => {
+  it('rounds a grant that ends a minute short of the hour to the hour', () => {
+    expect(sessionLengthText(8 * 3600 - 60)).toBe('8 hours');
+    expect(sessionLengthText(3600)).toBe('1 hour');
+    expect(sessionLengthText(90 * 60)).toBe('1 h 30 min');
+    expect(sessionLengthText(25 * 60)).toBe('25 min');
+  });
+
+  it('gives the end time alone today, and with the date on another day', () => {
+    const now = new Date(2026, 9, 25, 10, 0);
+    const today = untilText(new Date(2026, 9, 25, 18, 35).getTime() / 1000, now);
+    const tomorrow = untilText(new Date(2026, 9, 26, 2, 35).getTime() / 1000, now);
+    expect(today).toMatch(/35/);
+    expect(today).not.toMatch(/Oct/);
+    expect(tomorrow).toMatch(/Oct/);
   });
 });

@@ -3,44 +3,15 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useMultisig } from "@/contexts/MultisigContext";
 import { copyToClipboard, truncateHex } from "@/lib/helpers";
+import { sessionLengthText, untilText } from "@/lib/guardianSession";
 
 const HEX = /^0x[\da-f]+$/i;
 
 const SIGNED_BY_SESSION = ["Reading your accounts", "Creating proposals", "Sending proposal signatures"];
 const STILL_ASKS_WALLET = ["Signing transactions", "Execute, unlock and registration"];
 
-/** "2026-10-20 10:26:06 UTC" as a Date, or null when the format is not that. */
-function parseUtc(value: string | undefined): Date | null {
-  const match = value?.match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) UTC$/);
-  if (!match) return null;
-  const date = new Date(`${match[1]}T${match[2]}Z`);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-/** Guardian grants run a minute or so short of the hour, so near-whole hours round to it. */
-function formatDuration(ms: number): string {
-  const minutes = Math.round(ms / 60_000);
-  const nearestHour = Math.round(minutes / 60);
-  if (nearestHour > 0 && Math.abs(minutes - nearestHour * 60) <= 2) {
-    return `${nearestHour} hour${nearestHour === 1 ? "" : "s"}`;
-  }
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  return hours === 0 ? `${rest} min` : `${hours} h ${rest} min`;
-}
-
-/** "10:36" in UTC. */
-function utcTime(date: Date): string {
-  return date.toISOString().slice(11, 16);
-}
-
-/** "20 Oct" in UTC. */
-function utcDay(date: Date): string {
-  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
-}
-
-/** Rows the duration banner already shows, or that the dialog leaves out. */
-const SHOWN_ELSEWHERE = new Set(["Valid from", "Expires", "Scope"]);
+/** The site asking: shown whole, since a lookalike differs only in part of it. */
+const WEBSITE = "Website";
 
 function HexValue({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
@@ -53,15 +24,15 @@ function HexValue({ value }: { value: string }) {
         setCopied(true);
         setTimeout(() => setCopied(false), 1500);
       })}
-      className="group inline-flex items-center gap-1.5 rounded-[6px] bg-[rgba(0,0,0,0.04)] px-1.5 py-0.5 font-mono text-[11px] text-[#111] transition-colors hover:bg-[rgba(0,0,0,0.08)]"
+      className="group inline-flex max-w-full items-center gap-1.5 rounded-[6px] bg-[rgba(0,0,0,0.04)] px-1.5 py-0.5 font-mono text-[11px] text-[#111] transition-colors hover:bg-[rgba(0,0,0,0.08)]"
     >
       {truncateHex(value, 8, 6)}
       {copied ? (
-        <svg className="h-3 w-3 text-[#16A34A]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+        <svg className="h-3 w-3 shrink-0 text-[#16A34A]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
         </svg>
       ) : (
-        <svg className="h-3 w-3 text-[rgba(0,0,0,0.35)] group-hover:text-[rgba(0,0,0,0.6)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+        <svg className="h-3 w-3 shrink-0 text-[rgba(0,0,0,0.35)] group-hover:text-[rgba(0,0,0,0.6)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
           <rect x="9" y="9" width="11" height="11" rx="2" strokeWidth={2} />
           <path strokeWidth={2} d="M5 15V5a2 2 0 012-2h10" />
         </svg>
@@ -90,10 +61,13 @@ export function SessionGrantDialog() {
   };
 
   const rows = sessionGrantPrompt?.rows ?? [];
-  const valueOf = (label: string) => rows.find((row) => row.label === label)?.value;
-  const validFrom = parseUtc(valueOf("Valid from"));
-  const expires = parseUtc(valueOf("Expires"));
-  const duration = validFrom && expires && expires > validFrom ? formatDuration(expires.getTime() - validFrom.getTime()) : null;
+  const scope = rows.find((row) => row.label === "Scope")?.value;
+  const length = sessionGrantPrompt && sessionGrantPrompt.expiresAt > sessionGrantPrompt.issuedAt
+    ? sessionLengthText(sessionGrantPrompt.expiresAt - sessionGrantPrompt.issuedAt)
+    : null;
+  // The banner shows the length and the scope; the grid keeps the start and
+  // end only when the length can't be shown.
+  const details = rows.filter(({ label }) => label !== "Scope" && !(length && (label === "Valid from" || label === "Expires")));
 
   return (
     <dialog
@@ -139,18 +113,22 @@ export function SessionGrantDialog() {
 
           {/* Body */}
           <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-5 py-3.5">
-            {duration && (
-              <div className="flex items-center gap-2 rounded-[8px] border border-[#FF5500]/20 bg-[#FF5500]/5 px-3 py-2 text-[12px] text-[#111]">
-                <svg className="h-4 w-4 shrink-0 text-[#FF5500]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+            {(length || scope) && (
+              <div className="flex items-start gap-2 rounded-[8px] border border-[#FF5500]/20 bg-[#FF5500]/5 px-3 py-2 text-[12px] text-[#111]">
+                <svg className="mt-px h-4 w-4 shrink-0 text-[#FF5500]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
                   <circle cx="12" cy="12" r="9" strokeWidth={2} />
                   <path strokeLinecap="round" strokeWidth={2} d="M12 7v5l3 2" />
                 </svg>
-                <span>
-                  Lasts <span className="font-[600]">{duration}</span>
-                  <span className="text-[rgba(0,0,0,0.5)]">
-                    {" "}· {utcTime(validFrom!)} – {utcTime(expires!)} UTC, {utcDay(expires!)}
-                  </span>
-                </span>
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  {length && (
+                    <span>
+                      Lasts <span className="font-[600]">{length}</span>
+                      <span className="text-[rgba(0,0,0,0.5)]"> · until {untilText(sessionGrantPrompt.expiresAt)}</span>
+                    </span>
+                  )}
+                  {/* Signed as part of the grant: what the session may act for. */}
+                  {scope && <span className="text-[rgba(0,0,0,0.6)]">Covers: {scope}.</span>}
+                </div>
               </div>
             )}
 
@@ -197,37 +175,40 @@ export function SessionGrantDialog() {
               <div className="mb-1.5 text-[10px] font-[600] uppercase tracking-wide text-[rgba(0,0,0,0.45)]">
                 Session details
               </div>
-              <dl className="grid grid-cols-2 gap-x-3 gap-y-2.5 rounded-[8px] border border-[rgba(0,0,0,0.08)] px-3 py-2.5">
-                {rows
-                  .filter(({ label }) => !(SHOWN_ELSEWHERE.has(label) && (label === "Scope" || duration)))
-                  .map(({ label, value }) => (
-                    <div key={label} className="flex min-w-0 flex-col items-start gap-0.5">
-                      <dt className="text-[11px] text-[rgba(0,0,0,0.5)]">{label}</dt>
-                      <dd className="max-w-full truncate text-[12px] text-[#111]" title={value}>
-                        {HEX.test(value) ? <HexValue value={value} /> : value}
-                      </dd>
-                    </div>
-                  ))}
+              <dl className="grid grid-cols-1 gap-x-3 gap-y-2.5 rounded-[8px] border border-[rgba(0,0,0,0.08)] px-3 py-2.5 sm:grid-cols-2">
+                {details.map(({ label, value }) => (
+                  <div key={label} className={`flex min-w-0 flex-col items-start gap-0.5 ${label === WEBSITE ? "sm:col-span-2" : ""}`}>
+                    <dt className="text-[11px] text-[rgba(0,0,0,0.5)]">{label}</dt>
+                    <dd className={`max-w-full text-[12px] text-[#111] ${label === WEBSITE ? "break-all" : "truncate"}`} title={value}>
+                      {HEX.test(value) ? <HexValue value={value} /> : value}
+                    </dd>
+                  </div>
+                ))}
               </dl>
             </div>
           </div>
 
           {/* Footer */}
-          <div className="flex shrink-0 justify-end gap-2 border-t border-[rgba(0,0,0,0.06)] px-5 py-3">
-            <button
-              type="button"
-              onClick={() => answer(false)}
-              className="min-h-9 rounded-[6px] border border-[rgba(0,0,0,0.15)] px-4 text-[12px] font-[500] text-[#111] transition-colors hover:bg-[rgba(0,0,0,0.03)]"
-            >
-              Not now
-            </button>
-            <button
-              type="button"
-              onClick={() => answer(true)}
-              className="min-h-9 rounded-[6px] bg-[#FF5500] px-4 text-[12px] font-[500] text-white transition-colors hover:bg-[#E64A00]"
-            >
-              Approve in wallet
-            </button>
+          <div className="flex shrink-0 flex-col gap-2 border-t border-[rgba(0,0,0,0.06)] px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-[11px] leading-snug text-[rgba(0,0,0,0.5)]">
+              Your wallet may show only a hash of these details.
+            </p>
+            <div className="flex shrink-0 justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => answer(false)}
+                className="min-h-9 rounded-[6px] border border-[rgba(0,0,0,0.15)] px-4 text-[12px] font-[500] text-[#111] transition-colors hover:bg-[rgba(0,0,0,0.03)]"
+              >
+                Not now
+              </button>
+              <button
+                type="button"
+                onClick={() => answer(true)}
+                className="min-h-9 rounded-[6px] bg-[#FF5500] px-4 text-[12px] font-[500] text-white transition-colors hover:bg-[#E64A00]"
+              >
+                Approve in wallet
+              </button>
+            </div>
           </div>
         </>
       )}

@@ -71,6 +71,26 @@ export function forgetAllSessionKeys(idb: IDBFactory | undefined = globalThis.in
   });
 }
 
+/** When a session ends, in local time, with the date when it is not today. */
+export function untilText(expiresAt: number, now: Date = new Date()): string {
+  const at = new Date(expiresAt * 1000);
+  return at.toDateString() === now.toDateString()
+    ? at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : at.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+/** A session's length: Guardian grants end a minute or so short of the hour, so near-whole hours round to it. */
+export function sessionLengthText(seconds: number): string {
+  const minutes = Math.round(seconds / 60);
+  const nearestHour = Math.round(minutes / 60);
+  if (nearestHour > 0 && Math.abs(minutes - nearestHour * 60) <= 2) {
+    return `${nearestHour} hour${nearestHour === 1 ? '' : 's'}`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return hours === 0 ? `${rest} min` : `${hours} h ${rest} min`;
+}
+
 /** What the confirm dialog shows for a grant. */
 export function sessionGrantRows(grant: SessionGrantFields): Array<{ label: string; value: string }> {
   return describeSessionGrant(grant);
