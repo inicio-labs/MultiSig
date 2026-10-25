@@ -3,18 +3,20 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useMultisig } from "@/contexts/MultisigContext";
 import { copyToClipboard, truncateHex } from "@/lib/helpers";
-import { sessionLengthText, untilText } from "@/lib/guardianSession";
+import { grantDialogRows, sessionLengthText, untilText } from "@/lib/guardianSession";
 
 const HEX = /^0x[\da-f]+$/i;
 
 const SIGNED_BY_SESSION = ["Reading your accounts", "Creating proposals", "Sending proposal signatures"];
-const STILL_ASKS_WALLET = ["Signing transactions", "Execute, unlock and registration"];
+const STILL_ASKS_WALLET = ["Signing transactions", "Execute, unlock and registration", "Finding your accounts"];
 
 /** The site asking: shown whole, since a lookalike differs only in part of it. */
 const WEBSITE = "Website";
 
 function HexValue({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
   return (
     <button
       type="button"
@@ -22,7 +24,8 @@ function HexValue({ value }: { value: string }) {
       aria-label={`Copy ${value}`}
       onClick={() => copyToClipboard(value, () => {
         setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
+        clearTimeout(timer.current);
+        timer.current = setTimeout(() => setCopied(false), 1500);
       })}
       className="group inline-flex max-w-full items-center gap-1.5 rounded-[6px] bg-[rgba(0,0,0,0.04)] px-1.5 py-0.5 font-mono text-[11px] text-[#111] transition-colors hover:bg-[rgba(0,0,0,0.08)]"
     >
@@ -60,14 +63,10 @@ export function SessionGrantDialog() {
     if (sessionGrantPrompt) answerSessionGrant(sessionGrantPrompt.id, approved);
   };
 
-  const rows = sessionGrantPrompt?.rows ?? [];
-  const scope = rows.find((row) => row.label === "Scope")?.value;
   const length = sessionGrantPrompt && sessionGrantPrompt.expiresAt > sessionGrantPrompt.issuedAt
     ? sessionLengthText(sessionGrantPrompt.expiresAt - sessionGrantPrompt.issuedAt)
     : null;
-  // The banner shows the length and the scope; the grid keeps the start and
-  // end only when the length can't be shown.
-  const details = rows.filter(({ label }) => label !== "Scope" && !(length && (label === "Valid from" || label === "Expires")));
+  const { scope, details } = grantDialogRows(sessionGrantPrompt?.rows ?? [], !!length);
 
   return (
     <dialog
@@ -179,7 +178,7 @@ export function SessionGrantDialog() {
                 {details.map(({ label, value }) => (
                   <div key={label} className={`flex min-w-0 flex-col items-start gap-0.5 ${label === WEBSITE ? "sm:col-span-2" : ""}`}>
                     <dt className="text-[11px] text-[rgba(0,0,0,0.5)]">{label}</dt>
-                    <dd className={`max-w-full text-[12px] text-[#111] ${label === WEBSITE ? "break-all" : "truncate"}`} title={value}>
+                    <dd className={`max-w-full text-[12px] text-[#111] ${label === WEBSITE ? "break-all" : "truncate"}`} title={HEX.test(value) ? undefined : value}>
                       {HEX.test(value) ? <HexValue value={value} /> : value}
                     </dd>
                   </div>

@@ -4,6 +4,7 @@ import { GuardianHttpError } from '@openzeppelin/guardian-client';
 import {
   GuardianSessionManager,
   retryIfSessionDied,
+  grantDialogRows,
   sessionLengthText,
   untilText,
   walletUsesSessions,
@@ -194,6 +195,7 @@ describe('session times', () => {
     expect(sessionLengthText(3600)).toBe('1 hour');
     expect(sessionLengthText(90 * 60)).toBe('1 h 30 min');
     expect(sessionLengthText(25 * 60)).toBe('25 min');
+    expect(sessionLengthText(20)).toBe('under a minute');
   });
 
   it('gives the end time alone today, and with the date on another day', () => {
@@ -203,5 +205,20 @@ describe('session times', () => {
     expect(today).toMatch(/35/);
     expect(today).not.toMatch(/Oct/);
     expect(tomorrow).toMatch(/Oct/);
+  });
+});
+
+describe('grantDialogRows', () => {
+  const rows = ['Signer', 'Session key', 'Website', 'Valid from', 'Expires', 'Scope', 'Guardian key', 'Network']
+    .map((label) => ({ label, value: label === 'Scope' ? 'Every account this signer cosigns' : `${label} value` }));
+
+  it('always takes the scope out of the details, for the banner', () => {
+    const { scope, details } = grantDialogRows(rows, true);
+    expect(scope).toBe('Every account this signer cosigns');
+    expect(details.map((r) => r.label)).toEqual(['Signer', 'Session key', 'Website', 'Guardian key', 'Network']);
+  });
+
+  it('keeps the start and end in the details when the length cannot be shown', () => {
+    expect(grantDialogRows(rows, false).details.map((r) => r.label)).toContain('Expires');
   });
 });
