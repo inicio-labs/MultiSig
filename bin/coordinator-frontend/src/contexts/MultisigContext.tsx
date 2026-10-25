@@ -136,6 +136,9 @@ export type AccountFundingPhase =
 export interface SessionGrantPrompt {
   id: number;
   rows: Array<{ label: string; value: string }>;
+  /** The grant's start and end, Unix seconds. */
+  issuedAt: number;
+  expiresAt: number;
 }
 
 export interface AccountFundingState {
@@ -703,7 +706,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     grantAnswer.current?.resolve(false);
     const id = ++grantPromptId.current;
     grantAnswer.current = { id, resolve };
-    setSessionGrantPrompt({ id, rows: sessionGrantRows(grant) });
+    setSessionGrantPrompt({ id, rows: sessionGrantRows(grant), issuedAt: grant.issuedAt, expiresAt: grant.expiresAt });
   }), []);
   const [sessions] = useState(() => new GuardianSessionManager({
     confirm: confirmSessionGrant,

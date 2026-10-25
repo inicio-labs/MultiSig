@@ -71,6 +71,41 @@ export function forgetAllSessionKeys(idb: IDBFactory | undefined = globalThis.in
   });
 }
 
+/** When a session ends, in local time, with the date when it is not today. */
+export function untilText(expiresAt: number, now: Date = new Date()): string {
+  const at = new Date(expiresAt * 1000);
+  return at.toDateString() === now.toDateString()
+    ? at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : at.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+/** A session's length: Guardian grants end a minute or so short of the hour, so near-whole hours round to it. */
+export function sessionLengthText(seconds: number): string {
+  if (seconds < 60) return 'under a minute';
+  const minutes = Math.round(seconds / 60);
+  const nearestHour = Math.round(minutes / 60);
+  if (nearestHour > 0 && Math.abs(minutes - nearestHour * 60) <= 2) {
+    return `${nearestHour} hour${nearestHour === 1 ? '' : 's'}`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return hours === 0 ? `${rest} min` : `${hours} h ${rest} min`;
+}
+
+type GrantRow = { label: string; value: string };
+
+/**
+ * The confirm dialog's rows: the scope (shown in its banner, never in the
+ * grid) and the details. Valid from and Expires stay in the details only when
+ * the banner cannot show the session's length.
+ */
+export function grantDialogRows(rows: GrantRow[], lengthShown: boolean): { scope?: string; details: GrantRow[] } {
+  return {
+    scope: rows.find((row) => row.label === 'Scope')?.value,
+    details: rows.filter(({ label }) => label !== 'Scope' && !(lengthShown && (label === 'Valid from' || label === 'Expires'))),
+  };
+}
+
 /** What the confirm dialog shows for a grant. */
 export function sessionGrantRows(grant: SessionGrantFields): Array<{ label: string; value: string }> {
   return describeSessionGrant(grant);
