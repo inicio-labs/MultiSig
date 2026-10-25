@@ -15,6 +15,8 @@ export interface TokenView {
   /** The token's entry on Miden's verified list, if it has one. */
   listed?: ListedToken;
   verification: TokenVerification;
+  /** The network's fee token. */
+  isFeeToken: boolean;
   /** What people call it: the listed name, else the on-chain symbol. */
   name: string;
   /** The listed symbol, else the on-chain one; a short faucet ID only once it can't be read. */
@@ -51,6 +53,7 @@ export function useToken(faucetId: string): TokenView {
     error: token.error,
     listed,
     verification: tokenVerification(faucetId, MIDEN_NETWORK, listing, nativeFaucetId),
+    isFeeToken: nativeFaucetId !== null && faucetId.toLowerCase() === nativeFaucetId,
     name: listed?.name ?? (token.status === 'error' ? 'Unknown token' : symbol),
     symbol,
   };

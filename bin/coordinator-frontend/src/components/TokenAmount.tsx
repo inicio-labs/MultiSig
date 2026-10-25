@@ -45,17 +45,21 @@ export function TokenLogo({ token, size = 24 }: { token: TokenView; size?: numbe
  * units and the faucet id: never a guessed scale or a well-known name, so an
  * unknown token cannot pose as one.
  */
-export function TokenAmount({ faucetId, amount, className }: {
+export function TokenAmount({ faucetId, amount, className, showTag = true }: {
   faucetId: string;
   amount: bigint | string;
   className?: string;
+  /** Off where the token's name next to it already carries the tag. */
+  showTag?: boolean;
 }) {
   const token = useToken(faucetId);
   if (token.status === 'ready' && token.info) {
     return (
       <span className={className}>
-        {formatTokenAmount(amount, token.info.decimals)} {token.symbol}
-        {token.verification === 'unverified' && <> <UnverifiedTag /></>}
+        {formatTokenAmount(amount, token.info.decimals)}
+        {/* The symbol stays with the amount and is never split, even where the amount may break. */}
+        <span className="whitespace-nowrap break-normal">{'\u00A0'}{token.symbol}</span>
+        {showTag && token.verification === 'unverified' && <> <UnverifiedTag /></>}
       </span>
     );
   }

@@ -25,14 +25,17 @@ function HoldingRow({ faucetId, balance }: { faucetId: string; balance: string |
     }
   };
 
+  // The second line says what the name doesn't: the symbol, or that this is the fee token.
+  const detail = token.name !== token.symbol ? token.symbol : token.isFeeToken ? "Network fee token" : null;
+
   return (
-    <div className="py-3 px-4 rounded-[8px] flex items-center justify-between gap-3 hover:bg-gray-50 transition-colors">
+    <div className="px-3 py-3 rounded-[8px] flex items-center justify-between gap-3 hover:bg-gray-50 transition-colors">
       <div className="flex min-w-0 items-center gap-3">
         <TokenLogo token={token} size={28} />
         <div className="flex min-w-0 flex-col">
           <div className="truncate font-[500] text-[13px] text-black">{token.name}</div>
           <div className="flex items-center gap-1.5 text-[11px] text-[rgba(0,0,0,0.5)]">
-            <span>{token.symbol}</span>
+            {detail && <span className="truncate">{detail}</span>}
             {token.verification === "unverified" && <UnverifiedTag />}
             <button
               type="button"
@@ -54,7 +57,7 @@ function HoldingRow({ faucetId, balance }: { faucetId: string; balance: string |
           </div>
         </div>
       </div>
-      <TokenAmount faucetId={faucetId} amount={balance} className="text-[12px] font-[600] text-[#000000]" />
+      <TokenAmount faucetId={faucetId} amount={balance} showTag={false} className="max-w-[55%] shrink-0 text-right text-[12px] font-[600] text-[#000000]" />
     </div>
   );
 }
@@ -70,7 +73,8 @@ const TokenHoldings = ({ fungibleAssets, isLoading }: TokenHoldingsProps) => {
       </div>
 
       {/* Token rows */}
-      <div className="flex flex-col gap-2 overflow-y-auto scrollbar-thin">
+      {/* -mx-3 with the rows' px-3: their content lines up with the title, their hover reaches the edge. */}
+      <div className="-mx-3 flex flex-col gap-2 overflow-y-auto scrollbar-thin">
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
             <div className="flex items-center space-x-2">
