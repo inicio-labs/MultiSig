@@ -1,3 +1,5 @@
+import { TOKEN_LIST_SOURCE } from '@/config/tokenList/source';
+
 // Content-Security-Policy for the signing app; the other security headers are in
 // security-headers.mjs. Runs in the middleware (edge runtime): no Node or
 // browser-only imports.
@@ -53,6 +55,8 @@ export function buildContentSecurityPolicy(config: CspConfig): string {
       .map(originOf)
       .filter((origin): origin is string => origin !== null),
     ...para,
+    // Miden's live token list (lib/tokenList.ts), that repository only.
+    TOKEN_LIST_SOURCE,
     ...extraOrigins(config.extraConnectSrc),
   ]);
   if (config.dev) connectSrc.add('ws://localhost:*');
@@ -76,7 +80,8 @@ export function buildContentSecurityPolicy(config: CspConfig): string {
     // Inline style attributes (Tailwind arbitrary values, framer-motion) need this;
     // styles cannot run script.
     'style-src': ["'self'", "'unsafe-inline'"],
-    'img-src': ["'self'", 'data:', 'blob:'],
+    // Logos of tokens listed after this build come from the token list repository.
+    'img-src': ["'self'", 'data:', 'blob:', TOKEN_LIST_SOURCE],
     'font-src': ["'self'", 'data:'],
     'connect-src': [...connectSrc],
     'worker-src': ["'self'", 'blob:'],

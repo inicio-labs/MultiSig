@@ -29,6 +29,7 @@ import { Note, NoteType, type MidenClient } from "@miden-sdk/miden-sdk";
 
 import { normalizeCommitment } from "@/lib/helpers";
 import { findAccountsByKey, type FoundAccount } from "@/lib/findAccounts";
+import { refreshTokenList } from "@/lib/tokenList";
 import { formatError, classifyWalletError, describeExecutionError, UserFacingError } from "@/lib/errors";
 import {
   createMidenClient,
@@ -360,9 +361,11 @@ export interface TokenEnv {
   sdkReady: boolean;
   /** The network's fee token (always verified), once the synced store reports it. */
   nativeFaucetId: string | null;
+  /** Bumped when the live token list changes what is listed. */
+  tokenListRevision: number;
 }
 
-const TokenEnvContext = createContext<TokenEnv>({ sdkReady: false, nativeFaucetId: null });
+const TokenEnvContext = createContext<TokenEnv>({ sdkReady: false, nativeFaucetId: null, tokenListRevision: 0 });
 
 export function useTokenEnv(): TokenEnv {
   return useContext(TokenEnvContext);
@@ -2511,9 +2514,22 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       clearTimeout(retry);
     };
   }, [midenClient, nativeFaucetId]);
+  // Miden's live token list: read when the app starts and on every receive
+  // (the account's balances change), at most once a minute (tokenList.ts);
+  // the copy shipped with the app stays in use when it can't be read.
+  const [tokenListRevision, setTokenListRevision] = useState(0);
+  const balancesKey = useMemo(
+    () => (detectedConfig?.vaultBalances ?? []).map((b) => `${b.faucetId}:${b.amount}`).join(","),
+    [detectedConfig?.vaultBalances],
+  );
+  useEffect(() => {
+    void refreshTokenList(MIDEN_NETWORK).then((changed) => {
+      if (changed) setTokenListRevision((revision) => revision + 1);
+    });
+  }, [balancesKey]);
   const tokenEnv = useMemo<TokenEnv>(
-    () => ({ sdkReady: midenClient !== null, nativeFaucetId }),
-    [midenClient, nativeFaucetId],
+    () => ({ sdkReady: midenClient !== null, nativeFaucetId, tokenListRevision }),
+    [midenClient, nativeFaucetId, tokenListRevision],
   );
 
   return (

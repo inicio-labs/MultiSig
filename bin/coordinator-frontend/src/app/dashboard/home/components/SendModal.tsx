@@ -69,7 +69,7 @@ const SendModal = ({ open, onClose }: SendModalProps) => {
 
   const token = useFaucetDecimals(formData.faucetId);
   // Send offers the fee token and Miden's listed tokens, with a balance above zero.
-  const { sdkReady, nativeFaucetId } = useTokenEnv();
+  const { sdkReady, nativeFaucetId, tokenListRevision } = useTokenEnv();
   const sendable = useMemo(() => {
     if (!sdkReady) return { tokens: [], pending: true };
     try {
@@ -77,7 +77,9 @@ const SendModal = ({ open, onClose }: SendModalProps) => {
     } catch {
       return { tokens: [], pending: true };
     }
-  }, [sdkReady, vaultBalances, nativeFaucetId]);
+    // tokenListRevision: the live list changed what is listed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sdkReady, vaultBalances, nativeFaucetId, tokenListRevision]);
   const tokenOffered = sendable.tokens.some(t => t.faucetId === formData.faucetId);
   const selectedBalance = useMemo(
     () => vaultBalances.find(v => v.faucetId === formData.faucetId)?.amount ?? 0n,

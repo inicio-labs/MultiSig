@@ -19,9 +19,12 @@ export function UnverifiedTag() {
   );
 }
 
-/** A listed token's logo, else its symbol's first letter. */
+/**
+ * A listed token's logo (shipped with the app, or from the token list
+ * repository for a token listed after this build), else its symbol's first letter.
+ */
 export function TokenLogo({ token, size = 24 }: { token: TokenView; size?: number }) {
-  const logo = token.listed ? TOKEN_LOGOS[token.listed.faucetId] : undefined;
+  const logo = token.listed ? TOKEN_LOGOS[token.listed.faucetId] ?? token.listed.logoURI : undefined;
   if (logo) {
     return <Image src={logo} alt="" width={size} height={size} unoptimized className="shrink-0 rounded-full" />;
   }

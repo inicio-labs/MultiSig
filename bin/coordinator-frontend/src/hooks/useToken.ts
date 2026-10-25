@@ -25,7 +25,7 @@ export interface TokenView {
 export function useToken(faucetId: string): TokenView {
   // Both lookups need the Miden SDK, which is ready once the client is: until
   // then nothing is read (an early read would fail and not be retried).
-  const { sdkReady, nativeFaucetId } = useTokenEnv();
+  const { sdkReady, nativeFaucetId, tokenListRevision } = useTokenEnv();
   const token = useTokenInfo(sdkReady ? faucetId : '');
   // undefined until the lookup ran.
   const [listing, setListing] = useState<{ token?: ListedToken }>();
@@ -40,7 +40,7 @@ export function useToken(faucetId: string): TokenView {
     } catch {
       setListing(undefined);
     }
-  }, [faucetId, sdkReady]);
+  }, [faucetId, sdkReady, tokenListRevision]);
 
   const listed = listing?.token;
   const onChainSymbol = token.status === 'ready' ? token.info.symbol : undefined;
