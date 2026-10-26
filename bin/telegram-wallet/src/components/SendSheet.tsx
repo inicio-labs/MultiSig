@@ -12,6 +12,8 @@ import { lookupUsername } from '@/lib/directory';
 import { formatError } from '@/lib/errors';
 import { feeLabel } from '@/lib/fees';
 import { toHexAccountId } from '@/lib/helpers';
+import { assertAddressOnNetwork } from '@/lib/midenNetwork';
+import { MIDEN_NETWORK } from '@/config/psm';
 import { reportDiag } from '@/lib/remoteDiag';
 import { canScanQr, haptic, onAppActiveChange, onDesktop, scanQr, shareText, telegramBiometrics } from '@/lib/telegram';
 import { formatTokenAmount, parseTokenAmount } from '@/lib/tokenAmounts';
@@ -64,6 +66,8 @@ function feeReserve(decimals: number): bigint {
 function parseRecipient(input: string, ownId: string | null): { hex: string; address: string } {
   const value = input.trim();
   if (!value) throw new Error('Add an address first');
+  // A testnet address pasted into the mainnet wallet (or an old pay link): refuse, never guess.
+  assertAddressOnNetwork(value, MIDEN_NETWORK);
   let hex: string;
   try {
     hex = toHexAccountId(value);

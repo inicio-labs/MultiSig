@@ -1,6 +1,7 @@
 import type { Signer } from '@openzeppelin/miden-multisig-client';
 import { storage } from './storage';
 import { insideTelegram, telegramUserId } from './telegram';
+import { VIEW_SCOPE } from './viewScope';
 import { LAST_VIEW_KEY } from './walletEngine';
 
 /**
@@ -11,8 +12,8 @@ import { LAST_VIEW_KEY } from './walletEngine';
  */
 export function viewKeyFor(signer: Signer | null): string | null {
   const telegramUser = insideTelegram ? telegramUserId() : null;
-  if (telegramUser) return `tg:${telegramUser}`;
-  return signer ? `key:${signer.commitment.toLowerCase()}` : null;
+  if (telegramUser) return `${VIEW_SCOPE}tg:${telegramUser}`;
+  return signer ? `${VIEW_SCOPE}key:${signer.commitment.toLowerCase()}` : null;
 }
 
 export function hasSavedView(key: string | null): boolean {

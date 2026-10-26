@@ -134,6 +134,15 @@ function setup(opts: FakeOptions & {
 }
 
 describe('WalletEngine.start', () => {
+  it('with a network scope, remembers and loads only that network’s account', async () => {
+    const { deps, store, log } = setup({ remembered: '0xtestnetacct' });
+    const scoped = new WalletEngine({ ...deps, storageScope: 'mainnet:' });
+    await scoped.start();
+    // The unscoped (testnet) account is never loaded on mainnet.
+    expect(log).not.toContain('load:0xtestnetacct');
+    expect(store.get(`miden-tg-wallet:last-account:mainnet:0x${'0c'.repeat(32)}`)).toBe(scoped.getSnapshot().accountId);
+  });
+
   it('on an invite-only network, a new account waits for its code, then registers with it', async () => {
     const { engine, deps, log } = setup();
     const codes: Array<string | undefined> = [];

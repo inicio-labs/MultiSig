@@ -67,6 +67,11 @@ export interface WalletEngineDeps<C extends WalletMidenClient, M extends WalletM
   storage?: { get(key: string): string | null; set(key: string, value: string): void };
   /** Whose saved home view this is (see savedView.ts); defaults to the signing key, null for none. */
   viewKey?: string | null;
+  /**
+   * Prefix for what is remembered per network (viewScope.ts): set, the account
+   * last used is looked up only under it, never another network's id.
+   */
+  storageScope?: string;
   release?: typeof releasePendingCandidate;
 }
 
@@ -409,11 +414,12 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
 
   // The account last used here, per key (another Telegram user on this phone has their own).
   private rememberedKey(): string {
-    return `${LAST_ACCOUNT_KEY}:${(this.deps.signer.commitment ?? '').toLowerCase()}`;
+    return `${LAST_ACCOUNT_KEY}:${this.deps.storageScope ?? ''}${(this.deps.signer.commitment ?? '').toLowerCase()}`;
   }
 
   private remembered(): string | undefined {
-    return (this.deps.storage?.get(this.rememberedKey()) ?? this.deps.storage?.get(LAST_ACCOUNT_KEY))?.toLowerCase();
+    const legacy = this.deps.storageScope ? null : this.deps.storage?.get(LAST_ACCOUNT_KEY);
+    return (this.deps.storage?.get(this.rememberedKey()) ?? legacy)?.toLowerCase();
   }
 
   private async findOrCreate(multisigClient: M): Promise<Multisig> {

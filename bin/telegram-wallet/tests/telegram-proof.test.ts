@@ -21,9 +21,19 @@ describe('directory proofs (Telegram Ed25519)', () => {
   it('reads who registered which address, on the phone and on the server alike', () => {
     const proof = launch(fields);
     expect(readDirectoryProof(proof, BOT_ID, publicKey)).toEqual({
-      userId: '4242', username: 'alex_p', name: 'Alex', address: ADDRESS, registeredAt: 1_791_800_000_000,
+      userId: '4242', username: 'alex_p', name: 'Alex', address: ADDRESS, network: null, registeredAt: 1_791_800_000_000,
     });
     expect(serverReadProof(proof, BOT_ID, publicKey)).toEqual({ userId: '4242', username: 'alex_p', address: ADDRESS });
+  });
+
+  it('carries the network when the link holds a Bech32 address', () => {
+    const mainnet = 'mm1arnfum9xuwwlrvgvrefejwvlavn3vk24_qr7qqq9wr6w';
+    const proof = launch({ ...fields, start_param: `reg_${mainnet}` });
+    expect(readDirectoryProof(proof, BOT_ID, publicKey)).toMatchObject({ address: mainnet, network: 'mainnet' });
+    expect(serverReadProof(proof, BOT_ID, publicKey)).toEqual({ userId: '4242', username: 'alex_p', address: mainnet });
+    const testnet = launch({ ...fields, start_param: 'reg_mtst1apxtmjhlua0s5vt5sg3ymtnyxclasaf0' });
+    expect(readDirectoryProof(testnet, BOT_ID, publicKey)).toMatchObject({ network: 'testnet' });
+    expect(readDirectoryProof(launch({ ...fields, start_param: 'reg_MM1UPPER' }), BOT_ID, publicKey)).toBeNull();
   });
 
   it('rejects a changed address, another bot, a non-registration launch, or no signature', () => {
@@ -33,5 +43,20 @@ describe('directory proofs (Telegram Ed25519)', () => {
     expect(readDirectoryProof(launch(fields, '1111'), BOT_ID, publicKey)).toBeNull();
     expect(readDirectoryProof(launch({ ...fields, start_param: 'pay_x' }), BOT_ID, publicKey)).toBeNull();
     expect(readDirectoryProof(new URLSearchParams(fields).toString(), BOT_ID, publicKey)).toBeNull();
+  });
+});
+
+describe('entryForNetwork', () => {
+  it('pays only entries of this network, hex ids counting as testnet', async () => {
+    const { entryForNetwork } = await import('@/lib/telegramProof');
+    const toHex = (a: string) => (a.startsWith('0x') ? a : '0x' + 'ab'.repeat(15));
+    const base = { userId: '1', username: 'a', name: 'A', registeredAt: 1 };
+    const hexEntry = { ...base, address: '0xfeccdfa1fae10dc115ee2ab914df44', network: null };
+    expect(entryForNetwork(hexEntry, 'testnet', toHex)?.address).toBe('0xfeccdfa1fae10dc115ee2ab914df44');
+    expect(entryForNetwork(hexEntry, 'mainnet', toHex)).toBeNull();
+    expect(entryForNetwork({ ...base, address: 'mtst1apxtmjhlua0s5vt5sg3ymtnyxclasaf0', network: 'testnet' }, 'mainnet', toHex)).toBeNull();
+    expect(entryForNetwork({ ...base, address: 'mm1arnfum9xuwwlrvgvrefejwvlavn3vk24', network: 'mainnet' }, 'mainnet', toHex)?.address).toBe('0x' + 'ab'.repeat(15));
+    expect(entryForNetwork({ ...base, address: 'mm1bad', network: 'mainnet' }, 'mainnet', () => { throw new Error('bad'); })).toBeNull();
+    expect(entryForNetwork(null, 'mainnet', toHex)).toBeNull();
   });
 });

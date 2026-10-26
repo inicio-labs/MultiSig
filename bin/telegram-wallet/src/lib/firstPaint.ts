@@ -15,6 +15,8 @@ export interface FirstPaint {
   savedAt: number;
 }
 
+import { VIEW_SCOPE } from './viewScope';
+
 const KEY = 'miden-tg-wallet:first-paint:';
 // prefs.ts keeps this device's copy of "hide amounts" here.
 const HIDE_AMOUNTS_KEY = 'miden-tg-wallet:pref:hide_amounts';
@@ -37,7 +39,7 @@ export function readFirstPaint(): { paint: FirstPaint; hidden: boolean } | null 
   const user = launchUser();
   if (!user) return null;
   try {
-    const paint = JSON.parse(window.localStorage.getItem(`${KEY}tg:${user}`) ?? 'null') as FirstPaint | null;
+    const paint = JSON.parse(window.localStorage.getItem(`${KEY}${VIEW_SCOPE}tg:${user}`) ?? 'null') as FirstPaint | null;
     if (!paint || typeof paint.balance !== 'string' || !Array.isArray(paint.rows)) return null;
     // Saved before rows had times: not worth a jumpy first paint.
     if (paint.rows.some((row) => typeof row.ts !== 'number')) return null;

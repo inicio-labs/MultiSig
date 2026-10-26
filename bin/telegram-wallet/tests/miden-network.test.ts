@@ -42,3 +42,16 @@ describe('inviteOnly', () => {
     expect(inviteOnly('testnet', '1')).toBe(true);
   });
 });
+
+describe('addressNetwork', () => {
+  it('tells a network from the Bech32 prefix and refuses another network’s address', async () => {
+    const { addressNetwork, assertAddressOnNetwork } = await import('../src/lib/midenNetwork');
+    expect(addressNetwork('mm1arnfum9xuwwlrvgvrefejwvlavn3vk24')).toBe('mainnet');
+    expect(addressNetwork('mtst1apxtmjhlua0s5vt5sg3ymtnyxclasaf0_qr7qqq9wr6w')).toBe('testnet');
+    expect(addressNetwork('0x4cbdcaffe75f0a317482224dae6436')).toBeNull();
+    expect(addressNetwork('@alex')).toBeNull();
+    expect(() => assertAddressOnNetwork('mtst1apxtmjhlua0s5vt5sg3ymtnyxclasaf0', 'mainnet')).toThrow(/testnet address.*mainnet.*lost/);
+    expect(() => assertAddressOnNetwork('mm1arnfum9xuwwlrvgvrefejwvlavn3vk24', 'mainnet')).not.toThrow();
+    expect(() => assertAddressOnNetwork('0x4cbdcaffe75f0a317482224dae6436', 'mainnet')).not.toThrow();
+  });
+});

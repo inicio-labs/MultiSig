@@ -36,7 +36,8 @@ export function verifyInitData(initData, botToken, nowSec = Math.floor(Date.now(
 
 // Telegram's Ed25519 key for "third-party" checks of launch data (production).
 export const TELEGRAM_PUBLIC_KEY = 'e7bf03a2fa4602af4580703d88dda5bb59f32ed8b02a56c187fe7d34caed242d';
-const ACCOUNT_ID = /^0x[0-9a-f]{20,64}$/;
+// A hex account id (links from before networks were in them) or a Bech32 address (mm1…, mtst1…).
+const ACCOUNT_ID = /^(0x[0-9a-f]{20,64}|[a-z]+1[a-z0-9_]{6,90})$/;
 
 /**
  * A directory proof: launch data whose Ed25519 `signature` (checkable by
@@ -66,7 +67,7 @@ export function readDirectoryProof(initData, botId, publicKeyHex = TELEGRAM_PUBL
     return null;
   }
   if (!genuine) return null;
-  const match = /^reg_(0x[0-9a-f]{20,64})$/.exec(params.get('start_param') ?? '');
+  const match = /^reg_(0x[0-9a-f]{20,64}|[a-z]+1[a-z0-9_]{6,90})$/.exec(params.get('start_param') ?? '');
   if (!match || !ACCOUNT_ID.test(match[1])) return null;
   try {
     const user = JSON.parse(params.get('user') ?? 'null');

@@ -22,6 +22,7 @@ import {
 import { createPrivateNotes } from '@/lib/privateSend';
 import { reportDiag } from '@/lib/remoteDiag';
 import { viewKeyFor } from '@/lib/savedView';
+import { VIEW_SCOPE } from '@/lib/viewScope';
 import { storage } from '@/lib/storage';
 import { WalletEngine, type WalletSnapshot } from '@/lib/walletEngine';
 
@@ -68,6 +69,7 @@ export function WalletProvider({ signer, children }: { signer: Signer | null; ch
   const engine = useMemo(() => new WalletEngine({
     signer: signer ?? NO_SIGNER,
     viewKey: viewKeyFor(signer),
+    storageScope: VIEW_SCOPE,
     startMidenClient,
     createMultisigClient,
     createAccount: createWalletAccount,

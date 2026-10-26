@@ -28,6 +28,27 @@ export const BECH32_PREFIX: Record<MidenNetwork, string> = {
 };
 
 /**
+ * The network an address was written for, from its Bech32 prefix (mm1…,
+ * mtst1…); null for a hex id or anything else. Money sent to another
+ * network's address is lost: no one can create that account id here.
+ */
+export function addressNetwork(input: string): MidenNetwork | null {
+  const match = /^([a-z]+)1[a-z0-9_]+$/.exec(input.trim().toLowerCase());
+  if (!match) return null;
+  const prefix = match[1];
+  const network = (Object.keys(BECH32_PREFIX) as MidenNetwork[]).find((n) => BECH32_PREFIX[n] === prefix);
+  return network ?? null;
+}
+
+/** Throws when `input` is an address of another network (hex ids pass: they carry no network). */
+export function assertAddressOnNetwork(input: string, network: MidenNetwork): void {
+  const found = addressNetwork(input);
+  if (found && found !== network) {
+    throw new Error(`That’s a ${found} address. This wallet is on ${network}, so money sent there would be lost.`);
+  }
+}
+
+/**
  * Node-registration invitation code: the create page shows it pre-filled with
  * this default, and the creator can change it. Testnet accepts any code except
  * devnet's ("guardian" is refused by its funding service), so it gets a neutral

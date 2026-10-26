@@ -1,4 +1,5 @@
 import { ed25519 } from '@noble/curves/ed25519';
+import { addressNetwork, type MidenNetwork } from './midenNetwork';
 
 /**
  * A directory entry's proof, checked on the payer's own phone: launch data
@@ -15,8 +16,10 @@ export interface DirectoryEntry {
   /** Lowercase, without @; null when the user has none. */
   username: string | null;
   name: string;
-  /** The Miden account id (hex) they registered. */
+  /** The address they registered, as written in the link: a Bech32 address (mm1…, mtst1…), or a hex id from before networks were part of it. */
   address: string;
+  /** The network that address is for, from its prefix; null for a hex id (registered on testnet, before). */
+  network: MidenNetwork | null;
   /** When they registered (ms). */
   registeredAt: number;
 }
@@ -42,7 +45,7 @@ export function readDirectoryProof(initData: string, botId: string, publicKeyHex
       .map(([key, value]) => `${key}=${value}`)
       .join('\n');
     if (!ed25519.verify(base64UrlToBytes(signature), new TextEncoder().encode(check), hexToBytes(publicKeyHex))) return null;
-    const match = /^reg_(0x[0-9a-f]{20,64})$/.exec(params.get('start_param') ?? '');
+    const match = /^reg_(0x[0-9a-f]{20,64}|[a-z]+1[a-z0-9_]{6,90})$/.exec(params.get('start_param') ?? '');
     const user = JSON.parse(params.get('user') ?? 'null') as { id?: number; username?: string; first_name?: string; last_name?: string } | null;
     const registeredAt = Number(params.get('auth_date')) * 1000;
     if (!match || !user?.id || !Number.isFinite(registeredAt)) return null;
@@ -51,8 +54,27 @@ export function readDirectoryProof(initData: string, botId: string, publicKeyHex
       username: user.username ? user.username.toLowerCase() : null,
       name: [user.first_name, user.last_name].filter(Boolean).join(' ') || (user.username ? `@${user.username}` : 'Telegram user'),
       address: match[1],
+      network: addressNetwork(match[1]),
       registeredAt,
     };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A proof's entry for `network`, with the address as the app uses it (hex,
+ * via `toHex`). Null for another network's entry; a hex-id entry (registered
+ * before networks were in the link) counts as testnet, the only network then.
+ */
+export function entryForNetwork(
+  entry: DirectoryEntry | null,
+  network: MidenNetwork,
+  toHex: (address: string) => string,
+): DirectoryEntry | null {
+  if (!entry || (entry.network ?? 'testnet') !== network) return null;
+  try {
+    return { ...entry, address: toHex(entry.address) };
   } catch {
     return null;
   }
