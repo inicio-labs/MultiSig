@@ -15,6 +15,7 @@ import { isCollectLink, payLinkAddress } from '@/lib/payLink';
 import { usePref } from '@/lib/prefs';
 import { playChime, playTick, unlockSoundOnFirstTouch } from '@/lib/sound';
 import {
+  canScanQr,
   haptic,
   onAppActiveChange,
   setClosingConfirmation,
@@ -22,6 +23,7 @@ import {
   telegramUserName,
   telegramUsername,
   onDesktop,
+  scanQr,
   useTelegramSettingsButton,
 } from '@/lib/telegram';
 import { timeAgo } from '@/lib/timeAgo';
@@ -36,7 +38,7 @@ import { Splash } from './Splash';
 import { BURST_LANDS_MS, CoinBurst, type Burst } from './CoinBurst';
 import { Icon } from './Icon';
 import { ReceiveSheet, type Collected } from './ReceiveSheet';
-import { SendSheet } from './SendSheet';
+import { isScannedAddress, SendSheet } from './SendSheet';
 import { SettingsSheet } from './SettingsSheet';
 import { TokenAmount } from './TokenAmount';
 import { ToastProvider, useToast } from './Toast';
@@ -272,6 +274,19 @@ function WalletHome() {
     setPrefill(null);
     setView('send');
   };
+  // Scan a friend's QR from home: Send opens with them filled in.
+  const scanToPay = async () => {
+    if (!ready) {
+      haptic('warning');
+      toast('One moment, your wallet is getting ready', 'clock');
+      return;
+    }
+    haptic('light');
+    const text = await scanQr('Scan a Miden address', isScannedAddress);
+    if (!text) return;
+    setPrefill(text);
+    setView('send');
+  };
   const openReceive = () => {
     haptic('light');
     setView('receive');
@@ -301,6 +316,9 @@ function WalletHome() {
           </div>
         )}
         <div className="topbar-actions">
+          {canScanQr() && (
+            <button className="bell" onClick={() => void scanToPay()} aria-label="Scan a QR code to pay"><Icon name="scan" /></button>
+          )}
           <button className="bell" onClick={toggleHidden} aria-label={hideAmounts ? 'Show amounts' : 'Hide amounts'} aria-pressed={hideAmounts === true}>
             <Icon name={hideAmounts ? 'eyeOff' : 'eye'} />
           </button>

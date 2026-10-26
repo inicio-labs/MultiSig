@@ -79,6 +79,16 @@ function parseRecipient(input: string, ownId: string | null): { hex: string; add
   return { hex, address: accountAddress(hex) };
 }
 
+/** A QR the scanner accepts: a Miden address on this network. */
+export function isScannedAddress(value: string): boolean {
+  try {
+    parseRecipient(value, null);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Digits and one decimal point, at most `decimals` places. */
 function cleanAmount(raw: string, decimals: number): string {
   let value = raw.replace(',', '.').replace(/[^\d.]/g, '');
@@ -210,14 +220,7 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
 
   const scan = async () => {
     haptic('light');
-    const text = await scanQr('Scan a Miden address', (value) => {
-      try {
-        parseRecipient(value, null);
-        return true;
-      } catch {
-        return false;
-      }
-    });
+    const text = await scanQr('Scan a Miden address', isScannedAddress);
     if (text) {
       setInput(text);
       pick(text);
