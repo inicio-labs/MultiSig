@@ -103,6 +103,7 @@ import {
 import { useMidenWallet } from "@/hooks/useMidenWallet";
 import { MidenWalletAdapter } from "@miden-sdk/miden-wallet-adapter-miden";
 import { whenWalletInstalled } from "@/lib/walletReconnect";
+import { BACKGROUND_SYNC_MS, FAILURES_BEFORE_ERROR, shouldBackgroundSync } from "@/lib/backgroundSync";
 import { diagnosticError, diagnosticLog, logReceiveFunding } from '@/lib/midenDiagnostics';
 import {
   clearExecutionPushed,
@@ -532,9 +533,12 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
 
   // Pull Guardian state (unless the caller already has it), proposals and notes
   // for a multisig, and publish them with the account's config.
-  const refreshAccount = useCallback(async (ms: Multisig, knownSync?: SyncStateResult) => {
+  const refreshAccount = useCallback(async (ms: Multisig, knownSync?: SyncStateResult, apply: () => boolean = () => true) => {
     const sync = knownSync ?? await ms.syncState();
     const [synced, notes] = await Promise.all([ms.syncProposals(), ms.getConsumableNotes()]);
+    // A background sync drops what it read when an operation started meanwhile:
+    // that operation shows the account's state itself.
+    if (!apply()) return;
     // syncState skips the download when Guardian has nothing newer than the
     // local account (source 'local'); keep the state already known then, and
     // fetch it once if there is none yet.
@@ -577,6 +581,8 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
   const accountOperationBusy = creating || loadingAccount || creatingProposal || Boolean(signingProposal)
     || Boolean(executingProposal) || releasingCandidate || syncingState || registeringOnGuardian
     || privateSendProgress.step === "creating-proposal";
+  const accountOperationBusyRef = useRef(accountOperationBusy);
+  accountOperationBusyRef.current = accountOperationBusy;
 
   // A sync that fails on the nonce right after execute usually means Guardian
   // has not caught up. If the chain confirms the local state, show its config;
@@ -1501,12 +1507,28 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     walletSource,
   ]);
 
-  const handleSync = useCallback(async () => {
-    if (!multisig || !midenClient) return;
+  // When the account last synced (any kind), and the background sync's state (backgroundSync.ts).
+  const lastSyncAt = useRef(0);
+  const backgroundFailures = useRef(0);
+  const backgroundError = useRef<string | null>(null);
 
-    setSyncingState(true);
-    setError(null);
-    setPendingCandidateWarning(null);
+  /**
+   * Syncs the chain, Guardian's state and the proposals. `background` is the
+   * silent kind: no spinners and nothing cleared on screen; it never falls
+   * back to asking the wallet (no retry when the session ends), drops its
+   * results if an operation started meanwhile, and shows an error only after
+   * FAILURES_BEFORE_ERROR failures in a row.
+   */
+  const syncAccount = useCallback(async ({ background = false } = {}) => {
+    if (!multisig || !midenClient) return;
+    const ms = multisig;
+    const current = () => multisigRef.current === ms && !accountOperationBusyRef.current;
+
+    if (!background) {
+      setSyncingState(true);
+      setError(null);
+      setPendingCandidateWarning(null);
+    }
     try {
       if (multisig.accountId) {
         await watchAccountNotes(midenClient, multisig.accountId);
@@ -1523,26 +1545,85 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       }
       if (!chainError) await fetchPrivateNotes(midenClient);
 
-      const state = await retryIfSessionDied(() => multisig.syncState()).catch((err: unknown) => {
+      const readState = () => ms.syncState();
+      const state = await (background ? readState() : retryIfSessionDied(readState)).catch((err: unknown) => {
         if (err instanceof GuardianHttpError && err.code === "account_not_found") {
           setGuardianRegistrationRequired(true);
         }
         throw err;
       });
+      if (background && !current()) return;
       setGuardianRegistrationRequired(false);
-      await refreshAccount(multisig, state);
+      await refreshAccount(ms, state, background ? current : undefined);
       if (chainError) throw chainError;
+      lastSyncAt.current = Date.now();
+      if (background) {
+        backgroundFailures.current = 0;
+        // A background error the last syncs left on screen no longer holds.
+        const shown = backgroundError.current;
+        backgroundError.current = null;
+        if (shown) setError((now) => (now === shown ? null : now));
+      }
     } catch (err) {
+      if (background) {
+        backgroundFailures.current += 1;
+        if (backgroundFailures.current >= FAILURES_BEFORE_ERROR && multisigRef.current === ms) {
+          const message = formatError(err, "Sync failed");
+          backgroundError.current = message;
+          setError(message);
+        }
+        return;
+      }
       const message = err instanceof Error ? err.message : String(err);
-      if (await handleLocalStateAhead(multisig, message)) {
+      if (await handleLocalStateAhead(ms, message)) {
         setError(null);
       } else {
         setError(formatError(err, "Sync failed"));
       }
     } finally {
-      setSyncingState(false);
+      if (!background) setSyncingState(false);
     }
   }, [multisig, midenClient, refreshAccount, handleLocalStateAhead]);
+
+  const handleSync = useCallback(() => syncAccount(), [syncAccount]);
+
+  // The background sync (backgroundSync.ts): every BACKGROUND_SYNC_MS while the
+  // tab is visible, and on coming back to the tab.
+  const backgroundSyncRunning = useRef(false);
+  const backgroundSyncTick = useRef<() => void>(() => {});
+  backgroundSyncTick.current = () => {
+    const now = Date.now();
+    if (!shouldBackgroundSync({
+      accountOpen: Boolean(multisig && midenClient),
+      busy: accountOperationBusy,
+      running: backgroundSyncRunning.current,
+      walletSource,
+      hasLocalSigner: Boolean(signer),
+      session: guardianSession,
+      visible: document.visibilityState === "visible",
+      lastSyncAt: lastSyncAt.current,
+      now,
+    })) return;
+    backgroundSyncRunning.current = true;
+    void syncAccount({ background: true }).finally(() => {
+      backgroundSyncRunning.current = false;
+    });
+  };
+  useEffect(() => {
+    if (!multisig) return;
+    // A loaded account has just synced: the first background sync comes a full interval later.
+    lastSyncAt.current = Date.now();
+    backgroundFailures.current = 0;
+    const timer = setInterval(() => backgroundSyncTick.current(), BACKGROUND_SYNC_MS);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") backgroundSyncTick.current();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [multisig]);
 
   const retryGuardianRegistration = useCallback(async () => {
     if (!multisig || !midenClient || !guardianRegistrationRequired || registrationRetryInProgress.current) return;
