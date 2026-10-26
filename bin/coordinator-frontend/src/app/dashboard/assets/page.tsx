@@ -25,7 +25,8 @@ const Assets = () => {
   );
 
   return (
-    <div className="flex w-full max-w-[800px] flex-col">
+    // The same width and padding as Home, so the pages line up.
+    <div className="flex h-full w-full flex-col px-2 py-2 md:py-3 lg:p-4">
       <div className="mb-4 flex items-center justify-between gap-3 md:mb-5">
         <h1 className="text-[22px] font-[600] leading-[1.2] text-[#111] md:text-[24px]">Assets</h1>
         <div className="flex gap-2">
