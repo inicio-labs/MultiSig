@@ -14,7 +14,8 @@ const ready: BackgroundSyncInput = {
   running: false,
   walletSource: 'miden-wallet',
   hasLocalSigner: false,
-  session: { phase: 'active', expiresAt: now + 30 * 60_000 },
+  // Guardian's expiresAt is Unix seconds.
+  session: { phase: 'active', expiresAt: Math.floor(now / 1000) + 30 * 60 },
   visible: true,
   lastSyncAt: now - BACKGROUND_SYNC_MS,
   now,
@@ -41,7 +42,10 @@ describe('syncing on its own, without asking the wallet', () => {
       expect(shouldBackgroundSync({ ...ready, session })).toBe(false);
     }
     // About to expire: it could end mid-sync and the rest would ask the wallet.
-    expect(shouldBackgroundSync({ ...ready, session: { phase: 'active', expiresAt: now + SESSION_MARGIN_MS - 1 } })).toBe(false);
+    expect(shouldBackgroundSync({ ...ready, session: { phase: 'active', expiresAt: (now + SESSION_MARGIN_MS) / 1000 - 1 } })).toBe(false);
+    expect(shouldBackgroundSync({ ...ready, session: { phase: 'active', expiresAt: (now + SESSION_MARGIN_MS) / 1000 + 1 } })).toBe(true);
+    // An expiry that has passed (seconds compared with seconds, not milliseconds).
+    expect(shouldBackgroundSync({ ...ready, session: { phase: 'active', expiresAt: Math.floor(now / 1000) - 5 } })).toBe(false);
   });
 
   it('a local key signs without asking, so it needs no session', () => {

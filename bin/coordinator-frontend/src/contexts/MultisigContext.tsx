@@ -283,6 +283,9 @@ export interface MultisigContextValue {
    * its fresh state loads, never used for an action.
    */
   lastKnownAccount: AccountSnapshot | null;
+  /** The account was closed because its Guardian session ended; it opens again on the user's click. */
+  sessionEnded: boolean;
+  clearSessionEnded: () => void;
   /** The wallet's Guardian session (see guardianSession.ts). */
   guardianSession: GuardianSessionState;
   /** Starts it again after it failed, was declined or ended. */
@@ -380,6 +383,9 @@ export interface TokenEnv {
   tokenListRevision: number;
 }
 
+/** Set when the user disconnects the Miden Wallet: it is not reconnected on its own until they connect it again. */
+const MIDEN_WALLET_DISCONNECTED = "miden-wallet-disconnected";
+
 /** Where the network's fee token is remembered between visits. */
 const FEE_TOKEN_KEY = `miden-fee-token:${MIDEN_NETWORK}`;
 
@@ -413,6 +419,9 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
   // them overlap (double clicks, or Execute pressed mid-unlock). Holds the id of
   // the account the operation belongs to, so a switch never blocks the next one.
   const accountOpInFlight = useRef<string | null>(null);
+  // The background sync in flight (backgroundSync.ts): operations wait for it,
+  // so it never adopts Guardian's state over one an operation just wrote.
+  const backgroundSyncRun = useRef<Promise<void> | null>(null);
   // Long-running work checks this after every await and stops touching state
   // once the user has moved to another account.
   const multisigRef = useRef<Multisig | null>(null);
@@ -688,6 +697,8 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
   // dashboard offers Connect Miden Wallet (AccountGate).
   useEffect(() => {
     if (localStorage.getItem("currentWalletSource") !== "miden-wallet" || midenWalletAdapter.connected) return;
+    // Disconnected on purpose (Settings or the header): only a click connects it again.
+    if (localStorage.getItem(MIDEN_WALLET_DISCONNECTED)) return;
     return whenWalletInstalled(midenWalletAdapter, () => {
       connectMidenWalletRaw().catch(() => {
         // The dashboard offers the button instead.
@@ -1464,51 +1475,8 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     [loadAccount],
   );
 
-  // Auto-load saved account after initialization completes
-  const autoLoadAttemptedRef = useRef(false);
-  useEffect(() => {
-    if (autoLoadAttemptedRef.current) return;
-    if (!multisigClient || !guardianCommitment) return;
-
-    const savedId = localStorage.getItem("currentWalletId");
-    if (!savedId) return;
-    // Just created or loaded in this session: reloading would replace the
-    // account (and cancel work bound to it, such as the funding wait).
-    if (multisigRef.current?.accountId.toLowerCase() === savedId.toLowerCase()) {
-      autoLoadAttemptedRef.current = true;
-      return;
-    }
-
-    const savedSource = localStorage.getItem(
-      "currentWalletSource",
-    ) as WalletSource | null;
-    const savedScheme = localStorage.getItem(
-      "currentWalletScheme",
-    ) as SignatureScheme | null;
-
-    if (savedSource === "ledger" || walletSource === "ledger") return;
-    if ((savedSource ?? walletSource) === "local" && (!LOCAL_KEYS_ENABLED || !signer)) return;
-    if (savedSource === "para" && !paraSession.connected) return;
-    if (savedSource === "miden-wallet" && !midenWalletSession.connected) return;
-    autoLoadAttemptedRef.current = true;
-
-    if (savedSource && savedSource !== walletSource) {
-      setWalletSource(savedSource);
-    }
-
-    setTimeout(() => {
-      handleLoad(savedId, savedScheme ?? "falcon");
-    }, 100);
-  }, [
-    setWalletSource,
-    multisigClient,
-    signer,
-    guardianCommitment,
-    handleLoad,
-    paraSession.connected,
-    midenWalletSession.connected,
-    walletSource,
-  ]);
+  // The saved account is opened by the dashboard's AccountGate, once a wallet
+  // is connected (the only place that does it, so two loads never race).
 
   // When the account last synced (any kind), and the background sync's state (backgroundSync.ts).
   const lastSyncAt = useRef(0);
@@ -1526,6 +1494,9 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     if (!multisig || !midenClient) return;
     const ms = multisig;
     const current = () => multisigRef.current === ms && !accountOperationBusyRef.current;
+    // Guardian's client signs with the wallet once no session is held, so a
+    // background sync stops as soon as the session is gone (even mid-run).
+    const signsQuietly = () => walletSource === "local" || multisigGuardian(ms).getSession() !== null;
 
     if (!background) {
       setSyncingState(true);
@@ -1533,6 +1504,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       setPendingCandidateWarning(null);
     }
     try {
+      if (!background) await backgroundSyncRun.current?.catch(() => {});
       if (multisig.accountId) {
         await watchAccountNotes(midenClient, multisig.accountId);
       }
@@ -1548,6 +1520,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       }
       if (!chainError) await fetchPrivateNotes(midenClient);
 
+      if (background && !signsQuietly()) return;
       const readState = () => ms.syncState();
       const state = await (background ? readState() : retryIfSessionDied(readState)).catch((err: unknown) => {
         if (err instanceof GuardianHttpError && err.code === "account_not_found") {
@@ -1555,7 +1528,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
         }
         throw err;
       });
-      if (background && !current()) return;
+      if (background && (!current() || !signsQuietly())) return;
       setGuardianRegistrationRequired(false);
       await refreshAccount(ms, state, background ? current : undefined);
       if (chainError) throw chainError;
@@ -1586,7 +1559,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     } finally {
       if (!background) setSyncingState(false);
     }
-  }, [multisig, midenClient, refreshAccount, handleLocalStateAhead]);
+  }, [multisig, midenClient, refreshAccount, handleLocalStateAhead, walletSource]);
 
   const handleSync = useCallback(() => syncAccount(), [syncAccount]);
 
@@ -1608,9 +1581,11 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       now,
     })) return;
     backgroundSyncRunning.current = true;
-    void syncAccount({ background: true }).finally(() => {
+    const run = syncAccount({ background: true }).finally(() => {
       backgroundSyncRunning.current = false;
+      if (backgroundSyncRun.current === run) backgroundSyncRun.current = null;
     });
+    backgroundSyncRun.current = run;
   };
   useEffect(() => {
     if (!multisig) return;
@@ -1627,6 +1602,37 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [multisig]);
+
+  // When the Guardian session ends (expired, ended elsewhere, or no longer
+  // accepted), the account closes and the dashboard says "Session ended": one
+  // click and one wallet approval open it again with a new session. Nothing
+  // runs on its own without a session. An operation in progress finishes
+  // first; an account that never had a session is not affected.
+  const [sessionEnded, setSessionEnded] = useState(false);
+  const sessionEndPending = useRef(false);
+  const lastSessionPhase = useRef(guardianSession.phase);
+  useEffect(() => {
+    if (lastSessionPhase.current === "active" && guardianSession.phase === "ended") sessionEndPending.current = true;
+    if (guardianSession.phase === "active") sessionEndPending.current = false;
+    lastSessionPhase.current = guardianSession.phase;
+    if (!sessionEndPending.current || accountOperationBusy || guardianSession.phase !== "ended") return;
+    sessionEndPending.current = false;
+    if (!multisigRef.current) return;
+    setMultisig(null);
+    setGuardianState(null);
+    setDetectedConfig(null);
+    setProposals([]);
+    setConsumableNotes([]);
+    setAccountNonce(null);
+    setGuardianRegistrationRequired(false);
+    setPendingCandidateWarning(null);
+    setError(null);
+    setSessionEnded(true);
+  }, [guardianSession.phase, accountOperationBusy]);
+  useEffect(() => {
+    if (multisig) setSessionEnded(false);
+  }, [multisig]);
+  const clearSessionEnded = useCallback(() => setSessionEnded(false), []);
 
   const retryGuardianRegistration = useCallback(async () => {
     if (!multisig || !midenClient || !guardianRegistrationRequired || registrationRetryInProgress.current) return;
@@ -2115,6 +2121,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
   // executed a private send from another device meanwhile. An account Guardian
   // does not know yet has no history to check: say what is missing instead.
   ensurePrivateNotesClearRef.current = async (ms: Multisig) => {
+    await backgroundSyncRun.current?.catch(() => {});
     if (guardianRegistrationRequired && multisigRef.current === ms) {
       throw new UserFacingError("This account is not registered on Guardian yet. Use Retry Guardian registration first.");
     }
@@ -2390,6 +2397,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     accountOpInFlight.current = ms.accountId;
     setError(null);
     try {
+      await backgroundSyncRun.current?.catch(() => {});
       await releaseLock(ms, lock);
     } finally {
       if (accountOpInFlight.current === ms.accountId) accountOpInFlight.current = null;
@@ -2461,6 +2469,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
   }, [walletSource, disconnectLedger]);
 
   const connectMidenWallet = useCallback(async () => {
+    localStorage.removeItem(MIDEN_WALLET_DISCONNECTED);
     try {
       await connectMidenWalletRaw();
     } catch (err) {
@@ -2469,6 +2478,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
   }, [connectMidenWalletRaw]);
 
   const disconnectMidenWallet = useCallback(async () => {
+    localStorage.setItem(MIDEN_WALLET_DISCONNECTED, "1");
     await disconnectMidenWalletRaw();
     // Recreate the adapter so the next connect() gets a clean instance —
     // the extension may leave window.midenWallet in a stale state after disconnect.
@@ -2533,6 +2543,8 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       guardianSession,
       accountNonce,
       lastKnownAccount,
+      sessionEnded,
+      clearSessionEnded,
       startGuardianSession,
       endGuardianSession,
       sessionGrantPrompt,
@@ -2630,6 +2642,8 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       guardianSession,
       accountNonce,
       lastKnownAccount,
+      sessionEnded,
+      clearSessionEnded,
       startGuardianSession,
       endGuardianSession,
       sessionGrantPrompt,

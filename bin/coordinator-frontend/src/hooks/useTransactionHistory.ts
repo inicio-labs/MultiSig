@@ -35,14 +35,29 @@ function maybeSettings(entry: HistoryEntry): boolean {
     && entry.decodeWarnings.length === 0;
 }
 
-async function readFirst(multisig: Multisig): Promise<Pick<Loaded, 'entries' | 'cursor'>> {
-  let page = await retryIfSessionDied(() => multisig.deltaHistory({ limit: PAGE }));
+/** An automatic read found no session: it stops instead of asking the wallet. */
+export class NoSession extends Error {}
+
+/**
+ * How a read is sent. One the user asked for may fall back to the wallet when
+ * the session has just ended; an automatic one never does: Guardian's client
+ * signs with the wallet once no session is held, so it checks before each
+ * request and stops.
+ */
+export type Send = <T>(request: () => Promise<T>) => Promise<T>;
+const userRead: Send = (request) => retryIfSessionDied(request);
+export const quietRead = (sessionHeld: () => boolean): Send => (request) =>
+  (sessionHeld() ? request() : Promise.reject(new NoSession()));
+
+export async function readFirst(multisig: Pick<Multisig, 'deltaHistory'>, send: Send): Promise<Pick<Loaded, 'entries' | 'cursor'>> {
+  let page = await send(() => multisig.deltaHistory({ limit: PAGE }));
   const entries = [...page.entries];
   // Rows keyed by time come first: read on to the first row keyed by nonce,
   // so the latest transactions are in.
-  while (page.nextCursor && entries.length < FIRST_LOAD_MAX && entries[entries.length - 1].nonce >= TIMESTAMP_KEY) {
+  while (page.nextCursor && entries.length > 0 && entries.length < FIRST_LOAD_MAX
+    && entries[entries.length - 1].nonce >= TIMESTAMP_KEY) {
     const cursor = page.nextCursor;
-    page = await retryIfSessionDied(() => multisig.deltaHistory({ limit: PAGE, cursor }));
+    page = await send(() => multisig.deltaHistory({ limit: PAGE, cursor }));
     entries.push(...page.entries);
   }
   return { entries, cursor: page.nextCursor };
@@ -51,9 +66,9 @@ async function readFirst(multisig: Multisig): Promise<Pick<Loaded, 'entries' | '
 /** The first read in flight, shared by pages mounted while it runs (Home → Transactions). */
 let inflight: { key: string; read: Promise<Pick<Loaded, 'entries' | 'cursor'>> } | null = null;
 
-function readFirstShared(multisig: Multisig, key: string): Promise<Pick<Loaded, 'entries' | 'cursor'>> {
+function readFirstShared(multisig: Multisig, key: string, send: Send): Promise<Pick<Loaded, 'entries' | 'cursor'>> {
   if (inflight?.key === key) return inflight.read;
-  const read = readFirst(multisig).finally(() => {
+  const read = readFirst(multisig, send).finally(() => {
     if (inflight?.read === read) inflight = null;
   });
   inflight = { key, read };
@@ -82,6 +97,11 @@ export function useTransactionHistory() {
   const nonce = accountNonce?.toString() ?? '';
   const free = walletSource === 'local' || guardianSession.phase === 'active';
   const settling = guardianSession.phase === 'resuming' || guardianSession.phase === 'starting';
+  // Checked before each automatic request (see quietRead).
+  const sessionHeld = useCallback(
+    () => Boolean(multisig) && (walletSource === 'local' || multisigGuardian(multisig as Multisig).getSession() !== null),
+    [multisig, walletSource],
+  );
 
   const [loaded, setLoaded] = useState<Loaded | null>(() => (lastLoaded?.accountId === accountId ? lastLoaded : null));
   const [loading, setLoading] = useState(false);
@@ -98,7 +118,8 @@ export function useTransactionHistory() {
     setLoaded(lastLoaded?.accountId === accountId ? lastLoaded : null);
   }, [accountId]);
 
-  const load = useCallback(async () => {
+  /** Reads the newest history: `automatic` (no click) never asks the wallet. */
+  const load = useCallback(async ({ automatic = false } = {}) => {
     if (!multisig) return;
     const id = ++run.current;
     const key = `${multisig.accountId}:${nonce}`;
@@ -106,16 +127,17 @@ export function useTransactionHistory() {
     setLoading(true);
     setError(null);
     try {
-      const first = await readFirstShared(multisig, key);
+      const first = await readFirstShared(multisig, key, automatic ? quietRead(sessionHeld) : userRead);
       if (run.current !== id) return;
       lastLoaded = { accountId: multisig.accountId, nonce, ...first };
       setLoaded(lastLoaded);
     } catch (err) {
-      if (run.current === id) setError(historyError(err));
+      // No session any more: nothing to say, the read just stops.
+      if (run.current === id && !(err instanceof NoSession)) setError(historyError(err));
     } finally {
       if (run.current === id) setLoading(false);
     }
-  }, [multisig, nonce]);
+  }, [multisig, nonce, sessionHeld]);
 
   const loadMore = useCallback(async () => {
     if (!multisig || !loaded?.cursor) return;
@@ -124,7 +146,7 @@ export function useTransactionHistory() {
     setLoading(true);
     setError(null);
     try {
-      const page = await retryIfSessionDied(() => multisig.deltaHistory({ limit: PAGE, cursor }));
+      const page = await userRead(() => multisig.deltaHistory({ limit: PAGE, cursor }));
       if (run.current !== id) return;
       lastLoaded = { ...loaded, entries: [...loaded.entries, ...page.entries], cursor: page.nextCursor };
       setLoaded(lastLoaded);
@@ -141,22 +163,26 @@ export function useTransactionHistory() {
   useEffect(() => {
     if (!multisig || accountNonce === null || !free || settling || current) return;
     if (attempted.current === `${multisig.accountId}:${nonce}`) return;
-    void load();
+    void load({ automatic: true });
   }, [multisig, accountNonce, free, settling, current, nonce, load]);
 
-  // What each settings change was (one read per row, only without prompts).
+  // What each settings change was: one automatic read per row, so each one
+  // first checks that it may still run (not cancelled, session still held).
   useEffect(() => {
     if (!multisig || !loaded || !free) return;
     const guardian = multisigGuardian(multisig);
+    const send = quietRead(sessionHeld);
     let cancelled = false;
     void (async () => {
       for (const entry of loaded.entries) {
+        if (cancelled) return;
         const key = `${loaded.accountId}:${entry.nonce}`;
         if (!maybeSettings(entry) || settingsMetadata.has(key)) continue;
         try {
-          const delta = await retryIfSessionDied(() => guardian.getDelta(loaded.accountId, entry.nonce));
+          const delta = await send(() => guardian.getDelta(loaded.accountId, entry.nonce));
           settingsMetadata.set(key, delta.deltaPayload.metadata ?? null);
-        } catch {
+        } catch (err) {
+          if (err instanceof NoSession) return;
           continue; // The row keeps its general title.
         }
         if (cancelled) return;
@@ -164,7 +190,7 @@ export function useTransactionHistory() {
       }
     })();
     return () => { cancelled = true; };
-  }, [multisig, loaded, free]);
+  }, [multisig, loaded, free, sessionHeld]);
 
   const metadataFor = useCallback(
     (key: number) => (accountId ? settingsMetadata.get(`${accountId}:${key}`) : undefined),

@@ -1,12 +1,13 @@
 "use client";
 import React, { useEffect, useRef, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { SignatureScheme } from "@openzeppelin/miden-multisig-client";
 import { MIDEN_NETWORK } from "@/config/psm";
 import { useMultisig, useTokenEnv } from "@/contexts/MultisigContext";
 import { WALLET_NAME, WALLET_RECONNECT_WAIT_MS, gateView } from "@/lib/accountGate";
 import { accountAddress } from "@/lib/findAccounts";
 import { shortHex } from "@/lib/proposalDescription";
+import { clearWalletCookie } from "@/lib/walletCookie";
 import type { WalletSource } from "@/wallets/types";
 
 const PRIMARY = "inline-flex h-10 min-w-[200px] items-center justify-center rounded-[8px] bg-[#FF5500] px-4 text-[14px] font-[500] text-white transition-colors hover:bg-[#E64A00] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FF5500] disabled:cursor-not-allowed disabled:opacity-60";
@@ -48,7 +49,10 @@ const AccountGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     paraSession,
     ledger,
     lastKnownAccount,
+    sessionEnded,
+    clearSessionEnded,
   } = useMultisig();
+  const router = useRouter();
   const { sdkReady } = useTokenEnv();
   const [savedId] = useState(() => savedValue("currentWalletId"));
   const [waitedForWallet, setWaitedForWallet] = useState(false);
@@ -74,12 +78,13 @@ const AccountGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       tried.current = key;
       return;
     }
-    if (loadingAccount || !savedId || tried.current === key) return;
+    // After a session ended, only the user's click opens the account again.
+    if (loadingAccount || !savedId || sessionEnded || tried.current === key) return;
     tried.current = key;
     handleLoad(savedId, schemeFor(walletSource)).catch(() => {
       // Shown below through `error`.
     });
-  }, [multisig, loadingAccount, savedId, activeCommitment, walletSource, handleLoad]);
+  }, [multisig, loadingAccount, savedId, sessionEnded, activeCommitment, walletSource, handleLoad]);
 
   const view = gateView({
     accountOpen: Boolean(multisig),
@@ -90,11 +95,20 @@ const AccountGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     startupError: clientStartup.phase === "error" ? clientStartup.error : null,
     error,
     waitedForWallet,
+    sessionEnded,
   });
   if (view.kind === "open") return <>{children}</>;
 
   const connect = (source: WalletSource) => {
     setOtherWallets(false);
+    if (sessionEnded) {
+      clearSessionEnded();
+      // Still connected: open the account again, which starts a new session (one wallet approval).
+      if (source === walletSource && activeCommitment && savedId) {
+        handleLoad(savedId, schemeFor(walletSource)).catch(() => {});
+        return;
+      }
+    }
     if (source === "ledger") {
       ledger.show();
     } else if (source === "para") {
@@ -127,7 +141,10 @@ const AccountGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       body = (
         <>
           <h1 className="text-[16px] font-[500] text-[#111]">No account open</h1>
-          <Link href="/login" className={PRIMARY}>Open an account</Link>
+          {/* The login page sends anyone with the account cookie back here: clear it first. */}
+          <button type="button" onClick={() => { clearWalletCookie(); router.push("/login"); }} className={PRIMARY}>
+            Open an account
+          </button>
         </>
       );
       break;
@@ -138,9 +155,10 @@ const AccountGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       body = (<><Spinner /><p className="text-[14px] text-[#111]">Connecting {WALLET_NAME[view.wallet]}…</p>{which}</>);
       break;
     case "connect":
+    case "session-ended":
       body = (
         <>
-          <h1 className="text-[16px] font-[500] text-[#111]">Connect your wallet</h1>
+          <h1 className="text-[16px] font-[500] text-[#111]">{view.kind === "session-ended" ? "Session ended" : "Connect your wallet"}</h1>
           {which}
           <button type="button" onClick={() => connect(view.wallet)} disabled={view.wallet === "ledger" && ledger.open} className={PRIMARY}>
             Connect {WALLET_NAME[view.wallet]}
@@ -169,7 +187,7 @@ const AccountGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       break;
   }
 
-  const canSwitch = view.kind === "connect" || (view.kind === "failed" && view.retry === "load");
+  const canSwitch = view.kind === "connect" || view.kind === "session-ended" || (view.kind === "failed" && view.retry === "load");
   const others = EXTERNAL.filter((source) => source !== walletSource);
 
   return (
