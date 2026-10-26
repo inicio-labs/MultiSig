@@ -134,6 +134,22 @@ function setup(opts: FakeOptions & {
 }
 
 describe('WalletEngine.start', () => {
+  it('an existing unregistered account asks for the code before syncing, and forgets its saved home', async () => {
+    const { deps, log, store } = setup({ existing: [{ accountId: '0xold', updatedAt: '2026-10-01T00:00:00Z' }] });
+    const removed: string[] = [];
+    const engine = new WalletEngine({
+      ...deps,
+      viewKey: 'tg:42',
+      storage: { ...deps.storage!, remove: (k: string) => { removed.push(k); store.delete(k); } },
+      needsInvitation: async () => true,
+    });
+    await engine.start();
+    expect(engine.getSnapshot().phase).toEqual({ kind: 'invite' });
+    expect(log).not.toContain('sync');
+    expect(removed).toEqual(['miden-tg-wallet:last-view:tg:42']);
+    expect(store.has('miden-tg-wallet:last-view:tg:42')).toBe(false);
+  });
+
   it('invite-only: asks for the code before creating anything, and registers with it', async () => {
     const { deps, log } = setup();
     const codes: Array<string | undefined> = [];

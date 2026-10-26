@@ -69,7 +69,7 @@ export interface WalletEngineDeps<C extends WalletMidenClient, M extends WalletM
   /** Private sends: note delivery and the check before each transaction. */
   createPrivateNotes?(midenClient: C): PrivateNotes;
   /** Remembers the account this key last used, to prefer it if the key has several. */
-  storage?: { get(key: string): string | null; set(key: string, value: string): void };
+  storage?: { get(key: string): string | null; set(key: string, value: string): void; remove?(key: string): void };
   /** Whose saved home view this is (see savedView.ts); defaults to the signing key, null for none. */
   viewKey?: string | null;
   /**
@@ -292,6 +292,9 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
     const { accountId, feeFaucetId, balances, history } = this.snapshot;
     const key = this.viewKey();
     if (!accountId || !key) return;
+    // Never the home screen of an account that is not registered yet (invite
+    // pending): the next open would show it before asking for the code.
+    if (this.snapshot.phase.kind !== 'ready' && this.multisig?.account.nonce().asInt() === 0n) return;
     const view: SavedView = {
       accountId,
       feeFaucetId,
@@ -366,20 +369,24 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
       // The account's note tag before the first sync: a sync without it moves
       // the client past notes that were sent to the account earlier.
       await this.deps.registerNoteTag(midenClient, multisig.accountId);
+      const unregistered = multisig.account.nonce().asInt() === 0n;
+      // An invite-only network registers only with the user's code: an account
+      // created before but never registered asks for it now, before the sync
+      // (seconds sooner), and its saved home screen goes (it never had one).
+      if (unregistered && !this.invitationCode && await this.deps.needsInvitation?.(midenClient, multisig.accountId)) {
+        const key = this.viewKey();
+        if (key) this.deps.storage?.remove?.(key);
+        this.update({ phase: { kind: 'invite' }, balances: [], history: [], savedAt: null });
+        return;
+      }
       await this.refresh();
-      if (multisig.account.nonce().asInt() === 0n) {
+      if (unregistered) {
         // The node only accepts transactions from registered accounts. A new
-        // account registers here; one whose first start was interrupted is
-        // registered again (idempotent). Whatever the network sends a new
+        // account registers here (with the invite code it was created with,
+        // on an invite-only network); one whose first start was interrupted
+        // is registered again (idempotent). Whatever the network sends a new
         // account arrives as an ordinary incoming payment.
-        // An invite-only network registers only with the user's code: the
-        // one given before creating, else wait for it (an account created
-        // before but never registered).
         const code = this.invitationCode;
-        if (!code && await this.deps.needsInvitation?.(midenClient, multisig.accountId)) {
-          this.update({ phase: { kind: 'invite' } });
-          return;
-        }
         this.update({ phase: { kind: 'registering' } });
         try {
           await this.deps.registerOnNode(midenClient, multisig.accountId, code ?? undefined);
@@ -444,6 +451,8 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
       return;
     }
     this.becomeReady(multisig);
+    // It skipped the sync while waiting for the code: bring the balance in now.
+    void this.refresh().catch((error) => console.warn('Refresh after registering failed', error));
   }
 
   // The account last used here, per key (another Telegram user on this phone has their own).
