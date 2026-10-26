@@ -1,97 +1,145 @@
 "use client";
-import { TokenAmount, TokenLogo, UnverifiedTag } from "@/components/TokenAmount";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
+import { TokenLogo, UNVERIFIED_WHY } from "@/components/TokenAmount";
 import { MIDEN_NETWORK } from "@/config/psm";
+import { useTokenEnv } from "@/contexts/MultisigContext";
 import { useToken } from "@/hooks/useToken";
 import { accountAddress } from "@/lib/findAccounts";
+import { formatTokenAmount } from "@/lib/tokenAmounts";
+import { holdingsOrder } from "@/lib/tokenList";
 
-import { TokenHoldingsProps } from "@/types";
+export interface HeldToken {
+  faucetId: string;
+  amount: bigint;
+}
 
-/** One token: its logo, name and symbol, and the balance; the address only behind the copy button. */
-function HoldingRow({ faucetId, balance }: { faucetId: string; balance: string | bigint }) {
-  const token = useToken(faucetId);
+const ROW = "flex h-14 items-center gap-2.5 px-3 md:h-[60px] md:gap-3 md:px-5";
+/** The text column: every row but the first has a divider, inset past the logo. */
+const body = (first: boolean) =>
+  `flex h-full min-w-0 flex-1 items-center gap-2.5 md:gap-3 ${first ? "" : "border-t border-[rgba(0,0,0,0.06)]"}`;
+
+/** Copies the token's Miden address. With a mouse it shows on row hover; on touch it is always there. */
+function CopyAddress({ faucetId }: { faucetId: string }) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
 
-  const copyAddress = async () => {
+  const copy = async () => {
     try {
       await navigator.clipboard.writeText(accountAddress(faucetId, MIDEN_NETWORK));
       setCopied(true);
       clearTimeout(timer.current);
-      timer.current = setTimeout(() => setCopied(false), 2000);
+      timer.current = setTimeout(() => setCopied(false), 1500);
     } catch {
-      /* clipboard write failed */
+      toast.error("Couldn't copy the address");
     }
   };
 
-  // The second line says what the name doesn't: the symbol, or that this is the fee token.
-  const detail = token.name !== token.symbol ? token.symbol : token.isFeeToken ? "Network fee token" : null;
-
   return (
-    <div className="px-3 py-3 rounded-[8px] flex items-center justify-between gap-3 hover:bg-gray-50 transition-colors">
-      <div className="flex min-w-0 items-center gap-3">
-        <TokenLogo token={token} size={28} />
-        <div className="flex min-w-0 flex-col">
-          <div className="truncate font-[500] text-[13px] text-black">{token.name}</div>
-          <div className="flex items-center gap-1.5 text-[11px] text-[rgba(0,0,0,0.5)]">
-            {detail && <span className="truncate">{detail}</span>}
-            {token.verification === "unverified" && <UnverifiedTag />}
-            <button
-              type="button"
-              onClick={copyAddress}
-              className="flex h-5 w-5 items-center justify-center rounded-sm text-gray-500 transition-colors duration-150 hover:bg-gray-100"
-              title="Copy the token's Miden address"
-              aria-label="Copy the token's Miden address"
-            >
-              {copied ? (
-                <svg className="w-3 h-3 text-green-600" fill="currentColor" viewBox="0 0 20 20" aria-hidden>
-                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                </svg>
-              ) : (
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-              )}
-            </button>
-          </div>
-        </div>
-      </div>
-      <TokenAmount faucetId={faucetId} amount={balance} showTag={false} className="max-w-[55%] shrink-0 text-right text-[12px] font-[600] text-[#000000]" />
-    </div>
+    <button
+      type="button"
+      onClick={copy}
+      title="Copy token address"
+      aria-label="Copy token address"
+      className={`-ml-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-[6px] text-[rgba(0,0,0,0.35)] transition-opacity hover:bg-[rgba(0,0,0,0.05)] hover:text-[rgba(0,0,0,0.75)] focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-[#FF5500]/50 active:bg-[rgba(0,0,0,0.08)] md:-ml-1 ${copied ? "" : "pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100"}`}
+    >
+      {copied ? (
+        <svg className="h-3.5 w-3.5 text-green-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+        </svg>
+      ) : (
+        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24" aria-hidden>
+          <rect x="9" y="9" width="11" height="11" rx="2" />
+          <path d="M5 15V5a2 2 0 012-2h10" />
+        </svg>
+      )}
+      <span className="sr-only" aria-live="polite">{copied ? "Address copied" : ""}</span>
+    </button>
   );
 }
 
-const TokenHoldings = ({ fungibleAssets, isLoading }: TokenHoldingsProps) => {
+function SkeletonRow({ first }: { first: boolean }) {
   return (
-    <div className="flex flex-col gap-2 rounded-[10px] border border-[rgba(0,0,0,0.08)] p-4 w-full">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div className="font-[500] text-[#00000099] text-[16px]">
-          Token Holdings
-        </div>
+    <li aria-hidden className={ROW}>
+      <span className="size-7 shrink-0 animate-pulse rounded-full bg-[rgba(0,0,0,0.06)] md:size-8" />
+      <div className={`${body(first)} justify-between`}>
+        <span className="h-2.5 w-28 animate-pulse rounded-full bg-[rgba(0,0,0,0.06)]" />
+        {/* Ends where the amounts do: the copy button's slot stays free. */}
+        <span className="mr-[34px] h-2.5 w-16 animate-pulse rounded-full bg-[rgba(0,0,0,0.06)] md:mr-[38px]" />
       </div>
+    </li>
+  );
+}
 
-      {/* Token rows */}
-      {/* -mx-3 with the rows' px-3: their content lines up with the title, their hover reaches the edge. */}
-      <div className="-mx-3 flex flex-col gap-2 overflow-y-auto scrollbar-thin">
-        {isLoading ? (
-          <div className="flex items-center justify-center py-8">
-            <div className="flex items-center space-x-2">
-              <div className="w-4 h-4 border-2 border-[#FF5500] border-t-transparent rounded-full animate-spin"></div>
-              <span className="text-[rgba(0,0,0,0.5)] text-[12px]">Loading tokens...</span>
-            </div>
-          </div>
-        ) : fungibleAssets.length === 0 ? (
-          <div className="flex items-center justify-center py-8">
-            <span className="text-gray-500 text-[12px]">No tokens available</span>
-          </div>
-        ) : (
-          fungibleAssets.map((asset) => (
-            <HoldingRow key={asset.faucetId} faucetId={asset.faucetId} balance={asset.balance} />
-          ))
-        )}
+/** One token: on the left what it is, on the right how much; its symbol only by the amount. */
+function AssetRow({ faucetId, amount, first }: HeldToken & { first: boolean }) {
+  const token = useToken(faucetId);
+  if (token.status === "loading" && !token.listed) return <SkeletonRow first={first} />;
+
+  const unreadable = token.status === "error";
+  const unverified = !unreadable && token.verification === "unverified";
+  // A listed token by its name; the fee token and tokens on a network without a
+  // list by their symbol; an unverified one never by its self-chosen name.
+  const label = token.listed?.name ?? (unreadable ? "Unknown token" : unverified ? "Unverified token" : token.symbol);
+  const why = unreadable ? "This token's details couldn't be read." : unverified ? UNVERIFIED_WHY : undefined;
+  const number = unreadable
+    ? BigInt(amount).toLocaleString("en-US")
+    : token.info ? formatTokenAmount(amount, token.info.decimals, { grouped: true }) : "…";
+  const unit = unreadable ? "base units" : token.symbol;
+
+  return (
+    <li className={`group ${ROW}`}>
+      <TokenLogo token={token} size={32} sizeClass="size-7 text-[12px] md:size-8 md:text-[13px]" />
+      <div className={body(first)}>
+        <span
+          title={why}
+          className={`min-w-0 flex-1 truncate text-[13px] font-[500] md:text-[14px] ${unreadable || unverified ? "text-[rgba(0,0,0,0.5)]" : "text-[#111]"}`}
+        >
+          {label}
+        </span>
+        <span className="max-w-[60%] shrink-0 break-all text-right text-[13px] tabular-nums md:text-[14px]">
+          <span className="font-[600] text-[#111]">{number}</span>
+          {/* The unit stays with the number and is never split. */}
+          <span className="whitespace-nowrap break-normal font-[500] text-[rgba(0,0,0,0.45)]">{" "}{unit}</span>
+        </span>
+        <CopyAddress faucetId={faucetId} />
       </div>
+    </li>
+  );
+}
+
+/**
+ * The account's tokens in one list: the fee token, then listed tokens by name,
+ * then the rest; zero balances left out. Placeholder rows while the account loads.
+ */
+const TokenHoldings = ({ balances, loading }: { balances: readonly HeldToken[]; loading: boolean }) => {
+  const { sdkReady, nativeFaucetId, tokenListRevision } = useTokenEnv();
+  const ordered = useMemo(() => {
+    try {
+      return holdingsOrder(balances, MIDEN_NETWORK, nativeFaucetId);
+    } catch {
+      return balances.filter((balance) => balance.amount > 0n);
+    }
+    // sdkReady and tokenListRevision: listedToken can answer, or answers differently.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [balances, nativeFaucetId, sdkReady, tokenListRevision]);
+
+  return (
+    <div className="rounded-[10px] border border-[rgba(0,0,0,0.08)] bg-white">
+      {loading ? (
+        <ul>
+          {[0, 1, 2].map((i) => <SkeletonRow key={i} first={i === 0} />)}
+        </ul>
+      ) : ordered.length === 0 ? (
+        <div className="grid h-[120px] place-items-center text-[13px] text-[rgba(0,0,0,0.45)]">No tokens yet</div>
+      ) : (
+        <ul role="list">
+          {ordered.map((balance, i) => (
+            <AssetRow key={balance.faucetId} faucetId={balance.faucetId} amount={balance.amount} first={i === 0} />
+          ))}
+        </ul>
+      )}
     </div>
   );
 };

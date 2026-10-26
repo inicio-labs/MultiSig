@@ -1,8 +1,9 @@
 "use client";
 import { TokenAmount } from "@/components/TokenAmount";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useMultisig } from "@/contexts/MultisigContext";
+import { useWaitingNotes } from "@/hooks/useWaitingNotes";
 import { toast } from "sonner";
 import { useDashboardUI } from "@/contexts/DashboardUIContext";
 
@@ -13,30 +14,9 @@ interface ReceiveModalProps {
 
 const ReceiveModal = ({ open, onClose }: ReceiveModalProps) => {
   const { receiveProposalDraft, clearReceiveProposalDraft } = useDashboardUI();
-  const { consumableNotes, proposals, handleCreateConsumeNotesProposal, creatingProposal } = useMultisig();
+  const { handleCreateConsumeNotesProposal, creatingProposal } = useMultisig();
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
-
-  const proposedNoteIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const p of proposals ?? []) {
-      // Include finalized proposals too: a note can only be consumed once, and
-      // the local note store can lag behind on-chain state right after execute
-      // (especially under the para/delegated-signing flow), so an already-
-      // executed note can briefly still show up from getConsumableNotes().
-      if (
-        p.metadata.proposalType === "consume_notes"
-        && !(p.verification.status === "failed" && !p.verification.retryable)
-      ) {
-        for (const id of p.metadata.noteIds) ids.add(id);
-      }
-    }
-    return ids;
-  }, [proposals]);
-
-  const notes = useMemo(
-    () => (consumableNotes ?? []).filter(n => !proposedNoteIds.has(n.id)),
-    [consumableNotes, proposedNoteIds]
-  );
+  const notes = useWaitingNotes();
 
   useEffect(() => {
     if (!open || receiveProposalDraft.length === 0) return;

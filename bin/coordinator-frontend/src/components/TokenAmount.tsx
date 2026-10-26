@@ -5,7 +5,7 @@ import { TOKEN_LOGOS } from '@/config/tokenList/logos';
 import { useToken, type TokenView } from '@/hooks/useToken';
 import { formatTokenAmount, shortFaucetId } from '@/lib/tokenAmounts';
 
-const UNVERIFIED_WHY = "Not on Miden's verified token list. Anyone can create a token with any name.";
+export const UNVERIFIED_WHY = "Not on Miden's verified token list. Anyone can create a token with any name.";
 
 /** The grey tag a token gets when Miden's verified list does not vouch for it. */
 export function UnverifiedTag() {
@@ -21,20 +21,22 @@ export function UnverifiedTag() {
 
 /**
  * A listed token's logo (shipped with the app, or from the token list
- * repository for a token listed after this build), else its symbol's first letter.
+ * repository for a token listed after this build), else its symbol's first
+ * letter, or "?" for a token that can't be read. `sizeClass` sizes it with
+ * classes instead of `size` (e.g. one size on phones, another on desktop).
  */
-export function TokenLogo({ token, size = 24 }: { token: TokenView; size?: number }) {
+export function TokenLogo({ token, size = 24, sizeClass }: { token: TokenView; size?: number; sizeClass?: string }) {
   const logo = token.listed ? TOKEN_LOGOS[token.listed.faucetId] ?? token.listed.logoURI : undefined;
   if (logo) {
-    return <Image src={logo} alt="" width={size} height={size} unoptimized className="shrink-0 rounded-full" />;
+    return <Image src={logo} alt="" width={size} height={size} unoptimized className={`shrink-0 rounded-full ${sizeClass ?? ''}`} />;
   }
   return (
     <span
       aria-hidden
-      style={{ width: size, height: size, fontSize: Math.round(size * 0.42) }}
-      className="flex shrink-0 items-center justify-center rounded-full bg-[rgba(0,0,0,0.06)] font-[600] text-[rgba(0,0,0,0.55)]"
+      style={sizeClass ? undefined : { width: size, height: size, fontSize: Math.round(size * 0.42) }}
+      className={`flex shrink-0 items-center justify-center rounded-full bg-[rgba(0,0,0,0.06)] font-[600] text-[rgba(0,0,0,0.55)] ${sizeClass ?? ''}`}
     >
-      {token.symbol.slice(0, 1).toUpperCase()}
+      {token.status === 'error' ? '?' : token.symbol.slice(0, 1).toUpperCase()}
     </span>
   );
 }
@@ -45,12 +47,10 @@ export function TokenLogo({ token, size = 24 }: { token: TokenView; size?: numbe
  * units and the faucet id: never a guessed scale or a well-known name, so an
  * unknown token cannot pose as one.
  */
-export function TokenAmount({ faucetId, amount, className, showTag = true }: {
+export function TokenAmount({ faucetId, amount, className }: {
   faucetId: string;
   amount: bigint | string;
   className?: string;
-  /** Off where the token's name next to it already carries the tag. */
-  showTag?: boolean;
 }) {
   const token = useToken(faucetId);
   if (token.status === 'ready' && token.info) {
@@ -59,7 +59,7 @@ export function TokenAmount({ faucetId, amount, className, showTag = true }: {
         {formatTokenAmount(amount, token.info.decimals)}
         {/* The symbol stays with the amount and is never split, even where the amount may break. */}
         <span className="whitespace-nowrap break-normal">{'\u00A0'}{token.symbol}</span>
-        {showTag && token.verification === 'unverified' && <> <UnverifiedTag /></>}
+        {token.verification === 'unverified' && <> <UnverifiedTag /></>}
       </span>
     );
   }

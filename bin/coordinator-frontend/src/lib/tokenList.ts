@@ -160,3 +160,23 @@ export function sendableTokens<T extends { faucetId: string; amount: bigint }>(
   });
   return { tokens, pending };
 }
+
+/**
+ * The Assets order: the fee token, then listed tokens by name, then the rest
+ * as given; zero balances left out. Throws while the Miden SDK cannot convert IDs.
+ */
+export function holdingsOrder<T extends { faucetId: string; amount: bigint }>(
+  balances: readonly T[],
+  network: MidenNetwork,
+  nativeFaucetId: string | null,
+): T[] {
+  const ranked = balances
+    .filter((balance) => balance.amount > 0n)
+    .map((balance, index) => {
+      const isFee = nativeFaucetId !== null && balance.faucetId.toLowerCase() === nativeFaucetId.toLowerCase();
+      const listed = isFee ? undefined : listedToken(balance.faucetId, network);
+      return { balance, index, rank: isFee ? 0 : listed ? 1 : 2, name: listed?.name ?? '' };
+    });
+  ranked.sort((a, b) => a.rank - b.rank || (a.rank === 1 ? a.name.localeCompare(b.name) : a.index - b.index));
+  return ranked.map((entry) => entry.balance);
+}
