@@ -15,7 +15,12 @@ import {
   registerAccountOnNode,
 } from '@/lib/multisigApi';
 import { createPrivySigner } from '@/lib/privySigner';
+import { INVITE_ONLY, MIDEN_NETWORK } from '@/config/psm';
+import { accountAddress } from '@/lib/address';
+import { toHexAccountId } from '@/lib/helpers';
+import { assertAddressOnNetwork } from '@/lib/midenNetwork';
 import { storage } from '@/lib/storage';
+import { formatTokenAmount } from '@/lib/tokenAmounts';
 import { startMidenClient } from './WalletProvider';
 
 /**
@@ -33,8 +38,6 @@ export function emailRecoverySpike(): 'email-recovery' | 'email-key' | 'side-by-
 const NAMES = ['phone', 'telegram', 'email', 'newPhone'] as const;
 type Name = (typeof NAMES)[number];
 const KEY = (name: Name) => `miden-tg-wallet:spike-key:${name}`;
-// The development wallet: where test payments go.
-const PAY_TO = '0x425b318b78c4f6010e225b66b1c3e5';
 
 async function spikeSigner(name: Name): Promise<Signer> {
   let key = storage.get(KEY(name)) as Hex | null;
@@ -61,7 +64,7 @@ type Line = { step: string; result: string; ok: boolean };
  * (the email key from a Privy email login); `account` keeps that run's
  * account apart from the all-local one.
  */
-export function SpikeEmailRecovery({ overrides = {}, account = 'local', title = 'Email recovery spike (testnet)' }: {
+export function SpikeEmailRecovery({ overrides = {}, account = 'local', title = `Email recovery test (${MIDEN_NETWORK})` }: {
   overrides?: Partial<Record<Name, Signer>>;
   account?: string;
   title?: string;
@@ -69,6 +72,11 @@ export function SpikeEmailRecovery({ overrides = {}, account = 'local', title = 
   const ACCOUNT = `miden-tg-wallet:spike-account:${account}`;
   const [lines, setLines] = useState<Line[]>([]);
   const [busy, setBusy] = useState(false);
+  // Mainnet: the test account registers with one of your invite codes, and
+  // its test payments go to a real address of this network (yours by default).
+  const [inviteCode, setInviteCode] = useState('');
+  const [payTo, setPayTo] = useState('');
+  const [testAddress, setTestAddress] = useState<string | null>(null);
   const ctx = useRef<{
     client?: MidenClient;
     multisigClient?: ReturnType<typeof createMultisigClient>;
@@ -146,6 +154,11 @@ export function SpikeEmailRecovery({ overrides = {}, account = 'local', title = 
 
   const create = () => run('Create 2-of-3 account (collect: 1)', async () => {
     const { client, multisigClient, signers } = await setup();
+    const code = inviteCode.trim();
+    if (INVITE_ONLY) {
+      if (!code) throw new Error('Enter an invite code first (this network is invite-only).');
+      if (!(await client.accounts.isInvitationCodeValid(code))) throw new Error('That invite code isn’t valid, or it was already used.');
+    }
     const ms = await createWalletAccount(multisigClient, signers.phone, {}, {
       signerCommitments: [signers.phone.commitment, signers.telegram.commitment, signers.email.commitment],
       threshold: 2,
@@ -155,13 +168,37 @@ export function SpikeEmailRecovery({ overrides = {}, account = 'local', title = 
     storage.set(ACCOUNT, ms.accountId);
     ctx.current.instances = { phone: ms };
     await registerAccountNoteTag(client, ms.accountId);
-    await registerAccountOnNode(client, ms.accountId);
-    return `account ${ms.accountId}, registered (the network funds it)`;
+    await registerAccountOnNode(client, ms.accountId, code || undefined);
+    setTestAddress(accountAddress(ms.accountId));
+    return MIDEN_NETWORK === 'testnet'
+      ? `account ${ms.accountId}, registered (the network funds it)`
+      : `account ${accountAddress(ms.accountId)}, registered. Send it about 0.1 USDCX for fees, then Status.`;
+  });
+
+  /** Where test payments go: an address of this network; never a guess. */
+  const payTarget = (): string => {
+    const value = payTo.trim();
+    if (!value) throw new Error('Set where test payments go first (“Use my PrivPay wallet” or an address).');
+    assertAddressOnNetwork(value, MIDEN_NETWORK);
+    return toHexAccountId(value);
+  };
+
+  const useMyWallet = () => run('Test payments go to your PrivPay wallet', async () => {
+    const { multisigClient, signers } = await setup();
+    const testId = storage.get(ACCOUNT)?.toLowerCase();
+    const mine = (await multisigClient.recoverByKey(signers.telegram))
+      .filter((m) => m.accountId.toLowerCase() !== testId)
+      .sort((a, b) => Date.parse(b.state.updatedAt) - Date.parse(a.state.updatedAt))[0];
+    if (!mine) throw new Error('No PrivPay wallet found for your Telegram key on this network. Paste an address instead.');
+    setPayTo(accountAddress(mine.accountId));
+    return accountAddress(mine.accountId);
   });
 
   const status = () => run('Status', async () => {
     const ms = await as('phone');
-    const balances = AccountInspector.fromAccount(ms.account).vaultBalances.map((b) => `${b.amount}`).join(', ') || '0';
+    setTestAddress(accountAddress(ms.accountId));
+    const balances = AccountInspector.fromAccount(ms.account).vaultBalances
+      .map((b) => `${formatTokenAmount(b.amount, 6)} (${b.faucetId.slice(0, 8)}…)`).join(', ') || '0';
     const notes = await ms.getConsumableNotes();
     const signers = await ms.getSignerPublicKeyCommitments();
     const overrides = [...ms.procedureThresholds.entries()].map(([p, t]) => `${p}=${t}`).join(' ');
@@ -184,7 +221,7 @@ export function SpikeEmailRecovery({ overrides = {}, account = 'local', title = 
     await caughtUp(ms);
     const faucet = AccountInspector.fromAccount(ms.account).vaultBalances[0]?.faucetId;
     if (!faucet) throw new Error('no balance yet: collect first');
-    const proposal = await ms.createP2idProposal(PAY_TO, faucet, 10_000n);
+    const proposal = await ms.createP2idProposal(payTarget(), faucet, 10_000n);
     ctx.current.pending = proposal.id;
     await ms.signProposal(proposal.id);
     await ms.executeProposal(proposal.id);
@@ -250,7 +287,21 @@ export function SpikeEmailRecovery({ overrides = {}, account = 'local', title = 
     <main className="screen" style={{ display: 'grid', gap: 8 }}>
       <div className="page-title">{title}</div>
       {button('1. Show keys', keys)}
+      {INVITE_ONLY && (
+        <input className="field" placeholder="Invite code for the test account" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+      )}
       {button('2. Create 2-of-3 account', create)}
+      {testAddress && (
+        <div className="cell">
+          <span className="cell-main">
+            <span className="cell-title">Test account (fund it with ~0.1 USDCX)</span>
+            <span className="cell-sub wrap selectable">{testAddress}</span>
+          </span>
+          <button className="text-btn small" onClick={() => void navigator.clipboard.writeText(testAddress)}>Copy</button>
+        </div>
+      )}
+      <input className="field" placeholder="Test payments go to (mm1… address)" value={payTo} onChange={(e) => setPayTo(e.target.value)} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+      {button('Use my PrivPay wallet', useMyWallet)}
       {button('3. Status', status)}
       {button('4. Collect with phone only (expect OK)', () => collect('phone'))}
       {button('5. Pay with phone only (expect refused)', () => payOne('phone'))}
