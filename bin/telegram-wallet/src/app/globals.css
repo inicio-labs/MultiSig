@@ -335,5 +335,5 @@ button.cell:active { background: var(--bg); }
 .invite-code::placeholder { letter-spacing: normal; }
 
 /* Receive with pay-by-@username on: the username leads. */
-.handle-card { text-align: center; padding: 18px 12px 6px; }
+.handle-card { text-align: center; padding: 2px 12px 4px; }
 .user-handle { font-size: 28px; font-weight: 700; letter-spacing: -0.01em; word-break: break-all; }

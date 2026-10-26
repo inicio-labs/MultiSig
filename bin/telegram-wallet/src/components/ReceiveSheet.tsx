@@ -47,10 +47,8 @@ export function ReceiveSheet({ open, onClose, hidden, onCollected }: {
   const [collecting, setCollecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const directory = useDirectory(snapshot.accountId);
-  // Paid by @username: lead with it; the long address waits behind a tap.
+  // Paid by @username: show it instead of the long address.
   const byUsername = directory.available && directory.on && Boolean(directory.username);
-  const [showAddress, setShowAddress] = useState(false);
-  useEffect(() => { if (!open) setShowAddress(false); }, [open]);
   const copyUsername = () => {
     if (!directory.username) return;
     void navigator.clipboard.writeText(`@${directory.username}`).then(
@@ -138,26 +136,16 @@ export function ReceiveSheet({ open, onClose, hidden, onCollected }: {
 
       {byUsername ? (
         <>
-          {/* Paid by @username: that is what people need; the address is for other wallets. */}
+          {/* Paid by @username: the QR is for other wallets, the username for friends on PrivPay. */}
+          {qr ? <img className="qr" src={qr} alt="QR code of your address" /> : <div className="qr" />}
           <div className="handle-card">
+            <div className="sub">Your friends can pay you through</div>
             <div className="user-handle">@{directory.username}</div>
-            <div className="sub">Friends on PrivPay pay you by your username.</div>
           </div>
           <div className="chips">
             <button className="chip" onClick={copyUsername}><Icon name="copy" />Copy</button>
             <button className="chip" onClick={share}><Icon name="share" />Share</button>
           </div>
-          {showAddress ? (
-            <>
-              {qr ? <img className="qr" src={qr} alt="QR code of your address" /> : <div className="qr" />}
-              <button className="addr-full" onClick={copy}>{address}</button>
-              <div className="chips">
-                <button className="chip" onClick={copy}><Icon name="copy" />Copy address</button>
-              </div>
-            </>
-          ) : (
-            <button className="text-btn" onClick={() => { haptic('light'); setShowAddress(true); }}>Show my Miden address</button>
-          )}
         </>
       ) : (
         <>
