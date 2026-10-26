@@ -16,9 +16,10 @@ const STEPS: Record<WalletActivity['kind'], Array<{ label: string; covers: Activ
     { label: 'Confirming it’s you', covers: ['preparing', 'signing'] },
     { label: 'Adding it to your balance', covers: ['proving', 'delivering', 'syncing'] },
   ],
+  // Setup is several transactions: the sheet passes `signing` until the last one.
   recovery: [
-    { label: 'Confirming it’s you', covers: ['preparing', 'signing'] },
-    { label: 'Turning on recovery', covers: ['proving', 'delivering', 'syncing'] },
+    { label: 'Adding this phone and your email', covers: ['preparing', 'signing'] },
+    { label: 'Turning recovery on', covers: ['proving', 'delivering', 'syncing'] },
   ],
 };
 

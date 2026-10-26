@@ -27,6 +27,7 @@ import {
   scanQr,
   useTelegramSettingsButton,
 } from '@/lib/telegram';
+import { storage } from '@/lib/storage';
 import { timeAgo } from '@/lib/timeAgo';
 import { formatTokenAmount, getTokenInfo } from '@/lib/tokenAmounts';
 import type { ActivityItem } from '@/lib/walletEngine';
@@ -40,6 +41,8 @@ import { Icon } from './Icon';
 import { ReceiveSheet, type Collected } from './ReceiveSheet';
 import { isScannedAddress, SendSheet } from './SendSheet';
 import { SettingsSheet } from './SettingsSheet';
+import { canSetUpRecoveryHere, RecoverySheet, type RecoveryFrom } from './RecoverySheet';
+import { RecoveryNudgeSheet } from './RecoveryNudgeSheet';
 import { TokenAmount } from './TokenAmount';
 import { ToastProvider, useToast } from './Toast';
 import { WalletCard } from './WalletCard';
@@ -61,7 +64,8 @@ export function Screens() {
 function WalletHome() {
   const { engine, snapshot } = useWallet();
   const toast = useToast();
-  const [view, setView] = useState<'home' | 'send' | 'receive' | 'settings' | 'alerts'>('home');
+  const [view, setView] = useState<'home' | 'send' | 'receive' | 'settings' | 'alerts' | 'recovery' | 'recovery-nudge'>('home');
+  const [recoveryFrom, setRecoveryFrom] = useState<RecoveryFrom>('settings');
   const [prefill, setPrefill] = useState<string | null>(null);
   const [cardGone, setCardGone] = useState(false);
   const [away, setAway] = useState(false);
@@ -129,13 +133,38 @@ function WalletHome() {
     can: alertsLoaded && askedLoaded && alerts === false && alertsAsked === false && alertsAvailable(),
     view,
   };
+  // One nudge per open, recovery first (it guards the money), alerts next.
+  const nudgedThisOpen = useRef(false);
+  const recoveryOff = snapshot.recovery.kind === 'off' || snapshot.recovery.kind === 'partial';
   const offerAlertsAfterCollect = () => {
     const delay = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 1200 : 2400;
     setTimeout(() => {
       const { can, view: now } = nudge.current;
       // Another sheet open, or the app in the background: next collect.
-      if (can && now === 'home' && document.visibilityState === 'visible') setView('alerts');
+      if (nudgedThisOpen.current || now !== 'home' || document.visibilityState !== 'visible') return;
+      if (recoveryOff && canSetUpRecoveryHere() && recoveryNudgeDue(accountId)) {
+        nudgedThisOpen.current = true;
+        markRecoveryNudged(accountId);
+        setView('recovery-nudge');
+      } else if (can) {
+        nudgedThisOpen.current = true;
+        setView('alerts');
+      }
     }, delay);
+  };
+  const openRecovery = (from: RecoveryFrom) => {
+    haptic('light');
+    setRecoveryFrom(from);
+    setView('recovery');
+  };
+  const answerRecoveryNudge = (setUp: boolean) => {
+    setView('home');
+    // After the sheet has slid away.
+    if (setUp) setTimeout(() => openRecovery('nudge'), 350);
+  };
+  const recoveryDone = () => {
+    // From the send gate: back to the send, which kept what was typed.
+    setView(recoveryFrom === 'send' ? 'send' : 'home');
   };
   const answerAlerts = (turnOn: boolean) => {
     setAlertsAsked(true);
@@ -397,10 +426,18 @@ function WalletHome() {
         <FirstPaintSaver balance={main} history={snapshot.history} name={name} address={address ? shortAddress(address) : ''} contacts={contacts} />
       )}
       <CoinBurst burst={burst} />
-      <SendSheet open={view === 'send'} prefill={prefill} onClose={() => setView('home')} />
-      <ReceiveSheet open={view === 'receive'} onClose={() => setView('home')} hidden={hidden} onCollected={collected} />
-      <SettingsSheet open={view === 'settings'} onClose={() => setView('home')} accountId={snapshot.accountId} />
+      <SendSheet open={view === 'send'} prefill={prefill} onClose={() => setView('home')} onSetUpRecovery={canSetUpRecoveryHere() ? () => openRecovery('send') : undefined} />
+      <ReceiveSheet
+        open={view === 'receive'}
+        onClose={() => setView('home')}
+        hidden={hidden}
+        onCollected={collected}
+        onSetUpRecovery={canSetUpRecoveryHere() ? () => openRecovery('receive') : undefined}
+      />
+      <SettingsSheet open={view === 'settings'} onClose={() => setView('home')} accountId={snapshot.accountId} onRecovery={() => openRecovery('settings')} />
       <AlertsNudgeSheet open={view === 'alerts'} firstPayment={firstPayment} onAnswer={answerAlerts} />
+      <RecoveryNudgeSheet open={view === 'recovery-nudge'} firstPayment={firstPayment} onAnswer={answerRecoveryNudge} />
+      {ready && <RecoverySheet open={view === 'recovery'} from={recoveryFrom} onClose={() => setView('home')} onDone={recoveryDone} />}
       {inviting && <InviteScreen />}
       {/* A new phone or user (nothing saved): a plain loading screen until the
           wallet is found, never an empty home that then turns into Welcome. */}
@@ -443,4 +480,18 @@ function FirstPaintSaver({ balance, history, name, address, contacts }: {
     });
   }, [balance, history, name, address, token, contacts]);
   return null;
+}
+
+// The recovery nudge comes back at most once a week (Receive, Send and Settings keep a way to it).
+const RECOVERY_NUDGE_KEY = 'miden-tg-wallet:recovery-nudged:';
+const RECOVERY_NUDGE_EVERY_MS = 7 * 24 * 60 * 60 * 1000;
+
+function recoveryNudgeDue(accountId: string | null): boolean {
+  if (!accountId) return false;
+  const at = Number(storage.get(RECOVERY_NUDGE_KEY + accountId.toLowerCase()));
+  return !(at > 0) || Date.now() - at >= RECOVERY_NUDGE_EVERY_MS;
+}
+
+function markRecoveryNudged(accountId: string | null): void {
+  if (accountId) storage.set(RECOVERY_NUDGE_KEY + accountId.toLowerCase(), String(Date.now()));
 }

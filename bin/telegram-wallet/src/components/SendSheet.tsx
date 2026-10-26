@@ -18,6 +18,7 @@ import { reportDiag } from '@/lib/remoteDiag';
 import { canScanQr, haptic, onAppActiveChange, onDesktop, scanQr, shareText, telegramBiometrics } from '@/lib/telegram';
 import { PhoneKeyNotConfirmed } from '@/lib/phoneKey';
 import { thisPhone } from '@/lib/thisPhone';
+import { useBiometricName } from './RecoverySheet';
 import { formatTokenAmount, parseTokenAmount } from '@/lib/tokenAmounts';
 import { Icon } from './Icon';
 import { ProgressSteps } from './ProgressSteps';
@@ -105,7 +106,13 @@ function cleanAmount(raw: string, decimals: number): string {
  * keyboard (the sheet rides on top of it), private by default, and a slide to
  * send. Swipe down to cancel, like Receive.
  */
-export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: string | null; onClose(): void }) {
+export function SendSheet({ open, prefill, onClose, onSetUpRecovery }: {
+  open: boolean;
+  prefill: string | null;
+  onClose(): void;
+  /** Opens recovery setup (the send gate); the send is kept and comes back after. */
+  onSetUpRecovery?(): void;
+}) {
   const { engine, snapshot } = useWallet();
   const amountInput = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<Step>('to');
@@ -140,6 +147,13 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
   const balance = balances.find((b) => b.faucetId === faucetId);
   const token = useTokenInfo(faucetId || '0x0');
   const decimals = token.status === 'ready' ? token.info.decimals : 0;
+  // From $20 (USDCX), sending needs recovery (recovery.ts); a heads-up from $15.
+  const recoveryOff = snapshot.recovery.kind === 'off' || snapshot.recovery.kind === 'partial';
+  const dollars = (n: number) => BigInt(n) * 10n ** BigInt(decimals);
+  const held = balance?.amount ?? 0n;
+  const gated = Boolean(onSetUpRecovery) && recoveryOff && decimals > 0 && held >= dollars(20);
+  const soonGated = Boolean(onSetUpRecovery) && recoveryOff && decimals > 0 && !gated && held >= dollars(15);
+  const bio = useBiometricName();
   const symbol = token.status === 'ready' ? token.info.symbol : '';
 
   const recents = useMemo(() => {
@@ -246,6 +260,8 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
       return fail('Enter an amount');
     }
     if (units > balance.amount) return fail('That’s more than you have');
+    // Checked again at the slide: the balance may have grown since Send opened.
+    if (gated) return fail('Set up recovery first: sending from $20 needs it.');
     // Never the whole balance: the fee comes out of it too.
     const reserve = paysFee ? feeReserve(decimals) : 0n;
     if (units + reserve > balance.amount) {
@@ -342,7 +358,24 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
         </div>
       )}
 
-      {(!lock || lock === 'ok') && step === 'to' && (
+      {(!lock || lock === 'ok') && gated && (step === 'to' || step === 'amount') && (
+        <div className="center locked">
+          <div className="done locked-icon"><Icon name="lock" /></div>
+          <div className="page-title">Set up recovery to send</div>
+          <div className="sub">You now have $20 or more. To keep it safe, sending needs {bio} and a recovery email first.</div>
+          <div className="sub fine-center">About a minute. You can still receive and collect.</div>
+          <button className="btn" onClick={onSetUpRecovery}>Set up recovery</button>
+          <button className="text-btn" onClick={onClose}>Not now</button>
+        </div>
+      )}
+
+      {(!lock || lock === 'ok') && !gated && soonGated && step === 'to' && (
+        <div className="sub fine-center">
+          From $20, sending needs recovery · <button className="text-link" onClick={onSetUpRecovery}>Set up</button>
+        </div>
+      )}
+
+      {(!lock || lock === 'ok') && !gated && step === 'to' && (
         <>
           <div className="page-title">Send</div>
           <div className="field-wrap">
@@ -415,7 +448,7 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
         </>
       )}
 
-      {(!lock || lock === 'ok') && step === 'amount' && recipient && (
+      {(!lock || lock === 'ok') && !gated && step === 'amount' && recipient && (
         <>
           <div className="page-title">To <span className="to-addr">{recipient.label ?? shortAddress(recipient.address)}</span></div>
           <button key={shake} className={`amount${shake ? ' shake' : ''}`} onClick={() => amountInput.current?.focus()}>

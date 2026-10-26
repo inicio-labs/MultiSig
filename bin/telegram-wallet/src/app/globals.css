@@ -364,6 +364,28 @@ button.cell:active { background: var(--bg); }
   .env, .env-note { animation: none; }
   .env-flap { animation: none; transform: rotateX(180deg); z-index: 1; }
 }
+/* Recovery setup (RecoverySheet.tsx) and its email box (RecoveryEmailBox.tsx). */
+.stepper { display: flex; justify-content: center; gap: 6px; padding-top: 4px; }
+.stepper span { width: 22px; height: 4px; border-radius: 2px; background: var(--line); transition: background .2s; }
+.stepper span.on { background: var(--or); }
+.email-frame { width: 100%; border: 0; display: block; background: transparent; color-scheme: light; }
+.trust-line { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 13px; color: var(--hint); }
+.code-actions { display: flex; justify-content: space-between; }
+.text-link { color: var(--or-press); font-weight: 700; }
+.locks { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.locks span { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 999px; background: var(--surface); font-size: 13px; font-weight: 600; }
+.set-row { width: 100%; text-align: left; }
+.set-row:disabled { opacity: 1; }
+html.email-box-page, html.email-box-page body { background: transparent; }
+.email-box { padding: 2px 0; }
+.email-box .field { width: 100%; }
+.email-box-skeleton { height: 52px; border-radius: 14px; background: var(--line); animation: pulse-skel 1.2s ease-in-out infinite; }
+@keyframes pulse-skel { 50% { opacity: .55; } }
+.code-boxes { position: relative; display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+.code-box { height: 52px; border-radius: 12px; background: var(--surface); box-shadow: inset 0 0 0 1.5px var(--line); display: grid; place-items: center; font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.code-box.is-next { box-shadow: inset 0 0 0 2px var(--or); }
+.code-input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; font-size: 16px; caret-color: transparent; }
+@media (prefers-reduced-motion: reduce) { .email-box-skeleton { animation: none; } }
 .progress { list-style: none; margin: 0; padding: 4px 4px 6px; display: grid; gap: 12px; }
 .progress-step { display: flex; align-items: center; gap: 12px; font-size: 16px; font-weight: 700; color: var(--hint); transition: color .2s; }
 .progress-step.is-now, .progress-step.is-done { color: var(--ink); }

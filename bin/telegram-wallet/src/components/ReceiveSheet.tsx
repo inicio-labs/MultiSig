@@ -34,12 +34,14 @@ export interface Collected {
   from: { x: number; y: number };
 }
 
-export function ReceiveSheet({ open, onClose, hidden, onCollected }: {
+export function ReceiveSheet({ open, onClose, hidden, onCollected, onSetUpRecovery }: {
   open: boolean;
   onClose(): void;
   /** Amounts blurred (hide amounts, or the app was in the background). */
   hidden: boolean;
   onCollected(collected: Collected): void;
+  /** Recovery is off: a quiet way to it under Collect. */
+  onSetUpRecovery?(): void;
 }) {
   const { engine, snapshot } = useWallet();
   const toast = useToast();
@@ -157,7 +159,13 @@ export function ReceiveSheet({ open, onClose, hidden, onCollected }: {
           </div>
           <p className="error">{error}</p>
           <button className="btn" onClick={collect} disabled={collecting || snapshot.activity !== null}>Collect</button>
-          <AlertsOffRow accountId={snapshot.accountId} />
+          {onSetUpRecovery && (snapshot.recovery.kind === 'off' || snapshot.recovery.kind === 'partial') ? (
+            <button className="alerts-row" onClick={onSetUpRecovery}>
+              <Icon name="lock" /><span className="hint">Recovery is off ·</span><strong>Set up</strong>
+            </button>
+          ) : (
+            <AlertsOffRow accountId={snapshot.accountId} />
+          )}
           <h2 className="set-head">Your address</h2>
         </>
       )}

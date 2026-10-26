@@ -21,6 +21,8 @@ import { EmailKeyFrame, emailRecoveryTest, EmailRecoveryTest } from './EmailReco
 import { installRemoteDiag } from '@/lib/remoteDiag';
 import { freshStart } from '@/lib/freshStart';
 import { hasSavedView, viewKeyFor } from '@/lib/savedView';
+import { recoveryEmailPage } from '@/lib/recoveryFrame';
+import { RecoveryEmailBox } from './RecoveryEmailBox';
 
 export default function App() {
   const [bridgeReady, setBridgeReady] = useState(false);
@@ -32,8 +34,15 @@ export default function App() {
   const [preview] = useState(() => hasSavedView(viewKeyFor(null)));
   // The screens format addresses with the Miden SDK, whose WebAssembly loads lazily.
   const [wasmReady, setWasmReady] = useState(false);
+  // The recovery email box, embedded from the recovery origin (recoveryFrame.ts): nothing else runs.
+  const [emailBox, setEmailBox] = useState<'privy' | 'dev' | null>(null);
 
   useEffect(() => {
+    const box = recoveryEmailPage();
+    if (box) {
+      setEmailBox(box);
+      return;
+    }
     installRemoteDiag();
     void initializeTelegramBridge().then(() => {
       // Mainnet's first open on this phone: no trace of testnet (freshStart.ts).
@@ -46,6 +55,7 @@ export default function App() {
     getWasmOrThrow().then(() => setWasmReady(true), (e: unknown) => console.warn('Miden WebAssembly failed to load', e));
   }, []);
 
+  if (emailBox) return <RecoveryEmailBox mode={emailBox} />;
   // The hidden email recovery test on the live site (?test=email-recovery in
   // Telegram, with ?test=email-key embedded from the recovery subdomain).
   const emailTest = bridgeReady ? emailRecoveryTest() : null;
