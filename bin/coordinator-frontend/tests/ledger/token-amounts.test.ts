@@ -88,3 +88,12 @@ describe('getTokenInfo (review finding 3)', () => {
     vi.doUnmock('@miden-sdk/miden-sdk');
   });
 });
+
+describe('formatTokenAmount, grouped for display', () => {
+  it('groups the whole part only and keeps the fraction exact', () => {
+    expect(formatTokenAmount(1250500000n, 6, { grouped: true })).toBe('1,250.5');
+    expect(formatTokenAmount(123456789012345678n, 8, { grouped: true })).toBe('1,234,567,890.12345678');
+    expect(formatTokenAmount(42000000n, 8, { grouped: true })).toBe('0.42');
+    expect(formatTokenAmount(1250500000n, 6)).toBe('1250.5');
+  });
+});

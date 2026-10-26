@@ -27,12 +27,14 @@ export function parseTokenAmount(input: string, decimals: number): bigint {
 }
 
 /** Formats base units as a decimal string, dropping trailing fractional zeros. */
-export function formatTokenAmount(units: bigint | string, decimals: number): string {
+export function formatTokenAmount(units: bigint | string, decimals: number, { grouped = false } = {}): string {
   const value = BigInt(units);
   const scale = 10n ** BigInt(decimals);
   const whole = value / scale;
   const fraction = decimals === 0 ? '' : (value % scale).toString().padStart(decimals, '0').replace(/0+$/, '');
-  return fraction ? `${whole}.${fraction}` : whole.toString();
+  // Grouping is for display only (1,250.5); inputs and parsing never see it.
+  const wholeText = grouped ? whole.toLocaleString('en-US') : whole.toString();
+  return fraction ? `${wholeText}.${fraction}` : wholeText;
 }
 
 /** What the UI needs to show a token amount. */

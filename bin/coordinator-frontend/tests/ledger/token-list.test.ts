@@ -6,6 +6,7 @@ import testnet from '../../src/config/tokenList/testnet.json';
 import {
   TOKEN_LIST_REFRESH_MS,
   hasTokenList,
+  holdingsOrder,
   listedToken,
   parseTokenList,
   refreshTokenList,
@@ -162,5 +163,24 @@ describe('refreshTokenList', () => {
     const fetchList = respond(mainnet);
     expect(await refreshTokenList('devnet', fetchList, 1_000)).toBe(false);
     expect(fetchList).not.toHaveBeenCalled();
+  });
+});
+
+describe('holdingsOrder', () => {
+  const hex = (symbol: string) => hexOf(mainnet.tokens.find((token) => token.symbol === symbol)!.faucetId);
+  const fee = '0xe69e6ca6e39df1b10c1e5399399feb';
+
+  it('puts the fee token first, then listed tokens by name, then the rest in their order; no zero balances', () => {
+    const balances = [
+      { faucetId: unlisted, amount: 7n },
+      { faucetId: hex('USDT'), amount: 5n },
+      { faucetId: '0x7cf0a4456218bfb111c55a10d5435a', amount: 3n },
+      { faucetId: hex('ETH'), amount: 2n },
+      { faucetId: fee, amount: 9n },
+      { faucetId: hex('WBTC'), amount: 0n },
+    ];
+    expect(holdingsOrder(balances, 'mainnet', fee).map((b) => b.faucetId)).toEqual([
+      fee, hex('ETH'), hex('USDT'), unlisted, '0x7cf0a4456218bfb111c55a10d5435a',
+    ]);
   });
 });

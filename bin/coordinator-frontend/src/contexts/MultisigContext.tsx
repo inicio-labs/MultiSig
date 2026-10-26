@@ -365,6 +365,9 @@ export interface TokenEnv {
   tokenListRevision: number;
 }
 
+/** Where the network's fee token is remembered between visits. */
+const FEE_TOKEN_KEY = `miden-fee-token:${MIDEN_NETWORK}`;
+
 const TokenEnvContext = createContext<TokenEnv>({ sdkReady: false, nativeFaucetId: null, tokenListRevision: 0 });
 
 export function useTokenEnv(): TokenEnv {
@@ -2490,10 +2493,21 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
   );
 
   // The fee token: the SDK reports it once the store has synced, whichever
-  // path synced it, so ask until it answers.
+  // path synced it, so ask until it answers. The answer is remembered for the
+  // network, as the Miden Wallet does, so a later visit knows it at once (and
+  // lists it first from the start); the SDK still confirms it every visit.
   const [nativeFaucetId, setNativeFaucetId] = useState<string | null>(null);
+  const [nativeFaucetConfirmed, setNativeFaucetConfirmed] = useState(false);
   useEffect(() => {
-    if (!midenClient || nativeFaucetId) return;
+    try {
+      const remembered = localStorage.getItem(FEE_TOKEN_KEY);
+      if (remembered) setNativeFaucetId((current) => current ?? remembered);
+    } catch {
+      /* no storage: the SDK's answer is enough */
+    }
+  }, []);
+  useEffect(() => {
+    if (!midenClient || nativeFaucetConfirmed) return;
     let cancelled = false;
     let retry: ReturnType<typeof setTimeout> | undefined;
     const ask = () => {
@@ -2501,10 +2515,17 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
         (faucet) => {
           const id = faucet.toString().toLowerCase();
           faucet.free();
-          if (!cancelled) setNativeFaucetId(id);
+          if (cancelled) return;
+          setNativeFaucetId(id);
+          setNativeFaucetConfirmed(true);
+          try {
+            localStorage.setItem(FEE_TOKEN_KEY, id);
+          } catch {
+            /* not remembered: asked again next visit */
+          }
         },
         () => {
-          if (!cancelled) retry = setTimeout(ask, 3000);
+          if (!cancelled) retry = setTimeout(ask, 1500);
         },
       );
     };
@@ -2513,7 +2534,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
       clearTimeout(retry);
     };
-  }, [midenClient, nativeFaucetId]);
+  }, [midenClient, nativeFaucetConfirmed]);
   // Miden's live token list: read when the app starts and on every receive
   // (the account's balances change), at most once a minute (tokenList.ts);
   // the copy shipped with the app stays in use when it can't be read.

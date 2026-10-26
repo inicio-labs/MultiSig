@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamicImport from "next/dynamic";
 import Sidebar from "./components/Sidebar";
@@ -27,6 +27,10 @@ export const dynamic = 'force-dynamic';
 
 function DashboardShell({ children }: Readonly<{ children: React.ReactNode }>) {
   const [collapsed, setCollapsed] = useState(false);
+  // On a phone the sidebar starts as its icon rail, leaving the page the width.
+  useEffect(() => {
+    if (window.matchMedia("(max-width: 767px)").matches) setCollapsed(true);
+  }, []);
   const router = useRouter();
   const {
     isSendModalOpen,

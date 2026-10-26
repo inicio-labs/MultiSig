@@ -22,16 +22,6 @@ export interface RecentTransactionsProps {
 }
 
 // Asset Components
-export interface FungibleAsset {
-  faucetId: string;
-  balance: string;
-}
-
-export interface TokenHoldingsProps {
-  fungibleAssets: FungibleAsset[];
-  isLoading: boolean;
-}
-
 // Notification Types
 export interface Notification {
   type: "success" | "error";
