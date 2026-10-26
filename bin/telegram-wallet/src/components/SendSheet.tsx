@@ -9,6 +9,7 @@ import { DEV_LOCAL_SIGNER } from '@/lib/devSigner';
 import { alertRecipient } from '@/lib/alerts';
 import { contactFor, contactLabel, matchContacts, saveContact, useContacts } from '@/lib/contacts';
 import { lookupUsername } from '@/lib/directory';
+import { usernameIn } from '@/lib/username';
 import { formatError } from '@/lib/errors';
 import { feeLabel } from '@/lib/fees';
 import { toHexAccountId } from '@/lib/helpers';
@@ -216,8 +217,11 @@ export function SendSheet({ open, prefill, onClose, onSetUpRecovery }: {
     ? matchContacts(contacts, input)
     : [];
 
-  // Typing @username: look it up after a short pause.
-  const handle = /^@[A-Za-z0-9_]{4,32}$/.test(input.trim()) ? input.trim() : null;
+  // Typing a username, with or without the @: look it up after a short pause.
+  const typed = input.trim();
+  const handle = usernameIn(typed);
+  // Without the @ it may be the start of something else: say "not found" only after an @.
+  const withAt = typed.startsWith('@');
   useEffect(() => {
     if (!handle) return setFound(null);
     setFound('looking');
@@ -381,13 +385,19 @@ export function SendSheet({ open, prefill, onClose, onSetUpRecovery }: {
           <div className="field-wrap">
             <input
               className="field"
-              placeholder="@username or Miden address"
+              placeholder="Username or Miden address"
               value={input}
               autoComplete="off"
               autoCapitalize="off"
               spellCheck={false}
               onChange={(e) => { setInput(e.target.value); setError(null); pick(e.target.value, { quiet: true }); }}
-              onKeyDown={(e) => e.key === 'Enter' && pick(input)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return;
+                // A username found in the directory: that person.
+                if (found && typeof found === 'object' && found.address !== snapshot.accountId?.toLowerCase()) {
+                  pick(found.address, { person: { name: found.name, username: found.username } });
+                } else pick(input);
+              }}
             />
             {canScanQr() && (
               <button className="field-icon" onClick={scan} aria-label="Scan a QR code"><Icon name="scan" /></button>
@@ -407,10 +417,10 @@ export function SendSheet({ open, prefill, onClose, onSetUpRecovery }: {
               ))}
             </div>
           )}
-          {handle && !(found && typeof found === 'object' && suggestions.some((c) => c.address === found.address)) && (
+          {handle && (withAt || found !== 'none') && !(found && typeof found === 'object' && suggestions.some((c) => c.address === found.address)) && (
             <div className="cells">
               {found === 'looking' && <div className="empty">Looking up {handle}…</div>}
-              {found === 'none' && <div className="empty">{handle} can’t be paid by username yet.</div>}
+              {found === 'none' && withAt && <div className="empty">{handle} can’t be paid by username yet.</div>}
               {found && typeof found === 'object' && (
                 found.address === snapshot.accountId?.toLowerCase() ? <div className="empty">That’s you</div> : (
                   <button className="cell" onClick={() => pick(found.address, { person: { name: found.name, username: found.username } })}>
