@@ -125,9 +125,19 @@ const TokenHoldings = ({ balances, loading }: { balances: readonly HeldToken[]; 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [balances, nativeFaucetId, sdkReady, tokenListRevision]);
 
+  // The fee token goes first, so the rows wait for it (remembered after the
+  // first visit) rather than appear and then move; at most 5 s.
+  const [waitedForFeeToken, setWaitedForFeeToken] = useState(false);
+  useEffect(() => {
+    if (nativeFaucetId) return;
+    const timer = setTimeout(() => setWaitedForFeeToken(true), 5000);
+    return () => clearTimeout(timer);
+  }, [nativeFaucetId]);
+  const placeholders = loading || (!nativeFaucetId && !waitedForFeeToken);
+
   return (
     <div className="rounded-[10px] border border-[rgba(0,0,0,0.08)] bg-white">
-      {loading ? (
+      {placeholders ? (
         <ul>
           {[0, 1, 2].map((i) => <SkeletonRow key={i} first={i === 0} />)}
         </ul>

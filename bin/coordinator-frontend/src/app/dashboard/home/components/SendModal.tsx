@@ -8,7 +8,7 @@ import { useFaucetDecimals } from "@/hooks/useFaucetDecimals";
 import { formatTokenAmount, parseTokenAmount } from "@/lib/tokenAmounts";
 import { MIDEN_NETWORK } from "@/config/psm";
 import { TokenPicker } from "@/components/TokenPicker";
-import { sendableTokens } from "@/lib/tokenList";
+import { holdingsOrder, sendableTokens } from "@/lib/tokenList";
 
 interface SendModalProps {
   open: boolean;
@@ -73,7 +73,9 @@ const SendModal = ({ open, onClose }: SendModalProps) => {
   const sendable = useMemo(() => {
     if (!sdkReady) return { tokens: [], pending: true };
     try {
-      return sendableTokens(vaultBalances, MIDEN_NETWORK, nativeFaucetId);
+      // In the Assets order: the fee token first, then listed tokens by name.
+      const offered = sendableTokens(vaultBalances, MIDEN_NETWORK, nativeFaucetId);
+      return { ...offered, tokens: holdingsOrder(offered.tokens, MIDEN_NETWORK, nativeFaucetId) };
     } catch {
       return { tokens: [], pending: true };
     }
