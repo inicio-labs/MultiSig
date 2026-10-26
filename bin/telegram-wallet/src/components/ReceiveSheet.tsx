@@ -140,7 +140,7 @@ export function ReceiveSheet({ open, onClose, hidden, onCollected }: {
         <>
           {/* Paid by @username: that is what people need; the address is for other wallets. */}
           <div className="handle-card">
-            <div className="handle">@{directory.username}</div>
+            <div className="user-handle">@{directory.username}</div>
             <div className="sub">Friends on PrivPay pay you by your username.</div>
           </div>
           <div className="chips">
