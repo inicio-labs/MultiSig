@@ -16,11 +16,6 @@ export interface PendingActionsProps {
   fixedHeight?: boolean;
 }
 
-export interface RecentTransactionsProps {
-  threshold: number;
-  fixedHeight?: boolean;
-}
-
 // Asset Components
 // Notification Types
 export interface Notification {

@@ -14,6 +14,7 @@ import {
   type SignatureScheme,
 } from '@openzeppelin/miden-multisig-client';
 import type { GuardianHttpClient, HistoryEntry, Signer } from '@openzeppelin/guardian-client';
+import { canonicalAt, TIMESTAMP_KEY } from './transactionHistory';
 import {
   AccountId,
   Endpoint,
@@ -183,21 +184,6 @@ export interface LatestPrivateNote {
   id: string;
   recipientId: string | undefined;
   note: Note;
-}
-
-/**
- * Guardian lists history newest-first by its storage key: `Date.now()` for
- * proposals made by TypeScript clients through 0.18.0, the account's next
- * nonce since 0.18.1. Old rows keep their keys, and a timestamp sorts above any
- * account nonce, so on an account used before the switch (or by a cosigner
- * still on 0.18.0) the first entries are not the latest transaction.
- */
-const TIMESTAMP_KEY = 1e12;
-
-function canonicalAt(entry: HistoryEntry): number {
-  // RFC 3339; Date.parse keeps milliseconds, so drop finer digits first.
-  const time = Date.parse(entry.timestamp.replace(/(\.\d{3})\d+/, '$1'));
-  return Number.isNaN(time) ? -Infinity : time;
 }
 
 /**

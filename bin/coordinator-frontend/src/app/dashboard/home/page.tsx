@@ -3,9 +3,10 @@ import { TokenAmount } from "@/components/TokenAmount";
 import React, { useMemo, useState } from "react";
 
 import PendingActions from "../components/PendingActions";
-import RecentTransactions from "../components/RecentTransactions";
+import TransactionHistory from "../components/TransactionHistory";
 import { useMultisig } from "@/contexts/MultisigContext";
 import { useDashboardUI } from "@/contexts/DashboardUIContext";
+import { useTransactionHistory } from "@/hooks/useTransactionHistory";
 import ApproveModal from "./components/ApproveModal";
 
 export const dynamic = 'force-dynamic';
@@ -14,6 +15,7 @@ const Page: React.FC = () => {
   const { detectedConfig } = useMultisig();
   const { openSendModal, openReceiveModal } = useDashboardUI();
   const [isApproveOpen, setIsApproveOpen] = useState(false);
+  const history = useTransactionHistory();
 
   const walletName = useMemo(() => {
     const saved = typeof window !== 'undefined' ? localStorage.getItem("walletFormData") : null;
@@ -120,9 +122,9 @@ const Page: React.FC = () => {
         <PendingActions threshold={threshold} fixedHeight={true} />
       </div>
 
-      {/* Recent Transactions */}
+      {/* Latest executed transactions */}
       <div className="p-2 md:p-4 flex-1">
-        <RecentTransactions threshold={threshold} fixedHeight={true} />
+        <TransactionHistory history={history} preview />
       </div>
 
       {/* Modal — Send/Receive are mounted globally in dashboard/layout.tsx so the chat assistant can open them from any page */}
