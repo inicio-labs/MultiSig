@@ -48,6 +48,24 @@ export function gateView(input: GateInput): GateView {
   return { kind: 'connecting', wallet: input.walletSource };
 }
 
+/**
+ * Whether the gate opens the saved account for this wallet now: once per
+ * wallet connection (`walletKey` = account|source|key). The key the account was
+ * open with stays "tried" after the account closes (a session end, a deliberate
+ * close), so the same wallet opens it again only on a click; another wallet
+ * that connects opens it at once.
+ */
+export function shouldOpenSavedAccount(input: {
+  accountOpen: boolean;
+  loading: boolean;
+  savedId: string | null;
+  walletKey: string | null;
+  triedKey: string | null;
+}): boolean {
+  return !input.accountOpen && !input.loading && Boolean(input.savedId) && input.walletKey !== null
+    && input.walletKey !== input.triedKey;
+}
+
 export const WALLET_NAME: Record<WalletSource, string> = {
   'miden-wallet': 'Miden Wallet',
   para: 'Para',

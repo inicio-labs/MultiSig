@@ -127,7 +127,9 @@ export function useTransactionHistory() {
     setLoading(true);
     setError(null);
     try {
-      const first = await readFirstShared(multisig, key, automatic ? quietRead(sessionHeld) : userRead);
+      // Keyed by kind too: a click during an automatic read gets its own read,
+      // which may ask the wallet, not the quiet one that stops without a session.
+      const first = await readFirstShared(multisig, `${key}:${automatic ? 'quiet' : 'user'}`, automatic ? quietRead(sessionHeld) : userRead);
       if (run.current !== id) return;
       lastLoaded = { accountId: multisig.accountId, nonce, ...first };
       setLoaded(lastLoaded);

@@ -270,11 +270,19 @@ export class GuardianSessionManager {
 
   private ended(guardian: GuardianHttpClient, session: GuardianSession, reason: SessionEndReason): void {
     if (this.sessions.get(guardian) !== session) return;
-    this.sessions.delete(guardian);
-    if (reason !== 'logout' && this.sessions.size === 0) {
-      clearTimeout(this.expiryTimer);
-      this.deps.onState({ phase: 'ended', reason });
+    if (reason === 'logout') {
+      this.sessions.delete(guardian);
+      return;
     }
+    // Every client holds the same session key: expired, revoked or refused for
+    // one, it is dead for all. Stop using it everywhere (else the others would
+    // keep a session Guardian refuses while the app shows it as active) and
+    // forget the stored key.
+    clearTimeout(this.expiryTimer);
+    for (const [other, held] of [...this.sessions]) stopUsing(other, held);
+    this.sessions.clear();
+    void this.store().remove(session.storeId, session.publicKey).catch(() => {});
+    this.deps.onState({ phase: 'ended', reason });
   }
 
   /** The state of the sessions held now, with a timer for their expiry. */

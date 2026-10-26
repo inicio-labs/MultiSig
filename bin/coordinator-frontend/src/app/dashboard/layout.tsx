@@ -13,6 +13,7 @@ import "medina-agent/styles.css";
 import AccountStatusBanner from "./components/AccountStatusBanner";
 import AccountGate from "./components/AccountGate";
 import { StoreResetNotice } from "@/components/ClientStartupNotice";
+import { useMultisig } from "@/contexts/MultisigContext";
 
 const CHAT_ENDPOINT = process.env.NEXT_PUBLIC_CHAT_ENDPOINT?.trim() ?? "";
 
@@ -33,6 +34,7 @@ function DashboardShell({ children }: Readonly<{ children: React.ReactNode }>) {
     if (window.matchMedia("(max-width: 767px)").matches) setCollapsed(true);
   }, []);
   const router = useRouter();
+  const { multisig } = useMultisig();
   const {
     isSendModalOpen,
     openSendModal,
@@ -42,6 +44,13 @@ function DashboardShell({ children }: Readonly<{ children: React.ReactNode }>) {
     closeReceiveModal,
     setSettingsTab,
   } = useDashboardUI();
+
+  // Send and Receive belong to the open account: they close with it (a session end).
+  useEffect(() => {
+    if (multisig) return;
+    closeSendModal();
+    closeReceiveModal();
+  }, [multisig, closeSendModal, closeReceiveModal]);
 
   const handleChatAction = useCallback(
     (actionType: ActionType) => {

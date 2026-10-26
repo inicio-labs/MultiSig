@@ -1,9 +1,8 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { useParaMiden } from '@miden-sdk/para-react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useAccount, useClient } from '@getpara/react-sdk-lite';
 import { tryComputeEcdsaCommitmentHex, EcdsaFormat } from '@openzeppelin/miden-multisig-client';
-import { MIDEN_RPC_URL } from '@/config/psm';
 import type { ExternalWalletState } from '@/wallets/types';
 
 interface WalletWithPublicKey {
@@ -41,10 +40,16 @@ export function useParaSession() {
     scheme: null,
   });
 
-  const paraMiden = useParaMiden(MIDEN_RPC_URL, 'public', {}, false);
+  // Para's own hooks, not @miden-sdk/para-react's useParaMiden: that one also
+  // builds a second Miden client and wallet account on every Para login (a
+  // second SDK start and chain sync, against the testnet note transport unless
+  // told otherwise, which the CSP blocks on mainnet: it then fails, says "Para
+  // connection failed" and starts over whenever the wallet list changes). The
+  // app uses Para only to sign: the client and the EVM wallets are all it needs.
+  const paraClient = useClient();
+  const { embedded } = useAccount();
+  const evmWallets = useMemo(() => embedded.wallets?.filter((wallet) => wallet.type === 'EVM'), [embedded.wallets]);
   const derivingRef = useRef(false);
-
-  const { para: paraClient, evmWallets, error: paraError } = paraMiden;
 
   useEffect(() => {
     if (!evmWallets?.length) {
@@ -87,8 +92,6 @@ export function useParaSession() {
   return {
     session,
     paraClient,
-    paraMiden,
-    error: paraError || null,
     getWalletId,
   };
 }

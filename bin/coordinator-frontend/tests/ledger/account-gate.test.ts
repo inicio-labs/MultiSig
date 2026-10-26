@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { gateView, type GateInput } from '../../src/lib/accountGate';
+import { gateView, shouldOpenSavedAccount, type GateInput } from '../../src/lib/accountGate';
 import { readAccountSnapshot, saveAccountSnapshot, type AccountSnapshot } from '../../src/lib/accountSnapshot';
 import { whenWalletInstalled } from '../../src/lib/walletReconnect';
 
@@ -61,6 +61,34 @@ function memoryStorage() {
   const items = new Map<string, string>();
   return { getItem: (key: string) => items.get(key) ?? null, setItem: (key: string, value: string) => void items.set(key, value), items };
 }
+
+describe('opening the saved account once per wallet connection', () => {
+  const open = (walletKey: string | null, triedKey: string | null, extra: Partial<Parameters<typeof shouldOpenSavedAccount>[0]> = {}) =>
+    shouldOpenSavedAccount({ accountOpen: false, loading: false, savedId: ID, walletKey, triedKey, ...extra });
+
+  it('opens it when a wallet connects, once', () => {
+    expect(open(`${ID}|miden-wallet|0xkey`, null)).toBe(true);
+    expect(open(`${ID}|miden-wallet|0xkey`, `${ID}|miden-wallet|0xkey`)).toBe(false);
+  });
+
+  it('after a session end the same wallet waits for the click, but another wallet that connects opens it', () => {
+    const openWith = `${ID}|miden-wallet|0xkey`; // tried while the account was open
+    expect(open(openWith, openWith)).toBe(false);
+    expect(open(`${ID}|para|0xpara`, openWith)).toBe(true);
+  });
+
+  it('never while loading, already open, without a wallet or a saved account', () => {
+    expect(open('k', null, { loading: true })).toBe(false);
+    expect(open('k', null, { accountOpen: true })).toBe(false);
+    expect(open(null, null)).toBe(false);
+    expect(open('k', null, { savedId: null })).toBe(false);
+  });
+
+  it('keeps "Session ended" (not "Opening…") while another wallet is being connected and not yet loading', () => {
+    // The original wallet is still connected and was tried; the user picked Para and cancelled.
+    expect(gateView({ ...base, walletConnected: true, sessionEnded: true })).toEqual({ kind: 'session-ended', wallet: 'miden-wallet' });
+  });
+});
 
 describe('the account as this browser last saw it', () => {
   const snapshot: AccountSnapshot = {

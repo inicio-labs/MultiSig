@@ -17,6 +17,20 @@ export const MIN_SYNC_GAP_MS = 20_000;
 export const SESSION_MARGIN_MS = 60_000;
 /** Background failures stay silent until this many in a row. */
 export const FAILURES_BEFORE_ERROR = 3;
+/** How long an operation waits for a background sync in flight before going ahead anyway. */
+export const BACKGROUND_WAIT_MS = 15_000;
+
+/**
+ * Waits for `run` (a background sync in flight) to settle, at most `ms`: an
+ * operation must not hang on a request that never answers. Going ahead is safe
+ * then: the sync drops its results once the operation shows as busy.
+ */
+export function settleWithin(run: Promise<unknown> | null | undefined, ms = BACKGROUND_WAIT_MS): Promise<void> {
+  if (!run) return Promise.resolve();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const limit = new Promise<void>((resolve) => { timer = setTimeout(resolve, ms); });
+  return Promise.race([run.then(() => undefined, () => undefined), limit]).finally(() => clearTimeout(timer));
+}
 
 export interface BackgroundSyncInput {
   accountOpen: boolean;

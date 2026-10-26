@@ -10,6 +10,17 @@ interface ReadyEvents {
   off(event: 'readyStateChange', listener: (state: WalletReadyState) => void): unknown;
 }
 
+/** Set when the user disconnects the Miden Wallet: it is not reconnected on its own until they connect it again. */
+export const MIDEN_WALLET_DISCONNECTED = 'miden-wallet-disconnected';
+
+export function midenWalletDisconnectedByUser(): boolean {
+  try {
+    return Boolean(localStorage.getItem(MIDEN_WALLET_DISCONNECTED));
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Runs `ask` once the adapter has found the wallet extension: at once when it
  * already has, else on its readyStateChange to Installed. The adapter looks

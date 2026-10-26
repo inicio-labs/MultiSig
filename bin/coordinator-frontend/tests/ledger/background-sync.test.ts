@@ -1,8 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   BACKGROUND_SYNC_MS,
   MIN_SYNC_GAP_MS,
+  BACKGROUND_WAIT_MS,
   SESSION_MARGIN_MS,
+  settleWithin,
   shouldBackgroundSync,
   type BackgroundSyncInput,
 } from '../../src/lib/backgroundSync';
@@ -60,5 +62,28 @@ describe('syncing on its own, without asking the wallet', () => {
     expect(shouldBackgroundSync({ ...ready, accountOpen: false })).toBe(false);
     expect(shouldBackgroundSync({ ...ready, lastSyncAt: now - MIN_SYNC_GAP_MS + 1 })).toBe(false);
     expect(shouldBackgroundSync({ ...ready, lastSyncAt: now - MIN_SYNC_GAP_MS })).toBe(true);
+  });
+});
+
+describe('an operation waits for a background sync in flight, but not forever', () => {
+  it('goes ahead as soon as the sync settles, failed or not', async () => {
+    await expect(settleWithin(Promise.resolve())).resolves.toBeUndefined();
+    await expect(settleWithin(Promise.reject(new Error('node down')))).resolves.toBeUndefined();
+    await expect(settleWithin(null)).resolves.toBeUndefined();
+  });
+
+  it('goes ahead after the limit when the sync never answers', async () => {
+    vi.useFakeTimers();
+    try {
+      let done = false;
+      const waiting = settleWithin(new Promise(() => {})).then(() => { done = true; });
+      await vi.advanceTimersByTimeAsync(BACKGROUND_WAIT_MS - 1);
+      expect(done).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await waiting;
+      expect(done).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

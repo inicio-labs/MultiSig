@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { keepIfSame, sameData } from '../../src/lib/stableState';
+import { copyUnlessSame, keepIfSame, sameData } from '../../src/lib/stableState';
 
 const config = () => ({
   threshold: 2,
@@ -53,5 +53,24 @@ describe('a sync that finds nothing new leaves the screen alone', () => {
     expect(sameData(new Thing(1), new Thing(1))).toBe(false);
     const thing = new Thing(1);
     expect(sameData(thing, thing)).toBe(true);
+  });
+});
+
+describe('state holds copies the SDK cannot change', () => {
+  it('a later in-place change to the SDK object is seen as a change, not hidden', () => {
+    const sdkObject = proposal(['0xa']);
+    const shown = copyUnlessSame([] as ReturnType<typeof proposal>[], [sdkObject]);
+    // The SDK re-checks the proposal and records the outcome on its own object.
+    (sdkObject as { verification: object }).verification = { status: 'failed', retryable: true, message: 'stale' };
+    expect(shown[0].verification).toEqual({ status: 'verified' });
+    // The next read carries the change, and the copy shown differs from it.
+    const next = [proposal(['0xa'])];
+    (next[0] as { verification: object }).verification = { status: 'failed', retryable: true, message: 'stale' };
+    expect(keepIfSame(next)(shown)).toBe(next);
+  });
+
+  it('keeps the very same state when an update returns it', () => {
+    const shown = [proposal(['0xa'])];
+    expect(copyUnlessSame(shown, shown)).toBe(shown);
   });
 });
