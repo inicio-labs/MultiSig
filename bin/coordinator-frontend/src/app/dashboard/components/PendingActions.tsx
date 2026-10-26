@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import media from "../../../../public/media";
 import { useMultisig } from "@/contexts/MultisigContext";
 import { PendingActionsProps } from "@/types";
-import { getProposalActionState } from "@/lib/proposalActions";
+import { getProposalActionState, isOutdated } from "@/lib/proposalActions";
 import { ProposalActionButton } from "@/components/ProposalActionButton";
 
 const PendingActions: React.FC<PendingActionsProps> = ({ threshold, fixedHeight = false }) => {
@@ -73,6 +73,15 @@ const PendingActions: React.FC<PendingActionsProps> = ({ threshold, fixedHeight 
               accountNonce,
             );
             const isSend = proposal.metadata?.proposalType === 'p2id';
+            // Outdated or no longer valid: it can never execute, so no
+            // signatures are "needed"; its button offers Create again.
+            const badge = action.action === "execute"
+              ? { text: "READY", tone: "bg-[#28A857] text-white" }
+              : action.action === "recreate"
+                ? { text: isOutdated(proposal, accountNonce) ? "OUTDATED" : "INVALID", tone: "bg-[rgba(0,0,0,0.06)] text-[rgba(0,0,0,0.55)]" }
+                : proposal.verification.status === "failed"
+                  ? { text: "CHECK", tone: "bg-red-50 text-red-700" }
+                  : { text: `${Math.max(0, action.requiredSignatures - action.signatureCount)} NEEDED`, tone: "bg-[#FF5500] text-white" };
 
             return (
               <div
@@ -114,19 +123,9 @@ const PendingActions: React.FC<PendingActionsProps> = ({ threshold, fixedHeight 
                 <div className="flex items-center justify-center w-[10%]">
                   <div
                     title={action.statusLabel}
-                    className={`px-2 py-1 text-center text-[8px] font-[500] rounded-full ${
-                      action.action === "execute"
-                        ? "bg-[#28A857] text-white"
-                        : proposal.verification.status === "failed"
-                          ? "bg-red-50 text-red-700"
-                          : "bg-[#FF5500] text-white"
-                    }`}
+                    className={`px-2 py-1 text-center text-[8px] font-[500] rounded-full ${badge.tone}`}
                   >
-                    {action.action === "execute"
-                      ? "READY"
-                      : proposal.verification.status === "failed"
-                        ? "CHECK"
-                        : `${Math.max(0, action.requiredSignatures - action.signatureCount)} NEEDED`}
+                    {badge.text}
                   </div>
                 </div>
                 <div className="h-full w-[0.5px] bg-[#00000033]"></div>

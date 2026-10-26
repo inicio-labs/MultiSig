@@ -22,6 +22,28 @@ function sameCommitment(left: string, right: string): boolean {
   return left.replace(/^0x/i, '').toLowerCase() === right.replace(/^0x/i, '').toLowerCase();
 }
 
+/**
+ * Guardian 0.18.1 labels a proposal with the account nonce its transaction
+ * reaches. At or below the account's nonce, another transaction already took
+ * that slot: the proposal can never execute, so nobody should sign it.
+ */
+export function isOutdated(proposal: Pick<Proposal, 'nonce'>, accountNonce: bigint | null): boolean {
+  return accountNonce !== null && BigInt(proposal.nonce) <= accountNonce;
+}
+
+export type ProposalStage = 'waiting' | 'ready' | 'stale' | 'done';
+
+/**
+ * Where a proposal stands, for counting: needs signatures, can execute, can
+ * never execute (outdated or no longer valid), or executed.
+ */
+export function proposalStage(proposal: Pick<Proposal, 'status'>, state: Pick<ProposalActionState, 'action'>): ProposalStage {
+  if (proposal.status === 'finalized') return 'done';
+  if (state.action === 'execute') return 'ready';
+  if (state.action === 'recreate') return 'stale';
+  return 'waiting';
+}
+
 export function getProposalActionState(
   proposal: Proposal,
   config: DetectedMultisigConfig | null,
@@ -53,10 +75,7 @@ export function getProposalActionState(
     return { ...common, action: 'none', actionLabel: 'Completed', statusLabel: 'Completed', disabled: true };
   }
 
-  // Guardian 0.18.1 labels a proposal with the account nonce its transaction
-  // reaches. At or below the account's nonce, another transaction already
-  // took that slot: the proposal can never execute, so nobody should sign it.
-  if (accountNonce !== null && BigInt(proposal.nonce) <= accountNonce) {
+  if (isOutdated(proposal, accountNonce)) {
     return {
       ...common,
       action: 'recreate',
