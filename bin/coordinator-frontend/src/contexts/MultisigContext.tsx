@@ -104,6 +104,7 @@ import { useMidenWallet } from "@/hooks/useMidenWallet";
 import { MidenWalletAdapter } from "@miden-sdk/miden-wallet-adapter-miden";
 import { whenWalletInstalled } from "@/lib/walletReconnect";
 import { BACKGROUND_SYNC_MS, FAILURES_BEFORE_ERROR, shouldBackgroundSync } from "@/lib/backgroundSync";
+import { keepIfSame } from "@/lib/stableState";
 import { diagnosticError, diagnosticLog, logReceiveFunding } from '@/lib/midenDiagnostics';
 import {
   clearExecutionPushed,
@@ -539,15 +540,17 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     // A background sync drops what it read when an operation started meanwhile:
     // that operation shows the account's state itself.
     if (!apply()) return;
+    // Only what changed replaces what is shown (stableState.ts): a sync that
+    // finds nothing new leaves the screen and its effects alone.
     // syncState skips the download when Guardian has nothing newer than the
     // local account (source 'local'); keep the state already known then, and
     // fetch it once if there is none yet.
-    if (sync.source === "guardian") setGuardianState(sync.state);
+    if (sync.source === "guardian") setGuardianState(keepIfSame<AccountState | null>(sync.state));
     else if (!guardianStateRef.current) setGuardianState(await ms.fetchState());
-    setDetectedConfig(AccountInspector.fromAccount(ms.account));
+    setDetectedConfig(keepIfSame<DetectedMultisigConfig | null>(AccountInspector.fromAccount(ms.account)));
     if (multisigRef.current === ms) setAccountNonce(ms.account.nonce().asInt());
-    setProposals(synced);
-    setConsumableNotes(notes);
+    setProposals(keepIfSame(synced));
+    setConsumableNotes(keepIfSame<typeof notes>(notes));
   }, []);
 
   // Each fresh state of the loaded account becomes its snapshot for the next visit.
