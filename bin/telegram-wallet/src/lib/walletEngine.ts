@@ -48,6 +48,11 @@ export interface WalletEngineDeps<C extends WalletMidenClient, M extends WalletM
    * needs a code from the user before it can register. Absent: never asks.
    */
   needsInvitation?(midenClient: C, accountId: string): Promise<boolean>;
+  /**
+   * Invite-only network: a key with no account yet is asked for its invite
+   * code before anything is created (no code, no account on Guardian).
+   */
+  inviteOnly?: boolean;
   /** Whether the node would accept this invite code (unknown or used: false); asked before registering. */
   checkInvitationCode?(midenClient: C, code: string): Promise<boolean>;
   registerNoteTag(midenClient: C, accountId: string): Promise<void>;
@@ -230,6 +235,10 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
    */
   private deliveryCheckedAt: bigint | null = null;
   private multisig: Multisig | null = null;
+  /** Waiting for the invite code before creating the account (invite-only network). */
+  private inviteWaiter: ((code: string) => void) | null = null;
+  /** The accepted invite code this start registers with. */
+  private invitationCode: string | null = null;
   private busy = false;
   private starting: Promise<void> | null = null;
   /**
@@ -363,13 +372,24 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
         // account registers here; one whose first start was interrupted is
         // registered again (idempotent). Whatever the network sends a new
         // account arrives as an ordinary incoming payment.
-        // An invite-only network registers only with the user's code: wait for it.
-        if (await this.deps.needsInvitation?.(midenClient, multisig.accountId)) {
+        // An invite-only network registers only with the user's code: the
+        // one given before creating, else wait for it (an account created
+        // before but never registered).
+        const code = this.invitationCode;
+        if (!code && await this.deps.needsInvitation?.(midenClient, multisig.accountId)) {
           this.update({ phase: { kind: 'invite' } });
           return;
         }
         this.update({ phase: { kind: 'registering' } });
-        await this.deps.registerOnNode(midenClient, multisig.accountId);
+        try {
+          await this.deps.registerOnNode(midenClient, multisig.accountId, code ?? undefined);
+        } catch (error) {
+          if (!code) throw error;
+          // Taken in the meantime, or refused: ask again (the account stays).
+          this.invitationCode = null;
+          this.update({ phase: { kind: 'invite', error: formatError(error, 'That code didn’t work') } });
+          return;
+        }
       }
       this.becomeReady(multisig);
     }
@@ -390,9 +410,9 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
    * opens the wallet. A refused code goes back to `invite` with the reason.
    */
   async submitInvitationCode(code: string): Promise<void> {
-    const { midenClient, multisig } = this;
+    const { midenClient } = this;
     const trimmed = code.trim();
-    if (!midenClient || !multisig || this.snapshot.phase.kind !== 'invite') return;
+    if (!midenClient || this.snapshot.phase.kind !== 'invite') return;
     if (!trimmed) {
       this.update({ phase: { kind: 'invite', error: 'Enter your invite code.' } });
       return;
@@ -404,6 +424,20 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
         this.update({ phase: { kind: 'invite', error: 'That code isn’t valid, or it was already used. Check it and try again.' } });
         return;
       }
+    } catch (error) {
+      this.update({ phase: { kind: 'invite', error: formatError(error, 'Couldn’t check the code') } });
+      return;
+    }
+    // Asked before creating: the start goes on (create, then register with it).
+    const waiter = this.inviteWaiter;
+    if (waiter) {
+      this.inviteWaiter = null;
+      waiter(trimmed);
+      return;
+    }
+    const { multisig } = this;
+    if (!multisig) return;
+    try {
       await this.deps.registerOnNode(midenClient, multisig.accountId, trimmed);
     } catch (error) {
       this.update({ phase: { kind: 'invite', error: formatError(error, 'That code didn’t work') } });
@@ -442,6 +476,13 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
       const chosen = matches.find((m) => m.accountId.toLowerCase() === remembered)
         ?? [...matches].sort((a, b) => Date.parse(b.state.updatedAt) - Date.parse(a.state.updatedAt))[0];
       return this.deps.loadAccount(multisigClient, chosen.accountId, this.deps.signer, this.hooks);
+    }
+    // Invite-only: the code first, so no one without one gets an account.
+    if (this.deps.inviteOnly && !this.invitationCode) {
+      this.invitationCode = await new Promise<string>((resolve) => {
+        this.inviteWaiter = resolve;
+        this.update({ phase: { kind: 'invite' } });
+      });
     }
     this.update({ phase: { kind: 'creating' } });
     const multisig = await this.deps.createAccount(multisigClient, this.deps.signer, this.hooks);

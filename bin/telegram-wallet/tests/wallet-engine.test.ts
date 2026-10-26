@@ -134,6 +134,41 @@ function setup(opts: FakeOptions & {
 }
 
 describe('WalletEngine.start', () => {
+  it('invite-only: asks for the code before creating anything, and registers with it', async () => {
+    const { deps, log } = setup();
+    const codes: Array<string | undefined> = [];
+    const engine = new WalletEngine({
+      ...deps,
+      inviteOnly: true,
+      checkInvitationCode: async (_c, code) => code === 'GOOD',
+      registerOnNode: async (_c, _id, code) => { codes.push(code); log.push('registerOnNode'); },
+    });
+    const started = engine.start();
+    await vi.waitFor(() => expect(engine.getSnapshot().phase).toEqual({ kind: 'invite' }));
+    // Nothing created yet: no code, no account.
+    expect(log).not.toContain('createAccount');
+    expect(engine.getSnapshot().accountId).toBeNull();
+
+    await engine.submitInvitationCode('USED');
+    expect(engine.getSnapshot().phase).toMatchObject({ kind: 'invite', error: expect.stringContaining('already used') });
+    expect(log).not.toContain('createAccount');
+
+    await engine.submitInvitationCode(' GOOD ');
+    await started;
+    expect(engine.getSnapshot().phase).toEqual({ kind: 'ready' });
+    expect(log.indexOf('createAccount')).toBeGreaterThan(-1);
+    expect(codes).toEqual(['GOOD']);
+  });
+
+  it('invite-only: a wallet that already exists opens without a code', async () => {
+    const { deps, log } = setup({ existing: [{ accountId: '0xold', updatedAt: '2026-10-01T00:00:00Z' }], nonce: 3n });
+    const engine = new WalletEngine({ ...deps, inviteOnly: true });
+    await engine.start();
+    expect(engine.getSnapshot().phase).toEqual({ kind: 'ready' });
+    expect(log).toContain('load:0xold');
+    expect(log).not.toContain('createAccount');
+  });
+
   it('with a network scope, remembers and loads only that network’s account', async () => {
     const { deps, store, log } = setup({ remembered: '0xtestnetacct' });
     const scoped = new WalletEngine({ ...deps, storageScope: 'mainnet:' });

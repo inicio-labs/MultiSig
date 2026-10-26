@@ -31,6 +31,8 @@ import { ActivityList, timeOf, who } from './ActivityList';
 import { AlertsNudgeSheet } from './AlertsNudgeSheet';
 import { WhatsNewSheet } from './WhatsNewSheet';
 import { InviteScreen } from './InviteScreen';
+import { Gate } from './AuthGate';
+import { Splash } from './Splash';
 import { BURST_LANDS_MS, CoinBurst, type Burst } from './CoinBurst';
 import { Icon } from './Icon';
 import { ReceiveSheet, type Collected } from './ReceiveSheet';
@@ -370,6 +372,11 @@ function WalletHome() {
       <SettingsSheet open={view === 'settings'} onClose={() => setView('home')} accountId={snapshot.accountId} />
       <AlertsNudgeSheet open={view === 'alerts'} firstPayment={firstPayment} onAnswer={answerAlerts} />
       {inviting && <InviteScreen />}
+      {/* A new phone or user (nothing saved): a plain loading screen until the
+          wallet is found, never an empty home that then turns into Welcome. */}
+      {!inviting && !snapshot.accountId && !snapshot.savedAt && (phase.kind === 'starting' || phase.kind === 'finding' || phase.kind === 'creating') && (
+        <Gate><Splash label={phase.kind === 'creating' ? 'Creating your wallet…' : 'Opening PrivPay…'} /></Gate>
+      )}
       {username && <WhatsNewSheet open={view === 'new'} username={username} onAnswer={answerWhatsNew} />}
     </>
   );

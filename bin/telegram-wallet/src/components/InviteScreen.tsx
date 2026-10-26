@@ -15,7 +15,9 @@ export function InviteScreen() {
   const { engine, snapshot } = useWallet();
   const [code, setCode] = useState('');
   const { phase } = snapshot;
-  const checking = phase.kind === 'registering';
+  // Checking the code, then (asked before creating) making the wallet.
+  const checking = phase.kind === 'registering' || phase.kind === 'creating';
+  const busyLabel = phase.kind === 'creating' ? 'Creating your wallet…' : 'Checking…';
   const error = phase.kind === 'invite' ? phase.error : undefined;
 
   const submit = (event: FormEvent) => {
@@ -49,7 +51,7 @@ export function InviteScreen() {
           />
           {error && <p className="error" role="alert">{error}</p>}
           <button className="btn" type="submit" disabled={checking || !code.trim()}>
-            {checking ? 'Checking…' : 'Join'}
+            {checking ? busyLabel : 'Join'}
           </button>
           <p className="hint fine">Don’t have one? Ask the person who shared PrivPay with you.</p>
         </form>

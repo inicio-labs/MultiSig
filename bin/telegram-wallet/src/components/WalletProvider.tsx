@@ -78,6 +78,7 @@ export function WalletProvider({ signer, children }: { signer: Signer | null; ch
     registerOnNode: (client, accountId, code) => registerAccountOnNode(client, accountId, code),
     // Private mainnet: a new account waits for its user's invite code, unless
     // the node already allows it (registered on an earlier open).
+    inviteOnly: INVITE_ONLY,
     needsInvitation: INVITE_ONLY ? async (client, accountId) => !(await client.accounts.isAllowed(accountId)) : undefined,
     checkInvitationCode: (client, code) => client.accounts.isInvitationCodeValid(code),
     registerNoteTag: registerAccountNoteTag,
