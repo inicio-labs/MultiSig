@@ -88,3 +88,14 @@ describe('getTokenInfo (review finding 3)', () => {
     vi.doUnmock('@miden-sdk/miden-sdk');
   });
 });
+
+describe('knownTokenInfo', () => {
+  it('knows the testnet fee token and nothing it cannot vouch for', async () => {
+    const { knownTokenInfo } = await import('../src/lib/tokenAmounts');
+    expect(knownTokenInfo('0x4CBDCAFFE75F0A317482224DAE6436', 'testnet')).toEqual({ decimals: 6, symbol: 'USDCX' });
+    expect(knownTokenInfo('0x4cbdcaffe75f0a317482224dae6436', 'mainnet')).toBeNull();
+    expect(knownTokenInfo('0xe69e6ca6e39df1b10c1e5399399feb', 'mainnet')).toEqual({ decimals: 6, symbol: 'USDCX' });
+    expect(knownTokenInfo('0xe69e6ca6e39df1b10c1e5399399feb', 'testnet')).toBeNull();
+    expect(knownTokenInfo('0x' + '11'.repeat(15), 'testnet')).toBeNull();
+  });
+});

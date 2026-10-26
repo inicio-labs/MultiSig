@@ -1,5 +1,6 @@
 import { AccountId, BasicFungibleFaucetComponent, Endpoint, RpcClient } from '@miden-sdk/miden-sdk';
-import { MIDEN_RPC_URL } from '@/config/psm';
+import { MIDEN_NETWORK, MIDEN_RPC_URL } from '@/config/psm';
+import type { MidenNetwork } from './midenNetwork';
 import { storage } from './storage';
 
 /**
@@ -46,6 +47,24 @@ const tokenInfoCache = new Map<string, Promise<TokenInfo>>();
 const SAVED_TOKEN_KEY = 'miden-tg-wallet:token:';
 
 /**
+ * Tokens this wallet knows without asking the node: each network's fee token
+ * (USDCX). The faucet's on-chain storage map (`used_nonces`) has grown past
+ * what `getAccountDetails` decodes in full, so the metadata read fails on
+ * testnet since October 2026 and every amount showed as raw units. The read
+ * still runs first; this answers only when it fails, and only for these
+ * faucets: a wrong guess would mis-scale every amount.
+ */
+const KNOWN_TOKENS: Partial<Record<MidenNetwork, Record<string, TokenInfo>>> = {
+  testnet: { '0x4cbdcaffe75f0a317482224dae6436': { decimals: 6, symbol: 'USDCX' } },
+  // Read from the chain on 2026-10-26 (rpc.cedar.miden.io): USDCX, 6 decimals.
+  mainnet: { '0xe69e6ca6e39df1b10c1e5399399feb': { decimals: 6, symbol: 'USDCX' } },
+};
+
+export function knownTokenInfo(faucetId: string, network: MidenNetwork = MIDEN_NETWORK): TokenInfo | null {
+  return KNOWN_TOKENS[network]?.[faucetId.trim().toLowerCase()] ?? null;
+}
+
+/**
  * Decimals and symbol this phone read before: a faucet's metadata does not
  * change, so amounts show at once on opening while getTokenInfo re-reads it.
  */
@@ -88,7 +107,12 @@ export function getTokenInfo(
       fetchTokenInfo(key),
       timeoutMs,
       `Could not read token details for ${key}: the Miden node did not respond in time.`,
-    );
+    ).catch((error: unknown) => {
+      const known = knownTokenInfo(key);
+      if (!known) throw error;
+      console.warn(`Token details for ${key} could not be read; using the known ${known.symbol}`, error);
+      return known;
+    });
     tokenInfoCache.set(key, pending);
     // Do not cache failures: a transient RPC error must not stick.
     pending.then((info) => storage.set(SAVED_TOKEN_KEY + key, JSON.stringify(info)), () => tokenInfoCache.delete(key));
