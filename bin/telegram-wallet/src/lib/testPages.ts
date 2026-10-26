@@ -97,15 +97,3 @@ export function resultsText(lines: { step: string; result: string }[]): string {
   return lines.map((l) => `${l.step}: ${l.result}`).join('\n');
 }
 
-/**
- * Recovery before its release: on for a phone opened once from
- * `t.me/<bot>?startapp=test_recovery` (remembered there), or with
- * `?test_recovery=1`. Hidden from everyone else.
- */
-export function recoveryTestRequested({ startParam, search, remembered }: {
-  startParam: string | null;
-  search: string;
-  remembered: boolean;
-}): boolean {
-  return startParam === 'test_recovery' || new URLSearchParams(search).get('test_recovery') === '1' || remembered;
-}

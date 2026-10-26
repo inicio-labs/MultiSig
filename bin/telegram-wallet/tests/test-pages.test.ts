@@ -76,12 +76,3 @@ describe('openLink variants', () => {
   });
 });
 
-describe('recovery test link', () => {
-  it('turns on from the start parameter or the query, and stays on once remembered', async () => {
-    const { recoveryTestRequested } = await import('../src/lib/testPages');
-    expect(recoveryTestRequested({ startParam: 'test_recovery', search: '', remembered: false })).toBe(true);
-    expect(recoveryTestRequested({ startParam: null, search: '?test_recovery=1', remembered: false })).toBe(true);
-    expect(recoveryTestRequested({ startParam: null, search: '', remembered: true })).toBe(true);
-    expect(recoveryTestRequested({ startParam: 'pay_x', search: '', remembered: false })).toBe(false);
-  });
-});

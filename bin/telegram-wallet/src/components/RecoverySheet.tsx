@@ -9,9 +9,7 @@ import { loadRecoveryEmail, maskEmail, saveRecoveryEmail, type RecoveryEmail } f
 import { updateRecoveryBook } from '@/lib/recoveryBook';
 import { tellRecoveryNews } from '@/lib/recoveryNews';
 import { storage } from '@/lib/storage';
-import { recoveryTestRequested } from '@/lib/testPages';
-import { haptic, onDesktop, requestTelegramWriteAccess, setClosingConfirmation, telegramPlatform, telegramStartParam } from '@/lib/telegram';
-import { DEV_LOCAL_SIGNER } from '@/lib/devSigner';
+import { haptic, onDesktop, requestTelegramWriteAccess, setClosingConfirmation, telegramPlatform } from '@/lib/telegram';
 import { phoneBiometrics, thisPhone } from '@/lib/thisPhone';
 import { useRecoveryEmail } from '@/hooks/useRecoveryEmail';
 import { Icon } from './Icon';
@@ -38,26 +36,9 @@ export function useBiometricName(): string {
   return name;
 }
 
-const RECOVERY_TEST_KEY = 'miden-tg-wallet:recovery-test';
-
-/**
- * Recovery is offered (nudge, gate, Settings): before its release only on a
- * phone opened from the test link (testPages.ts), and in development.
- */
-export function recoveryOffered(): boolean {
-  if (DEV_LOCAL_SIGNER) return true;
-  const on = recoveryTestRequested({
-    startParam: telegramStartParam(),
-    search: window.location.search,
-    remembered: storage.get(RECOVERY_TEST_KEY) === '1',
-  });
-  if (on) storage.set(RECOVERY_TEST_KEY, '1');
-  return on;
-}
-
 /** Recovery can be set up on this device: a phone with Face ID or a fingerprint, in Telegram. */
 export function canSetUpRecoveryHere(): boolean {
-  return recoveryOffered() && (DEV_FAKE_BIOMETRICS || (!onDesktop() && phoneBiometrics() !== null));
+  return DEV_FAKE_BIOMETRICS || (!onDesktop() && phoneBiometrics() !== null);
 }
 
 /**

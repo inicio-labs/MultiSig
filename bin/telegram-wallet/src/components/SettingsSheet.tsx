@@ -8,7 +8,7 @@ import { storage } from '@/lib/storage';
 import { haptic, telegramCloud, telegramPlatform, telegramUsername } from '@/lib/telegram';
 import { thisPhone } from '@/lib/thisPhone';
 import { Icon, type IconName } from './Icon';
-import { canSetUpRecoveryHere, recoveryOffered, useBiometricName } from './RecoverySheet';
+import { canSetUpRecoveryHere, useBiometricName } from './RecoverySheet';
 import { Sheet } from './Sheet';
 import { useWallet } from './WalletProvider';
 
@@ -145,8 +145,6 @@ function SecuritySection({ accountId, onRecovery, onUseThisPhone, onChangeEmail 
   const bio = useBiometricName();
   const { recovery } = snapshot;
   if (recovery.kind === 'unknown' || !accountId) return null;
-  // Not offered yet (before release): nothing to show for a wallet without it.
-  if (recovery.kind === 'off' && !recoveryOffered()) return null;
   const email = loadRecoveryEmail(storage, accountId);
   const here = canSetUpRecoveryHere();
   return (
