@@ -40,7 +40,8 @@ export function signsWithoutWallet(
   now: number,
 ): boolean {
   if (walletSource === 'local') return hasLocalSigner;
-  return session.phase === 'active' && session.expiresAt - now > SESSION_MARGIN_MS;
+  // Guardian's expiresAt is in seconds (Unix time); `now` in milliseconds.
+  return session.phase === 'active' && session.expiresAt * 1000 - now > SESSION_MARGIN_MS;
 }
 
 export function shouldBackgroundSync(input: BackgroundSyncInput): boolean {

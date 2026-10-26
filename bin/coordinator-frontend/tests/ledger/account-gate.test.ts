@@ -13,6 +13,7 @@ const base: GateInput = {
   startupError: null,
   error: null,
   waitedForWallet: false,
+  sessionEnded: false,
 };
 
 describe('the dashboard before an account is open', () => {
@@ -39,6 +40,15 @@ describe('the dashboard before an account is open', () => {
       .toEqual({ kind: 'failed', message: 'Account not found on Guardian', retry: 'load' });
     expect(gateView({ ...base, startupError: 'Not connected to Guardian.' }))
       .toEqual({ kind: 'failed', message: 'Not connected to Guardian.', retry: 'startup' });
+  });
+
+  it('after the session ended, says so and waits for a click, even with the wallet still connected', () => {
+    for (const walletSource of ['miden-wallet', 'para', 'ledger'] as const) {
+      expect(gateView({ ...base, walletSource, walletConnected: true, sessionEnded: true }))
+        .toEqual({ kind: 'session-ended', wallet: walletSource });
+    }
+    // The click opens it again: from then on it is opening.
+    expect(gateView({ ...base, walletConnected: true, sessionEnded: true, loading: true })).toEqual({ kind: 'opening' });
   });
 
   it('a local key needs no wallet; with no saved account there is nothing to open', () => {

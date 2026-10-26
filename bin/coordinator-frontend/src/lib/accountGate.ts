@@ -11,6 +11,7 @@ export type GateView =
   | { kind: 'opening' }
   | { kind: 'connecting'; wallet: WalletSource }
   | { kind: 'connect'; wallet: WalletSource }
+  | { kind: 'session-ended'; wallet: WalletSource }
   | { kind: 'failed'; message: string; retry: 'startup' | 'load' }
   | { kind: 'no-account' };
 
@@ -25,6 +26,8 @@ export interface GateInput {
   error: string | null;
   /** The wait for a wallet that reconnects on its own is over. */
   waitedForWallet: boolean;
+  /** The account was closed because its Guardian session ended: it opens again only on a click. */
+  sessionEnded: boolean;
 }
 
 /** How long the dashboard waits for the Miden Wallet or Para to reconnect before offering the button. */
@@ -35,6 +38,7 @@ export function gateView(input: GateInput): GateView {
   if (!input.savedId) return { kind: 'no-account' };
   if (input.startupError) return { kind: 'failed', message: input.startupError, retry: 'startup' };
   if (input.loading) return { kind: 'opening' };
+  if (input.sessionEnded) return { kind: 'session-ended', wallet: input.walletSource };
   if (input.walletConnected) {
     return input.error ? { kind: 'failed', message: input.error, retry: 'load' } : { kind: 'opening' };
   }
