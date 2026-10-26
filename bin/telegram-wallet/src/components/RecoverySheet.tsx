@@ -7,7 +7,9 @@ import { formatError } from '@/lib/errors';
 import { PhoneKeyNotConfirmed, PhoneKeyUnavailable } from '@/lib/phoneKey';
 import { loadRecoveryEmail, maskEmail, saveRecoveryEmail, type RecoveryEmail } from '@/lib/recovery';
 import { storage } from '@/lib/storage';
-import { haptic, onDesktop, requestTelegramWriteAccess, setClosingConfirmation, telegramPlatform } from '@/lib/telegram';
+import { recoveryTestRequested } from '@/lib/testPages';
+import { haptic, onDesktop, requestTelegramWriteAccess, setClosingConfirmation, telegramPlatform, telegramStartParam } from '@/lib/telegram';
+import { DEV_LOCAL_SIGNER } from '@/lib/devSigner';
 import { phoneBiometrics, thisPhone } from '@/lib/thisPhone';
 import { useRecoveryEmail } from '@/hooks/useRecoveryEmail';
 import { Icon } from './Icon';
@@ -34,9 +36,26 @@ export function useBiometricName(): string {
   return name;
 }
 
+const RECOVERY_TEST_KEY = 'miden-tg-wallet:recovery-test';
+
+/**
+ * Recovery is offered (nudge, gate, Settings): before its release only on a
+ * phone opened from the test link (testPages.ts), and in development.
+ */
+export function recoveryOffered(): boolean {
+  if (DEV_LOCAL_SIGNER) return true;
+  const on = recoveryTestRequested({
+    startParam: telegramStartParam(),
+    search: window.location.search,
+    remembered: storage.get(RECOVERY_TEST_KEY) === '1',
+  });
+  if (on) storage.set(RECOVERY_TEST_KEY, '1');
+  return on;
+}
+
 /** Recovery can be set up on this device: a phone with Face ID or a fingerprint, in Telegram. */
 export function canSetUpRecoveryHere(): boolean {
-  return DEV_FAKE_BIOMETRICS || (!onDesktop() && phoneBiometrics() !== null);
+  return recoveryOffered() && (DEV_FAKE_BIOMETRICS || (!onDesktop() && phoneBiometrics() !== null));
 }
 
 /**
