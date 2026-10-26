@@ -321,6 +321,51 @@ button.cell:active { background: var(--bg); }
   .flow-note, .row-in, .card.card-pulse, .card.card-pulse .card-sweep, .card-plus, .bell.ring, .badge, .done { animation: none !important; }
   .flow.is-sending .flow-note:first-child { opacity: 1; left: calc(50% - 15px); }
 }
+/* Collect: an envelope opened at a person's pace (ENVELOPE_OPEN_MS), the note
+   resting half out until the payment is in. */
+.env-scene { height: 210px; display: grid; place-items: end center; padding-bottom: 22px; }
+.env { position: relative; width: 200px; height: 128px; perspective: 700px; animation: env-pick 3.4s ease-in-out both; }
+.env::after { content: ''; position: absolute; left: 20px; right: 20px; bottom: -16px; height: 10px; border-radius: 50%; background: var(--ink); opacity: .08; }
+.env-back { position: absolute; inset: 0; border-radius: 10px; background: #f3d9c6; }
+.env-note { position: absolute; z-index: 2; left: 14px; right: 14px; top: 10px; height: 96px; box-sizing: border-box; padding: 12px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); transform: translateY(-56px); animation: env-pull 1.5s linear 1.9s both, env-bob 2s ease-in-out 3.4s infinite; }
+.env-note.is-out { animation: none; transform: translateY(-92px); transition: transform .9s cubic-bezier(.3, .7, .3, 1); }
+.env-note-k { font-size: 11px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: var(--hint); }
+.env-note-v { margin-top: 4px; font-size: 22px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.env-note-lines { display: flex; gap: 6px; margin-top: 8px; }
+.env-note-lines span { height: 5px; width: 60px; border-radius: 3px; background: var(--line); }
+.env-note-lines span + span { width: 34px; }
+.env-front { position: absolute; inset: 0; width: 200px; height: 128px; z-index: 3; }
+.env-front path { fill: #fff1e6; stroke: #ecd0bb; stroke-width: 1; }
+.env-front .env-bottom { fill: #ffe8d8; }
+.env-flap { position: absolute; left: 0; top: 0; width: 200px; height: 82px; transform-origin: 50% 0; z-index: 4; animation: env-peel 1.4s linear .45s both; }
+.env-flap path { fill: #fff6ef; stroke: #ecd0bb; stroke-width: 1; }
+@keyframes env-pick {
+  0% { transform: none; }
+  12% { transform: translateY(-8px) rotate(-3deg); }
+  55% { transform: translateY(-8px) rotate(-2deg); }
+  75% { transform: translateY(-6px) rotate(1deg); }
+  100% { transform: translateY(-4px) rotate(0); }
+}
+/* Stuck at first under the thumb, then free and swinging over. */
+@keyframes env-peel {
+  0% { transform: rotateX(0); z-index: 4; animation-timing-function: ease-in; }
+  35% { transform: rotateX(22deg); z-index: 4; animation-timing-function: ease-in-out; }
+  45% { transform: rotateX(26deg); z-index: 4; animation-timing-function: ease-out; }
+  62% { transform: rotateX(95deg); z-index: 1; }
+  100% { transform: rotateX(180deg); z-index: 1; }
+}
+/* Two tugs, a re-grip between them. */
+@keyframes env-pull {
+  0% { transform: translateY(0); animation-timing-function: ease-out; }
+  35% { transform: translateY(-30px); }
+  50% { transform: translateY(-30px); animation-timing-function: ease-out; }
+  90%, 100% { transform: translateY(-56px); }
+}
+@keyframes env-bob { 0%, 100% { transform: translateY(-56px); } 50% { transform: translateY(-61px); } }
+@media (prefers-reduced-motion: reduce) {
+  .env, .env-note { animation: none; }
+  .env-flap { animation: none; transform: rotateX(180deg); z-index: 1; }
+}
 .progress { list-style: none; margin: 0; padding: 4px 4px 6px; display: grid; gap: 12px; }
 .progress-step { display: flex; align-items: center; gap: 12px; font-size: 16px; font-weight: 700; color: var(--hint); transition: color .2s; }
 .progress-step.is-now, .progress-step.is-done { color: var(--ink); }

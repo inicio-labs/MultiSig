@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type MouseEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { accountAddress } from '@/lib/address';
 import { useDirectory } from '@/hooks/useDirectory';
@@ -9,6 +9,7 @@ import { formatError } from '@/lib/errors';
 import { payLink } from '@/lib/payLink';
 import { usePref } from '@/lib/prefs';
 import { haptic, shareLink } from '@/lib/telegram';
+import { CollectEnvelope, ENVELOPE_OPEN_MS, ENVELOPE_OUT_MS } from './CollectEnvelope';
 import { Icon } from './Icon';
 import { ProgressSteps } from './ProgressSteps';
 import { DirectoryToggle } from './SettingsSheet';
@@ -29,7 +30,7 @@ function totals(notes: { assets: { faucetId: string; amount: bigint }[] }[]): Ma
 export interface Collected {
   faucetId: string;
   amount: bigint;
-  /** Where the Collect button was, for the coins to fly from. */
+  /** Where the envelope's note was, for the coins to fly from. */
   from: { x: number; y: number };
 }
 
@@ -46,6 +47,12 @@ export function ReceiveSheet({ open, onClose, hidden, onCollected }: {
   const [qr, setQr] = useState<string | null>(null);
   const [collecting, setCollecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // What is being collected, kept while the envelope plays (the waiting list
+  // empties as soon as the payment is in). `out`: the note slides free.
+  const [opening, setOpening] = useState<{ faucetId: string; amount: bigint; payments: number; out: boolean } | null>(null);
+  const note = useRef<HTMLDivElement>(null);
+  // Fresh on every opening; kept while the sheet slides away.
+  useEffect(() => { if (open) setOpening(null); }, [open]);
   const directory = useDirectory(snapshot.accountId);
   // Paid by @username: show it instead of the long address.
   const byUsername = directory.available && directory.on && Boolean(directory.username);
@@ -82,20 +89,31 @@ export function ReceiveSheet({ open, onClose, hidden, onCollected }: {
     void shareLink(link ?? address, text).catch(() => undefined);
   };
 
-  const collect = (e: MouseEvent<HTMLButtonElement>) => {
+  const collect = () => {
     const [first] = totals(waiting);
-    const rect = e.currentTarget.getBoundingClientRect();
-    const from = { x: rect.left + rect.width / 2, y: rect.top };
+    const started = Date.now();
+    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    if (first) setOpening({ faucetId: first[0], amount: first[1], payments: waiting.length, out: false });
     setCollecting(true);
     setError(null);
     haptic('medium');
     engine.claimAll().then(
-      () => {
-        if (first) onCollected({ faucetId: first[0], amount: first[1], from });
+      async () => {
+        // The envelope always finishes opening, then the note comes out.
+        if (!still) await sleep(ENVELOPE_OPEN_MS - (Date.now() - started));
+        setOpening((o) => o && { ...o, out: true });
+        haptic('light');
+        if (!still) await sleep(ENVELOPE_OUT_MS);
+        const rect = note.current?.getBoundingClientRect();
+        if (first) {
+          const from = rect ? { x: rect.left + rect.width / 2, y: rect.top } : { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+          onCollected({ faucetId: first[0], amount: first[1], from });
+        }
         onClose();
       },
       (e: unknown) => {
         haptic('error');
+        setOpening(null);
         setError(formatError(e));
       },
     ).finally(() => setCollecting(false));
@@ -103,11 +121,27 @@ export function ReceiveSheet({ open, onClose, hidden, onCollected }: {
 
   return (
     <Sheet open={open} onClose={onClose} locked={collecting}>
-      <div className="sh-t">Receive</div>
+      <div className="sh-t">
+        {opening ? (
+          opening.payments > 1 ? `Collecting ${opening.payments} payments` : (
+            <span className={hidden ? 'amounts-hidden' : undefined}>
+              Collecting <span className="amount-value"><TokenAmount faucetId={opening.faucetId} amount={opening.amount} /></span>
+            </span>
+          )
+        ) : 'Receive'}
+      </div>
+
+      {opening && (
+        <div className="sending">
+          <CollectEnvelope ref={note} faucetId={opening.faucetId} amount={opening.amount} out={opening.out} hidden={hidden} />
+          <ProgressSteps kind="claim" step={snapshot.activity?.kind === 'claim' ? snapshot.activity.step : 'preparing'} done={opening.out} />
+          {snapshot.notice && <div className="sub">{snapshot.notice}</div>}
+        </div>
+      )}
 
       {/* Payments waiting: collecting is what to do, so it comes first (and
           stays on screen on small phones); the address and QR follow. */}
-      {waiting.length > 0 && (
+      {!opening && waiting.length > 0 && (
         <>
           <div className="cells">
             <div className="cells-head">Waiting for you · {waiting.length}</div>
@@ -122,19 +156,13 @@ export function ReceiveSheet({ open, onClose, hidden, onCollected }: {
             )))}
           </div>
           <p className="error">{error}</p>
-          {collecting ? (
-            <ProgressSteps kind="claim" step={snapshot.activity?.kind === 'claim' ? snapshot.activity.step : 'preparing'} />
-          ) : (
-            <>
-              <button className="btn" onClick={collect} disabled={snapshot.activity !== null}>Collect</button>
-              <AlertsOffRow accountId={snapshot.accountId} />
-            </>
-          )}
+          <button className="btn" onClick={collect} disabled={collecting || snapshot.activity !== null}>Collect</button>
+          <AlertsOffRow accountId={snapshot.accountId} />
           <h2 className="set-head">Your address</h2>
         </>
       )}
 
-      {byUsername ? (
+      {opening ? null : byUsername ? (
         <>
           {/* Paid by @username: the QR is for other wallets, the username for friends on PrivPay. */}
           {qr ? <img className="qr" src={qr} alt="QR code of your address" /> : <div className="qr" />}
@@ -189,3 +217,5 @@ function AlertsOffRow({ accountId }: { accountId: string | null }) {
     </button>
   );
 }
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, ms)));

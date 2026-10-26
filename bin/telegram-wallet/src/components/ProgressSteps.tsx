@@ -18,10 +18,10 @@ const STEPS: Record<WalletActivity['kind'], Array<{ label: string; covers: Activ
   ],
 };
 
-/** Where a send or collect is: done, now, next. */
-export function ProgressSteps({ kind, step }: { kind: WalletActivity['kind']; step: ActivityStep }) {
+/** Where a send or collect is: done, now, next (`done`: every step ticked). */
+export function ProgressSteps({ kind, step, done = false }: { kind: WalletActivity['kind']; step: ActivityStep; done?: boolean }) {
   const steps = STEPS[kind];
-  const current = Math.max(0, steps.findIndex((s) => s.covers.includes(step)));
+  const current = done ? steps.length : Math.max(0, steps.findIndex((s) => s.covers.includes(step)));
   return (
     <ol className="progress" aria-label="Progress">
       {steps.map(({ label }, i) => {
