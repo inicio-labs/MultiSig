@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { storage } from './storage';
 import { telegramCloud } from './telegram';
+import { VIEW_SCOPE } from './viewScope';
 
 /**
  * The wallet's settings. Inside Telegram they live in Telegram's cloud
@@ -10,17 +11,26 @@ import { telegramCloud } from './telegram';
  * it (or on old clients), in this device's storage. Both are UI preferences:
  * nothing sensitive is ever stored this way.
  */
+// Registrations (alerts, the directory) and one-time nudges belong to one
+// network: on mainnet they live under their own names, so nothing carries
+// over from testnet. Hide amounts and sound are the person's, kept as they are.
+const NETWORK_PREFIX = VIEW_SCOPE.replace(/:$/, '_');
+const perNetwork = (key: string) => `${NETWORK_PREFIX}${key}`;
+
 export const PREFS = {
   hideAmounts: { key: 'hide_amounts', fallback: false },
   sound: { key: 'sound', fallback: true },
   // Payment alerts from the bot (alerts.ts); "asked" hides the home card once answered.
-  alerts: { key: 'payment_alerts', fallback: false },
-  alertsAsked: { key: 'payment_alerts_asked', fallback: false },
+  alerts: { key: perNetwork('payment_alerts'), fallback: false },
+  alertsAsked: { key: perNetwork('payment_alerts_asked'), fallback: false },
   // In the Telegram directory: friends can pay you by @username (directory.ts).
-  directory: { key: 'directory', fallback: false },
+  directory: { key: perNetwork('directory'), fallback: false },
   // "New in PrivPay: get paid by @username", shown once to existing users.
-  newUsernameSeen: { key: 'new_username_seen', fallback: false },
+  newUsernameSeen: { key: perNetwork('new_username_seen'), fallback: false },
 } as const;
+
+/** The testnet names of the per-network settings (removed on mainnet's fresh start). */
+export const TESTNET_PREF_KEYS = ['payment_alerts', 'payment_alerts_asked', 'directory', 'new_username_seen'];
 
 type PrefName = keyof typeof PREFS;
 

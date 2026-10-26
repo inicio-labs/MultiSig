@@ -16,6 +16,7 @@ import { InstantPreview } from './InstantPreview';
 import { isPasskeyCheck, PasskeyCheck } from './PasskeyCheck';
 import { isPrivyPasskeyTest, PrivyPasskeyTest } from './PrivyPasskeyTest';
 import { installRemoteDiag } from '@/lib/remoteDiag';
+import { freshStart } from '@/lib/freshStart';
 import { hasSavedView, viewKeyFor } from '@/lib/savedView';
 
 export default function App() {
@@ -32,6 +33,9 @@ export default function App() {
   useEffect(() => {
     installRemoteDiag();
     void initializeTelegramBridge().then(() => {
+      // Mainnet's first open on this phone: no trace of testnet (freshStart.ts).
+      // Its local part is done before this returns; the rest runs meanwhile.
+      void freshStart();
       setupTelegramChrome();
       setBridgeReady(true);
     });

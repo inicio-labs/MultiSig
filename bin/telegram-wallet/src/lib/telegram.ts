@@ -20,6 +20,7 @@ interface TelegramWebApp {
   CloudStorage?: {
     getItem(key: string, callback: (error: string | null, value?: string) => void): void;
     setItem(key: string, value: string, callback?: (error: string | null, stored?: boolean) => void): void;
+    removeItems?(keys: string[], callback?: (error: string | null, removed?: boolean) => void): void;
   };
   SettingsButton?: { show(): void; hide(): void; onClick(cb: () => void): void; offClick(cb: () => void): void };
   BiometricManager?: BiometricManager;
@@ -328,6 +329,8 @@ const CLOUD_TIMEOUT_MS = 3_000;
 export function telegramCloud(): {
   get(key: string): Promise<string | null>;
   set(key: string, value: string): Promise<void>;
+  /** Removes keys (absent ones are fine); resolves even if Telegram never answers. */
+  remove(keys: string[]): Promise<void>;
 } | null {
   const app = webApp();
   const cloud = app?.CloudStorage;
@@ -343,6 +346,14 @@ export function telegramCloud(): {
     }),
     set: (key, value) => new Promise((resolve) => {
       cloud.setItem(key, value, () => resolve());
+    }),
+    remove: (keys) => new Promise((resolve) => {
+      if (!cloud.removeItems || keys.length === 0) return resolve();
+      const timer = setTimeout(resolve, CLOUD_TIMEOUT_MS);
+      cloud.removeItems(keys, () => {
+        clearTimeout(timer);
+        resolve();
+      });
     }),
   };
 }

@@ -7,6 +7,7 @@ import {
   CONFIG_ERRORS,
   INVITE_ONLY,
   MIDEN_DB_NAME,
+  SESSION_DB_NAME,
   MIDEN_NOTE_TRANSPORT_URL,
   MIDEN_PROVER_URL,
   MIDEN_RPC_URL,
@@ -28,7 +29,7 @@ import { WalletEngine, type WalletSnapshot } from '@/lib/walletEngine';
 
 // The Guardian session key, kept on this phone (non-extractable) so reopening
 // within its lifetime (at most 8 h on Guardian) needs no wallet signature.
-const SESSION_STORE = typeof indexedDB === 'undefined' ? undefined : new IndexedDbSessionKeyStore('privpay-guardian-session-keys');
+const SESSION_STORE = typeof indexedDB === 'undefined' ? undefined : new IndexedDbSessionKeyStore(SESSION_DB_NAME);
 const RESUME_TIMEOUT_MS = 2_000;
 
 // Refresh balances and incoming notes while the app is open and visible.

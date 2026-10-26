@@ -47,7 +47,12 @@ export const MIDEN_PROVER_URL = process.env.NEXT_PUBLIC_MIDEN_PROVER_URL?.trim()
 export const MIDEN_REGISTRATION_CODE = process.env.NEXT_PUBLIC_MIDEN_REGISTRATION_CODE || '';
 /** New accounts register with a code their user enters (private mainnet); see inviteOnly(). */
 export const INVITE_ONLY = inviteOnly(MIDEN_NETWORK, process.env.NEXT_PUBLIC_INVITE_ONLY?.trim());
-export const MIDEN_DB_NAME = 'MidenTelegramWalletDB';
+// Testnet keeps the names it always had; another network gets its own, so its
+// chain data and Guardian session keys never mix with testnet's.
+export const TESTNET_DB_NAME = 'MidenTelegramWalletDB';
+export const TESTNET_SESSION_DB_NAME = 'privpay-guardian-session-keys';
+export const MIDEN_DB_NAME = MIDEN_NETWORK === 'testnet' ? TESTNET_DB_NAME : `PrivPay-${MIDEN_NETWORK}`;
+export const SESSION_DB_NAME = MIDEN_NETWORK === 'testnet' ? TESTNET_SESSION_DB_NAME : `privpay-${MIDEN_NETWORK}-guardian-session-keys`;
 
 export const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID?.trim() ?? '';
 // Not needed with the development signer (src/lib/devSigner.ts), which replaces Privy.
