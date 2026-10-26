@@ -21,7 +21,7 @@ import {
 } from './pendingCandidate';
 import type { MultisigHooks } from './multisigApi';
 import type { PrivateNotes } from './privateSend';
-import { recoveryStatus, recoverySteps, type AccountRules, type RecoveryStatus, type SetupStep } from './recovery';
+import { newPhoneSteps, recoveryStatus, recoverySteps, type AccountRules, type PhoneStep, type RecoveryStatus, type SetupStep } from './recovery';
 
 /** The parts of the Miden client the engine uses. */
 export interface WalletMidenClient {
@@ -104,8 +104,8 @@ export type WalletPhase =
 export type ActivityStep = 'preparing' | 'signing' | 'proving' | 'delivering' | 'syncing';
 
 export interface WalletActivity {
-  /** `recovery`: one of the setup transactions (recovery.ts). */
-  kind: 'send' | 'claim' | 'recovery';
+  /** `recovery`: one of the setup transactions; `phone`: moving the wallet to this phone (recovery.ts). */
+  kind: 'send' | 'claim' | 'recovery' | 'phone';
   step: ActivityStep;
 }
 
@@ -251,8 +251,11 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
    */
   private deliveryCheckedAt: bigint | null = null;
   private multisig: Multisig | null = null;
-  /** The account as this phone's key sees it (its own Guardian connection), for its signatures. */
-  private phoneMultisig: Multisig | null = null;
+  /**
+   * The account as another key sees it (this phone's key, the recovery email
+   * key), each with its own Guardian connection, for their signatures.
+   */
+  private cosigners = new Map<string, Multisig>();
   /** Waiting for the invite code before creating the account (invite-only network). */
   private inviteWaiter: ((code: string) => void) | null = null;
   /** The accepted invite code this start registers with. */
@@ -605,6 +608,17 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
     return { fee: spent > 0n && fee >= 0n ? fee : null };
   }
 
+  /** The Telegram key's commitment (the key this wallet signs in with). */
+  telegramCommitment(): string {
+    return this.deps.signer.commitment ?? '';
+  }
+
+  /** The account's signer key commitments as this device last read them. */
+  accountSigners(): string[] {
+    const signers = (this.multisig as Partial<Multisig> | null)?.signerCommitments;
+    return Array.isArray(signers) ? [...signers] : [];
+  }
+
   /** The account's rules as this device last read them (null before the first load). */
   private updateRecovery(multisig: Multisig): void {
     if (this.multisig !== multisig) return;
@@ -647,6 +661,43 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
     void this.refresh().catch((error) => console.warn('Refresh after setting up recovery failed', error));
   }
 
+  /**
+   * Recovery on, a new phone (recovery.ts): adds this phone's key and removes
+   * the other phones', each a transaction the Telegram key and the recovery
+   * email key sign. Done once the account lists this phone and no other.
+   */
+  async moveToThisPhone(keys: { phone: string; email: Signer }, onStep?: (done: number, total: number) => void): Promise<void> {
+    const { midenClient, multisig } = this;
+    if (!midenClient || !multisig) throw new Error('The wallet is not ready yet.');
+    if (this.busy) throw new Error('Another transaction is still in progress.');
+    this.busy = true;
+    const telegram = this.deps.signer.commitment ?? '';
+    try {
+      await this.exclusive(async () => {
+        await this.timed('wait for guardian', () => this.untilGuardianCaughtUp(multisig));
+        const rules = rulesOf(multisig) ?? NO_RULES;
+        if (!rules.signers.some((s) => s.toLowerCase() === keys.email.commitment.toLowerCase())) {
+          throw new Error('That isn’t the recovery email of this wallet. Use the one you set it up with.');
+        }
+        let total = 0;
+        for (let done = 0; ; done++) {
+          if (done > 0) await this.timed('wait for guardian', () => this.untilGuardianCaughtUp(multisig));
+          const steps = newPhoneSteps(rulesOf(multisig) ?? NO_RULES, { telegram, email: keys.email.commitment, phone: keys.phone });
+          const next = steps[0];
+          if (!next) break;
+          total = Math.max(total, done + steps.length);
+          if (done >= 6) throw new Error('This phone could not be added. Try again in a minute.');
+          onStep?.(done, total);
+          await this.transact(midenClient, multisig, 'phone', (ms) => buildPhoneStep(ms, next), false, [], async () => keys.email);
+        }
+        this.updateRecovery(multisig);
+      });
+    } finally {
+      this.busy = false;
+    }
+    void this.refresh().catch((error) => console.warn('Refresh after adding this phone failed', error));
+  }
+
   /** Until Guardian's canonical nonce reaches this device's (bounded; then the push decides). */
   private async untilGuardianCaughtUp(multisig: Multisig): Promise<void> {
     const { timeoutMs, everyMs } = this.deps.guardianCatchUp ?? GUARDIAN_CATCH_UP;
@@ -660,22 +711,25 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
   }
 
   /**
-   * The second signature a payment needs once recovery is on: this phone's
-   * key, through the account loaded with it (its own Guardian connection: a
-   * shared one signs as whichever key loaded last). Returns the proposal as
-   * the Telegram key's copy sees it afterwards.
+   * A second signature: by default this phone's key (a payment once recovery
+   * is on), else the given key, through the account loaded with that key (its
+   * own Guardian connection: a shared one signs as whichever key loaded
+   * last). Returns the proposal as the Telegram key's copy sees it afterwards.
    */
-  private async signWithPhone(multisig: Multisig, proposalId: string): Promise<Proposal | undefined> {
+  private async cosign(multisig: Multisig, proposalId: string, cosigner?: () => Promise<Signer>): Promise<Proposal | undefined> {
     const { midenClient } = this;
     const phoneKey = this.deps.phoneKey;
-    if (!midenClient || !phoneKey?.commitment()) {
+    if (!cosigner && !phoneKey?.commitment()) {
       throw new Error('Payments from this wallet need this phone’s Face ID key, and this phone doesn’t have it.');
     }
-    if (this.phoneMultisig?.accountId !== multisig.accountId) {
-      const signer = await phoneKey.signer();
-      this.phoneMultisig = await this.deps.loadAccount(this.deps.createMultisigClient(midenClient), multisig.accountId, signer, this.hooks);
+    if (!midenClient) throw new Error('The wallet is not ready yet.');
+    const signer = await (cosigner ?? (() => phoneKey!.signer()))();
+    const id = `${multisig.accountId}:${(signer.commitment ?? '').toLowerCase()}`;
+    let second = this.cosigners.get(id);
+    if (!second) {
+      second = await this.deps.loadAccount(this.deps.createMultisigClient(midenClient), multisig.accountId, signer, this.hooks);
+      this.cosigners.set(id, second);
     }
-    const second = this.phoneMultisig;
     await second.syncState().catch((error: unknown) => {
       if (!/nonce is too low/i.test(formatError(error))) throw error;
     });
@@ -744,10 +798,12 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
     create: (ms: Multisig) => Promise<Proposal>,
     isPrivate: boolean,
     consumes: string[],
+    /** The key that signs second, when the proposal needs two (default: this phone's). */
+    cosigner?: () => Promise<Signer>,
   ): Promise<void> {
     const privateNotes = this.privateNotes;
     const step = (s: ActivityStep) => this.update({ activity: { kind, step: s } });
-    const label = kind === 'send' ? 'Send failed' : kind === 'claim' ? 'Claim failed' : 'Recovery could not be turned on';
+    const label = kind === 'send' ? 'Send failed' : kind === 'claim' ? 'Claim failed' : kind === 'recovery' ? 'Recovery could not be turned on' : 'This phone could not be added';
     clearExecutionPushed(multisig.accountId);
     let proposal: Proposal | undefined;
     let executed = false;
@@ -772,7 +828,7 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
       const signed = await this.timed('sign', () => multisig.signProposal(proposal!.id));
       // Recovery on: a payment needs this phone's key too.
       const second = signed && needsAnotherSignature(signed)
-        ? await this.timed('sign with this phone', () => this.signWithPhone(multisig, proposal!.id))
+        ? await this.timed('second signature', () => this.cosign(multisig, proposal!.id, cosigner))
         : undefined;
       const fresh = [second, signed].find((p) => p && isProposalActionable(p))
         ?? (await this.timed('re-read proposals', () => multisig.syncProposals())).find((p) => p.id === proposal!.id);
@@ -894,6 +950,12 @@ function buildSetupStep(multisig: Multisig, step: SetupStep): Promise<Proposal> 
     case 'require-two':
       return multisig.createChangeThresholdProposal(2);
   }
+}
+
+function buildPhoneStep(multisig: Multisig, step: PhoneStep): Promise<Proposal> {
+  return step.kind === 'add-phone'
+    ? multisig.createAddSignerProposal(step.commitment, { newThreshold: 2 })
+    : multisig.createRemoveSignerProposal(step.commitment, { newThreshold: 2 });
 }
 
 function releaseNote(outcome: ReleaseOutcome | 'failed'): string {

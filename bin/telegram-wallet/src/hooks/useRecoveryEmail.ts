@@ -81,6 +81,7 @@ export function useRecoveryEmail() {
     failed,
     submit: () => send({ type: 'submit' }),
     resend: () => send({ type: 'resend' }),
+    sendTo: (email: string) => send({ type: 'send-to', email }),
     change: () => {
       setKey(null);
       send({ type: 'change' });

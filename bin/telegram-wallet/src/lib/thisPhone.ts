@@ -81,6 +81,13 @@ export const thisPhone = {
     return saved;
   },
 
+  /** The account lists this phone's key: from now on, missing from it means removed. */
+  markActive(): void {
+    const who = user();
+    const record = thisPhone.record();
+    if (who && record && !record.active) savePhoneKeyRecord(storage, who, { ...record, active: true });
+  },
+
   /** Telegram no longer has the key, or the account no longer lists it. */
   forget(): void {
     const who = user();

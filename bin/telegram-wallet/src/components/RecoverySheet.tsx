@@ -6,6 +6,7 @@ import { DEV_FAKE_BIOMETRICS } from '@/lib/devBiometrics';
 import { formatError } from '@/lib/errors';
 import { PhoneKeyNotConfirmed, PhoneKeyUnavailable } from '@/lib/phoneKey';
 import { loadRecoveryEmail, maskEmail, saveRecoveryEmail, type RecoveryEmail } from '@/lib/recovery';
+import { updateRecoveryBook } from '@/lib/recoveryBook';
 import { storage } from '@/lib/storage';
 import { recoveryTestRequested } from '@/lib/testPages';
 import { haptic, onDesktop, requestTelegramWriteAccess, setClosingConfirmation, telegramPlatform, telegramStartParam } from '@/lib/telegram';
@@ -105,6 +106,9 @@ export function RecoverySheet({ open, from, onClose, onDone }: {
     if ((step === 'email' || step === 'code') && box.key) {
       const chosen = { commitment: box.key.signer.commitment, masked: maskEmail(box.key.email) };
       saveRecoveryEmail(storage, accountId, chosen);
+      // A new phone sends the code here by itself (recoveryBook.ts).
+      const address = box.key.email;
+      void updateRecoveryBook((book) => ({ ...book, email: { address, commitment: chosen.commitment } }));
       setEmail(chosen);
       haptic('success');
       setStep('bio');
@@ -129,6 +133,11 @@ export function RecoverySheet({ open, from, onClose, onDone }: {
     setStep('progress');
     try {
       await engine.setUpRecovery({ phone, email: email.commitment }, (done, total) => setProgress({ done, total }));
+      const record = thisPhone.record();
+      void updateRecoveryBook((book) => ({
+        ...book,
+        phones: { ...book.phones, [phone.toLowerCase()]: { platform: record?.platform ?? telegramPlatform(), addedAt: Date.now() } },
+      }));
       haptic('success');
       setStep('done');
     } catch (e) {

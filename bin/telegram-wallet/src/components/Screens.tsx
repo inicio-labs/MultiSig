@@ -43,6 +43,8 @@ import { isScannedAddress, SendSheet } from './SendSheet';
 import { SettingsSheet } from './SettingsSheet';
 import { canSetUpRecoveryHere, RecoverySheet, type RecoveryFrom } from './RecoverySheet';
 import { RecoveryNudgeSheet } from './RecoveryNudgeSheet';
+import { canUsePhoneKeyHere, NewPhoneSheet, RemovedPhoneSheet, thisPhoneWasRemoved } from './NewPhoneSheet';
+import { thisPhone } from '@/lib/thisPhone';
 import { TokenAmount } from './TokenAmount';
 import { ToastProvider, useToast } from './Toast';
 import { WalletCard } from './WalletCard';
@@ -64,7 +66,7 @@ export function Screens() {
 function WalletHome() {
   const { engine, snapshot } = useWallet();
   const toast = useToast();
-  const [view, setView] = useState<'home' | 'send' | 'receive' | 'settings' | 'alerts' | 'recovery' | 'recovery-nudge'>('home');
+  const [view, setView] = useState<'home' | 'send' | 'receive' | 'settings' | 'alerts' | 'recovery' | 'recovery-nudge' | 'new-phone' | 'removed-phone'>('home');
   const [recoveryFrom, setRecoveryFrom] = useState<RecoveryFrom>('settings');
   const [prefill, setPrefill] = useState<string | null>(null);
   const [cardGone, setCardGone] = useState(false);
@@ -133,6 +135,28 @@ function WalletHome() {
     can: alertsLoaded && askedLoaded && alerts === false && alertsAsked === false && alertsAvailable(),
     view,
   };
+  // Recovery on, and this phone's key is not on the account: a new phone (or
+  // Telegram reinstalled) is offered to add itself, once per open; a phone
+  // another one replaced says so, once.
+  const needsThisPhone = snapshot.recovery.kind === 'on' && !snapshot.recovery.phoneHere;
+  const phoneHere = snapshot.recovery.kind === 'on' && snapshot.recovery.phoneHere;
+  useEffect(() => {
+    if (phoneHere) thisPhone.markActive();
+  }, [phoneHere]);
+  const removedHere = needsThisPhone && thisPhoneWasRemoved(snapshot.recovery);
+  const phoneOffered = useRef(false);
+  useEffect(() => {
+    if (!ready || !needsThisPhone || phoneOffered.current || view !== 'home' || !canUsePhoneKeyHere()) return;
+    phoneOffered.current = true;
+    const seenKey = `miden-tg-wallet:removed-seen:${thisPhone.commitment() ?? ''}`;
+    if (removedHere && storage.get(seenKey)) return;
+    const timer = setTimeout(() => {
+      if (removedHere) storage.set(seenKey, '1');
+      setView(removedHere ? 'removed-phone' : 'new-phone');
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [ready, needsThisPhone, removedHere, view]);
+
   // One nudge per open, recovery first (it guards the money), alerts next.
   const nudgedThisOpen = useRef(false);
   const recoveryOff = snapshot.recovery.kind === 'off' || snapshot.recovery.kind === 'partial';
@@ -312,6 +336,11 @@ function WalletHome() {
       return;
     }
     haptic('light');
+    // Recovery on, and this phone's key is not on the account: add this phone first.
+    if (needsThisPhone && canUsePhoneKeyHere()) {
+      setView('new-phone');
+      return;
+    }
     setPrefill(null);
     setView('send');
   };
@@ -394,7 +423,10 @@ function WalletHome() {
         <div className="actions">
           <button className="btn ink" onClick={openReceive}><Icon name="receive" />Receive</button>
           <button className="btn" onClick={openSend}>
-            <Icon name="send" />Send{phoneOnly && <span className="btn-tag">Phone only</span>}
+            <Icon name="send" />Send
+            {phoneOnly
+              ? <span className="btn-tag">Phone only</span>
+              : needsThisPhone && <span className="btn-tag">{removedHere ? 'Removed' : 'Add phone'}</span>}
           </button>
         </div>
 
@@ -434,10 +466,19 @@ function WalletHome() {
         onCollected={collected}
         onSetUpRecovery={canSetUpRecoveryHere() ? () => openRecovery('receive') : undefined}
       />
-      <SettingsSheet open={view === 'settings'} onClose={() => setView('home')} accountId={snapshot.accountId} onRecovery={() => openRecovery('settings')} />
+      <SettingsSheet
+        open={view === 'settings'}
+        onClose={() => setView('home')}
+        accountId={snapshot.accountId}
+        onRecovery={() => openRecovery('settings')}
+        onUseThisPhone={canUsePhoneKeyHere() ? () => setView('new-phone') : undefined}
+      />
       <AlertsNudgeSheet open={view === 'alerts'} firstPayment={firstPayment} onAnswer={answerAlerts} />
       <RecoveryNudgeSheet open={view === 'recovery-nudge'} firstPayment={firstPayment} onAnswer={answerRecoveryNudge} />
       {ready && <RecoverySheet open={view === 'recovery'} from={recoveryFrom} onClose={() => setView('home')} onDone={recoveryDone} />}
+      {/* Stays up after the move succeeds, for "This phone is ready". */}
+      {ready && (needsThisPhone || view === 'new-phone') && <NewPhoneSheet open={view === 'new-phone'} onClose={() => setView('home')} />}
+      <RemovedPhoneSheet open={view === 'removed-phone'} onClose={() => setView('home')} />
       {inviting && <InviteScreen />}
       {/* A new phone or user (nothing saved): a plain loading screen until the
           wallet is found, never an empty home that then turns into Welcome. */}

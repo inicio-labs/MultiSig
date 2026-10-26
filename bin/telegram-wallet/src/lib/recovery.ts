@@ -64,6 +64,30 @@ export function recoverySteps(rules: AccountRules, keys: { phone: string; email:
   return steps;
 }
 
+/**
+ * The phone keys on the account other than this one: every signer that is
+ * neither the Telegram key, the email key nor this phone's key.
+ */
+export function otherPhones(rules: AccountRules, keys: { telegram: string; email: string; phone: string | null }): string[] {
+  return rules.signers.filter((s) => ![keys.telegram, keys.email, keys.phone].some((k) => k && same(s, k)));
+}
+
+export type PhoneStep =
+  | { kind: 'add-phone'; commitment: string }
+  | { kind: 'remove-phone'; commitment: string };
+
+/**
+ * Moving the wallet to this phone (recovery on): add this phone's key, then
+ * remove the other phones' keys, each a transaction the Telegram and email
+ * keys sign; two keys stay needed throughout. Resumes from the account's rules.
+ */
+export function newPhoneSteps(rules: AccountRules, keys: { telegram: string; email: string; phone: string }): PhoneStep[] {
+  const steps: PhoneStep[] = [];
+  if (!lists(rules, keys.phone)) steps.push({ kind: 'add-phone', commitment: keys.phone });
+  for (const commitment of otherPhones(rules, keys)) steps.push({ kind: 'remove-phone', commitment });
+  return steps;
+}
+
 /** Shown as "v•••@gmail.com": enough to recognise it, not enough to read it. */
 export function maskEmail(email: string): string {
   const [name, domain] = email.trim().split('@');

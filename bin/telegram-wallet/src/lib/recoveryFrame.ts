@@ -13,6 +13,7 @@ import { DEV_LOCAL_SIGNER } from './devSigner';
  *                 { type: 'signed', id, … }   a signature the wallet asked for
  *   wallet → box  { type: 'submit' }          the sheet's main button
  *                 { type: 'resend' } | { type: 'change' }
+ *                 { type: 'send-to', email }  the code to a known email (a new phone)
  *                 { type: 'sign', id, hash }
  *
  * Development builds embed a stand-in (same origin, a local key, any
@@ -65,6 +66,7 @@ export type WalletMessage =
   | { type: 'submit' }
   | { type: 'resend' }
   | { type: 'change' }
+  | { type: 'send-to'; email: string }
   | { type: 'sign'; id: number; hash: Hex };
 
 export const looksLikeEmail = (value: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value.trim());

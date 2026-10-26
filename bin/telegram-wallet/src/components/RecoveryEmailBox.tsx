@@ -274,6 +274,13 @@ function Box({ backend }: { backend: Backend }) {
       if (event.origin !== target || event.source !== window.parent) return;
       const message = event.data;
       if (message?.type === 'submit') submit();
+      else if (message?.type === 'send-to' && looksLikeEmail(message.email ?? '')) {
+        // Already signed in, or the code already went there: nothing to send.
+        if (!backend.signedIn && sentTo !== message.email) {
+          setEmail(message.email);
+          void send(message.email);
+        }
+      }
       else if (message?.type === 'resend' && sentTo) void send(sentTo);
       else if (message?.type === 'change') {
         storage.remove(SENT_TO);

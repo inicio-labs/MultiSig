@@ -13,12 +13,14 @@ import { Sheet } from './Sheet';
 import { useWallet } from './WalletProvider';
 
 /** From the gear on the home screen (and Telegram's own Settings item in the app's menu). */
-export function SettingsSheet({ open, onClose, accountId, onRecovery }: {
+export function SettingsSheet({ open, onClose, accountId, onRecovery, onUseThisPhone }: {
   open: boolean;
   onClose(): void;
   accountId: string | null;
   /** Opens recovery setup (or its finish). */
   onRecovery?(): void;
+  /** Recovery on, this phone's key not on the account: add this phone. */
+  onUseThisPhone?(): void;
 }) {
   const [hideAmounts, setHideAmounts] = usePref('hideAmounts');
   const [sound, setSound] = usePref('sound');
@@ -56,7 +58,7 @@ export function SettingsSheet({ open, onClose, accountId, onRecovery }: {
           </div>
         </>
       )}
-      <SecuritySection accountId={accountId} onRecovery={onRecovery} />
+      <SecuritySection accountId={accountId} onRecovery={onRecovery} onUseThisPhone={onUseThisPhone} />
       <h2 className="set-head">Privacy</h2>
       <div className="cells">
         <Toggle icon="eye" label="Hide amounts" hint="Blur balances and payments" on={hideAmounts === true} set={setHideAmounts} />
@@ -131,7 +133,7 @@ function phoneLabel(): string {
 }
 
 /** Recovery (recovery.ts) as plain rows, never a switch: it stays on once on. */
-function SecuritySection({ accountId, onRecovery }: { accountId: string | null; onRecovery?(): void }) {
+function SecuritySection({ accountId, onRecovery, onUseThisPhone }: { accountId: string | null; onRecovery?(): void; onUseThisPhone?(): void }) {
   const { snapshot } = useWallet();
   const bio = useBiometricName();
   const { recovery } = snapshot;
@@ -146,7 +148,18 @@ function SecuritySection({ accountId, onRecovery }: { accountId: string | null; 
       <div className="cells">
         {recovery.kind === 'on' ? (
           <>
-            {recovery.phoneHere && <InfoRow icon="face" label={`${bio} on this phone`} hint={phoneLabel()} />}
+            {recovery.phoneHere ? (
+              <InfoRow icon="face" label={`${bio} on this phone`} hint={phoneLabel()} />
+            ) : (
+              <button className="cell set-row" onClick={onUseThisPhone} disabled={!onUseThisPhone}>
+                <span className="avatar"><Icon name="phone" /></span>
+                <span className="cell-main">
+                  <span className="cell-title">This phone</span>
+                  <span className="cell-sub">{onUseThisPhone ? 'Can’t send yet' : `Can’t send · needs a phone with ${bio}`}</span>
+                </span>
+                {onUseThisPhone && <span className="pill">Use this phone</span>}
+              </button>
+            )}
             <InfoRow icon="lock" label="Your Telegram" hint={telegramUsername() ? `@${telegramUsername()}` : 'Signs you in'} />
             <InfoRow icon="at" label={email?.masked ?? 'Recovery email'} hint="Gets you back in on a new phone" />
           </>
