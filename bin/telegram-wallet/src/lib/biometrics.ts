@@ -14,10 +14,16 @@ export interface BiometricManager {
   biometricType: 'finger' | 'face' | 'unknown';
   isAccessRequested: boolean;
   isAccessGranted: boolean;
+  /** A token (here: this phone's signing key, see phoneKey.ts) is stored behind the scan. */
+  isBiometricTokenSaved?: boolean;
+  /** Telegram's id for this device's biometric storage. */
+  deviceId?: string;
   init(callback?: () => void): unknown;
   requestAccess(params: { reason?: string }, callback?: (granted: boolean) => void): unknown;
   authenticate(params: { reason?: string }, callback?: (authenticated: boolean, token?: string) => void): unknown;
   openSettings(): unknown;
+  /** Stores a token that `authenticate` hands back after a scan (empty removes it). */
+  updateBiometricToken?(token: string, callback?: (updated: boolean) => void): unknown;
 }
 
 // Telegram shows at most 128 characters of a reason.

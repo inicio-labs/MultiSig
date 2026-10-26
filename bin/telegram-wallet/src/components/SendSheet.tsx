@@ -16,6 +16,8 @@ import { assertAddressOnNetwork } from '@/lib/midenNetwork';
 import { MIDEN_NETWORK } from '@/config/psm';
 import { reportDiag } from '@/lib/remoteDiag';
 import { canScanQr, haptic, onAppActiveChange, onDesktop, scanQr, shareText, telegramBiometrics } from '@/lib/telegram';
+import { PhoneKeyNotConfirmed } from '@/lib/phoneKey';
+import { thisPhone } from '@/lib/thisPhone';
 import { formatTokenAmount, parseTokenAmount } from '@/lib/tokenAmounts';
 import { Icon } from './Icon';
 import { ProgressSteps } from './ProgressSteps';
@@ -256,15 +258,34 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
     const label = `${formatTokenAmount(units, decimals)} ${symbol}`;
     setSent(label);
     // Face ID first, while the first step ("Confirming it’s you") shows.
+    // Recovery on: that scan unlocks this phone's key, which signs the
+    // payment with the Telegram key (one scan for both).
+    const phoneKey = snapshot.recovery.kind === 'on' ? thisPhone.key() : null;
     const go = async () => {
+      if (phoneKey) {
+        try {
+          return await phoneKey.withKey(`Send ${label}`, () => engine.send(recipient.hex, faucetId, units, { private: isPrivate }));
+        } catch (e) {
+          if (e instanceof PhoneKeyNotConfirmed) {
+            setStep('amount');
+            fail('Not confirmed. Slide to try again.');
+            return null;
+          }
+          throw e;
+        }
+      }
       const scan = SKIP_SCAN ? 'ok' : await confirmWithBiometrics(telegramBiometrics(), `Send ${label}`);
       if (scan !== 'ok') {
         setStep('amount');
-        if (scan === 'failed') return fail('Not confirmed. Slide to try again.');
-        setLock(scan);
-        return;
+        if (scan === 'failed') fail('Not confirmed. Slide to try again.');
+        else setLock(scan);
+        return null;
       }
-      const result = await engine.send(recipient.hex, faucetId, units, { private: isPrivate });
+      return engine.send(recipient.hex, faucetId, units, { private: isPrivate });
+    };
+    const finish = async () => {
+      const result = await go();
+      if (!result) return;
       alertRecipient(recipient.hex);
       if (recipient.person && snapshot.accountId) {
         saveContact(snapshot.accountId, { address: recipient.hex, ...recipient.person });
@@ -273,7 +294,7 @@ export function SendSheet({ open, prefill, onClose }: { open: boolean; prefill: 
       haptic('success');
       setStep('sent');
     };
-    go().catch((e: unknown) => {
+    finish().catch((e: unknown) => {
       reportDiag('send.error', e);
       setStep('amount');
       fail(formatError(e));

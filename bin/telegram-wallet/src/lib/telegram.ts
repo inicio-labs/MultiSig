@@ -456,9 +456,14 @@ export function openLinkInBrowser(
 // prompt for mini apps, so no sending there.
 const DESKTOP_PLATFORMS = new Set(['tdesktop', 'macos', 'weba', 'webk', 'web', 'unigram']);
 
+/** Telegram's platform name (ios, android, tdesktop, …); empty outside Telegram. */
+export function telegramPlatform(): string {
+  if (!insideTelegram) return '';
+  return webApp()?.platform || new URLSearchParams(launchUrl.hash.slice(1)).get('tgWebAppPlatform') || '';
+}
+
 /** Not on a phone: Telegram Desktop or Web, or a browser outside Telegram. */
 export function onDesktop(): boolean {
   if (!insideTelegram) return true;
-  const platform = webApp()?.platform || new URLSearchParams(launchUrl.hash.slice(1)).get('tgWebAppPlatform') || '';
-  return DESKTOP_PLATFORMS.has(platform);
+  return DESKTOP_PLATFORMS.has(telegramPlatform());
 }

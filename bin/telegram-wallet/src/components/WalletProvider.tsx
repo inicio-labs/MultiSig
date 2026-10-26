@@ -25,6 +25,7 @@ import { reportDiag } from '@/lib/remoteDiag';
 import { viewKeyFor } from '@/lib/savedView';
 import { VIEW_SCOPE } from '@/lib/viewScope';
 import { storage } from '@/lib/storage';
+import { thisPhone } from '@/lib/thisPhone';
 import { WalletEngine, type WalletSnapshot } from '@/lib/walletEngine';
 
 // The Guardian session key, kept on this phone (non-extractable) so reopening
@@ -84,6 +85,8 @@ export function WalletProvider({ signer, children }: { signer: Signer | null; ch
     registerNoteTag: registerAccountNoteTag,
     createPrivateNotes,
     storage,
+    // Once recovery is on, payments need this phone's key too (recovery.ts).
+    phoneKey: { commitment: () => thisPhone.commitment(), signer: () => thisPhone.signer() },
     startSession: async (client) => {
       if (!signer || !SESSION_STORE) return;
       // Expired, revoked or rejected: requests go back to the wallet; a new
@@ -120,7 +123,12 @@ export function WalletProvider({ signer, children }: { signer: Signer | null; ch
   const snapshot = useSyncExternalStore(engine.subscribe, engine.getSnapshot, engine.getSnapshot);
   // Development builds: the engine on window, for inspecting state in the console.
   useEffect(() => {
-    if (process.env.NODE_ENV !== 'production') (window as { midenWallet?: unknown }).midenWallet = engine;
+    if (process.env.NODE_ENV !== 'production') {
+      (window as { midenWallet?: unknown }).midenWallet = engine;
+      void import('@/lib/devRecovery').then(({ devRecovery }) => {
+        (window as { recoveryDev?: unknown }).recoveryDev = devRecovery(engine as never);
+      });
+    }
   }, [engine]);
 
   useEffect(() => {

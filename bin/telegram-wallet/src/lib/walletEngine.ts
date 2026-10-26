@@ -21,6 +21,7 @@ import {
 } from './pendingCandidate';
 import type { MultisigHooks } from './multisigApi';
 import type { PrivateNotes } from './privateSend';
+import { recoveryStatus, recoverySteps, type AccountRules, type RecoveryStatus, type SetupStep } from './recovery';
 
 /** The parts of the Miden client the engine uses. */
 export interface WalletMidenClient {
@@ -66,6 +67,15 @@ export interface WalletEngineDeps<C extends WalletMidenClient, M extends WalletM
   startSession?(multisigClient: M): Promise<string | void>;
   /** Waits between automatic start retries (tests pass zeros). */
   startRetryDelaysMs?: number[];
+  /**
+   * This phone's key (phoneKey.ts), when the phone has one: its commitment
+   * (no scan) and a signer for it (a signature uses the key held for the
+   * current action, else asks for a scan). Once recovery is on, payments
+   * need it next to the Telegram key.
+   */
+  phoneKey?: { commitment(): string | null; signer(): Promise<Signer> };
+  /** Waiting for Guardian to take the last transaction before the next (tests shorten it). */
+  guardianCatchUp?: { timeoutMs: number; everyMs: number };
   /** Private sends: note delivery and the check before each transaction. */
   createPrivateNotes?(midenClient: C): PrivateNotes;
   /** Remembers the account this key last used, to prefer it if the key has several. */
@@ -94,7 +104,8 @@ export type WalletPhase =
 export type ActivityStep = 'preparing' | 'signing' | 'proving' | 'delivering' | 'syncing';
 
 export interface WalletActivity {
-  kind: 'send' | 'claim';
+  /** `recovery`: one of the setup transactions (recovery.ts). */
+  kind: 'send' | 'claim' | 'recovery';
   step: ActivityStep;
 }
 
@@ -165,6 +176,8 @@ export interface WalletSnapshot {
   history: ActivityItem[];
   /** Something the user should know that is not an error (e.g. slow local proving). */
   notice: string | null;
+  /** Recovery on the account (recovery.ts), from its rules once loaded. */
+  recovery: RecoveryStatus;
   /**
    * While starting, balances and history are what this phone showed last
    * time, saved at this moment (ms); null once they are up to date.
@@ -193,6 +206,8 @@ const LAST_ACCOUNT_KEY = 'miden-tg-wallet:last-account';
  * could make a second one.
  */
 const START_RETRY_DELAYS_MS = [800, 2_000, 4_000];
+// Before the next setup transaction: how long to wait for Guardian to take the last one.
+const GUARDIAN_CATCH_UP = { timeoutMs: 90_000, everyMs: 2_000 };
 const RETRY_PHASES = new Set<WalletPhase['kind']>(['starting', 'finding', 'registering']);
 const PASSING_ERROR = /transaction aborted|aborterror|database-related|failed to fetch|load failed|network|timed? ?out|deadline|unavailable|\b50[234]\b/i;
 
@@ -223,6 +238,7 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
     activity: null,
     history: [],
     notice: null,
+    recovery: { kind: 'unknown' },
     savedAt: null,
   };
   private readonly listeners = new Set<() => void>();
@@ -235,6 +251,8 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
    */
   private deliveryCheckedAt: bigint | null = null;
   private multisig: Multisig | null = null;
+  /** The account as this phone's key sees it (its own Guardian connection), for its signatures. */
+  private phoneMultisig: Multisig | null = null;
   /** Waiting for the invite code before creating the account (invite-only network). */
   private inviteWaiter: ((code: string) => void) | null = null;
   /** The accepted invite code this start registers with. */
@@ -548,6 +566,7 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
       // seen on chain; the local state is the current one then.
       if (!/nonce is too low/i.test(formatError(error))) throw error;
     }
+    this.updateRecovery(multisig);
     // Only the wallet's token: notes in other tokens are never shown or
     // collected, and stay claimable should the wallet add tokens later.
     const incoming = (await this.timed('sync: incoming notes', () => multisig.getConsumableNotes()))
@@ -584,6 +603,85 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
     const spent = before - this.feeTokenBalance();
     const fee = faucetId.toLowerCase() === this.snapshot.feeFaucetId ? spent - amount : spent;
     return { fee: spent > 0n && fee >= 0n ? fee : null };
+  }
+
+  /** The account's rules as this device last read them (null before the first load). */
+  private updateRecovery(multisig: Multisig): void {
+    if (this.multisig !== multisig) return;
+    const recovery = recoveryStatus(rulesOf(multisig), this.deps.phoneKey?.commitment() ?? null);
+    if (JSON.stringify(recovery) !== JSON.stringify(this.snapshot.recovery)) this.update({ recovery });
+  }
+
+  /**
+   * Turns recovery on (recovery.ts): runs the steps the account still needs,
+   * one transaction each, signed by the Telegram key alone; Guardian takes
+   * each before the next is built. Done only once the account's rules read
+   * back as two of three. Interrupted, a later call picks up where it stopped.
+   * `onStep(done, total)` before each transaction.
+   */
+  async setUpRecovery(keys: { phone: string; email: string }, onStep?: (done: number, total: number) => void): Promise<void> {
+    const { midenClient, multisig } = this;
+    if (!midenClient || !multisig) throw new Error('The wallet is not ready yet.');
+    if (this.busy) throw new Error('Another transaction is still in progress.');
+    this.busy = true;
+    try {
+      await this.exclusive(async () => {
+        let total = 0;
+        for (let done = 0; ; done++) {
+          await this.timed('wait for guardian', () => this.untilGuardianCaughtUp(multisig));
+          const steps = recoverySteps(rulesOf(multisig) ?? NO_RULES, keys);
+          const next = steps[0];
+          if (!next) break;
+          total = Math.max(total, done + steps.length);
+          // A step that never shows up in the account's rules would repeat forever.
+          if (done >= 4) throw new Error('Recovery could not be turned on. Try again in a minute.');
+          onStep?.(done, total);
+          await this.transact(midenClient, multisig, 'recovery', (ms) => buildSetupStep(ms, next), false, []);
+        }
+        this.updateRecovery(multisig);
+        if (this.snapshot.recovery.kind !== 'on') throw new Error('Recovery is not on yet. Try again in a minute.');
+      });
+    } finally {
+      this.busy = false;
+    }
+    void this.refresh().catch((error) => console.warn('Refresh after setting up recovery failed', error));
+  }
+
+  /** Until Guardian's canonical nonce reaches this device's (bounded; then the push decides). */
+  private async untilGuardianCaughtUp(multisig: Multisig): Promise<void> {
+    const { timeoutMs, everyMs } = this.deps.guardianCatchUp ?? GUARDIAN_CATCH_UP;
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const result = await multisig.syncState().catch(() => null) as { source?: string; localNonce?: bigint; guardianNonce?: bigint } | null;
+      const behind = result?.source === 'local' && BigInt(result.guardianNonce ?? 0) < BigInt(result.localNonce ?? 0);
+      if (!behind || Date.now() >= deadline) return;
+      await new Promise((resolve) => setTimeout(resolve, everyMs));
+    }
+  }
+
+  /**
+   * The second signature a payment needs once recovery is on: this phone's
+   * key, through the account loaded with it (its own Guardian connection: a
+   * shared one signs as whichever key loaded last). Returns the proposal as
+   * the Telegram key's copy sees it afterwards.
+   */
+  private async signWithPhone(multisig: Multisig, proposalId: string): Promise<Proposal | undefined> {
+    const { midenClient } = this;
+    const phoneKey = this.deps.phoneKey;
+    if (!midenClient || !phoneKey?.commitment()) {
+      throw new Error('Payments from this wallet need this phone’s Face ID key, and this phone doesn’t have it.');
+    }
+    if (this.phoneMultisig?.accountId !== multisig.accountId) {
+      const signer = await phoneKey.signer();
+      this.phoneMultisig = await this.deps.loadAccount(this.deps.createMultisigClient(midenClient), multisig.accountId, signer, this.hooks);
+    }
+    const second = this.phoneMultisig;
+    await second.syncState().catch((error: unknown) => {
+      if (!/nonce is too low/i.test(formatError(error))) throw error;
+    });
+    await second.syncProposals();
+    await second.signProposal(proposalId);
+    return (await multisig.syncProposals()).find((p) => p.id === proposalId);
   }
 
   private feeTokenBalance(): bigint {
@@ -649,7 +747,7 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
   ): Promise<void> {
     const privateNotes = this.privateNotes;
     const step = (s: ActivityStep) => this.update({ activity: { kind, step: s } });
-    const label = kind === 'send' ? 'Send failed' : 'Claim failed';
+    const label = kind === 'send' ? 'Send failed' : kind === 'claim' ? 'Claim failed' : 'Recovery could not be turned on';
     clearExecutionPushed(multisig.accountId);
     let proposal: Proposal | undefined;
     let executed = false;
@@ -672,9 +770,12 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
       // signProposal re-verifies the proposal and returns it signed; read it
       // back from Guardian only when that copy is not ready yet.
       const signed = await this.timed('sign', () => multisig.signProposal(proposal!.id));
-      const fresh = signed && isProposalActionable(signed)
-        ? signed
-        : (await this.timed('re-read proposals', () => multisig.syncProposals())).find((p) => p.id === proposal!.id);
+      // Recovery on: a payment needs this phone's key too.
+      const second = signed && needsAnotherSignature(signed)
+        ? await this.timed('sign with this phone', () => this.signWithPhone(multisig, proposal!.id))
+        : undefined;
+      const fresh = [second, signed].find((p) => p && isProposalActionable(p))
+        ?? (await this.timed('re-read proposals', () => multisig.syncProposals())).find((p) => p.id === proposal!.id);
       if (!fresh || !isProposalActionable(fresh)) {
         throw new Error(fresh?.verification.status === 'failed'
           ? `the proposal did not verify: ${fresh.verification.message}`
@@ -767,6 +868,31 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
     return outcome === 'landed'
       ? 'Your previous transaction went through. Check your balance before sending again.'
       : `${releaseNote(outcome)} Try again.`;
+  }
+}
+
+const NO_RULES: AccountRules = { signers: [], threshold: 1, overrides: {} };
+
+/** The account's rules from its multisig configuration (null while unknown). */
+function rulesOf(multisig: Multisig): AccountRules | null {
+  const { signerCommitments, threshold, procedureThresholds } = multisig as Partial<Multisig>;
+  if (!Array.isArray(signerCommitments) || typeof threshold !== 'number') return null;
+  return { signers: signerCommitments, threshold, overrides: Object.fromEntries(procedureThresholds ?? []) };
+}
+
+/** Signed, verified and still short of the keys it needs. */
+function needsAnotherSignature(proposal: Proposal): boolean {
+  return proposal.status === 'pending' && proposal.verification.status === 'verified';
+}
+
+function buildSetupStep(multisig: Multisig, step: SetupStep): Promise<Proposal> {
+  switch (step.kind) {
+    case 'collect-with-one':
+      return multisig.createUpdateProcedureThresholdProposal('receive_asset', 1);
+    case 'add-key':
+      return multisig.createAddSignerProposal(step.commitment, { newThreshold: step.threshold });
+    case 'require-two':
+      return multisig.createChangeThresholdProposal(2);
   }
 }
 
