@@ -13,7 +13,7 @@ import {
   MidenWalletSigner,
   type SignatureScheme,
 } from '@openzeppelin/miden-multisig-client';
-import type { GuardianHttpClient, HistoryEntry, Signer } from '@openzeppelin/guardian-client';
+import type { GuardianHttpClient, HistoryEntry, PubkeyResponse, Signer } from '@openzeppelin/guardian-client';
 import { canonicalAt, TIMESTAMP_KEY } from './transactionHistory';
 import {
   AccountId,
@@ -347,12 +347,14 @@ export async function initMultisigClient(
   midenClient: MidenClient,
   guardianEndpoint: string,
   scheme?: SignatureScheme,
+  /** Guardian's key, already requested while the client started; asked again if that failed. */
+  knownPubkey?: Promise<PubkeyResponse | null>,
 ): Promise<{ client: MultisigClient; guardianCommitment: string; guardianPubkey?: string }> {
   const client = new MultisigClientClass(midenClient, {
     guardianEndpoint,
     midenRpcEndpoint: MIDEN_RPC_URL,
   });
-  const pubkeyResp = await client.guardianClient.getPubkey(scheme);
+  const pubkeyResp = (await knownPubkey?.catch(() => null)) ?? await client.guardianClient.getPubkey(scheme);
   return { client, guardianCommitment: pubkeyResp.commitment, guardianPubkey: pubkeyResp.pubkey };
 }
 

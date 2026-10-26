@@ -17,6 +17,7 @@ const PendingActions: React.FC<PendingActionsProps> = ({ threshold, fixedHeight 
     activeCommitment,
     accountNonce,
     syncingState,
+    loadingAccount,
   } = useMultisig();
 
   // Filter to only show pending (not yet executed) proposals
@@ -54,7 +55,8 @@ const PendingActions: React.FC<PendingActionsProps> = ({ threshold, fixedHeight 
           : "h-[200px]"
           }`}
       >
-        {syncingState ? (
+        {/* Proposals arrive with the account's state: never "none" before that. */}
+        {syncingState || loadingAccount ? (
           <div className="flex items-center justify-center py-8">
             <div className="flex flex-col items-center gap-3">
               <div className="animate-spin rounded-full h-8 w-8 border-2 border-[#00000033] border-t-[#FF5500]"></div>

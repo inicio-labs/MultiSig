@@ -12,7 +12,7 @@ import ApproveModal from "./components/ApproveModal";
 export const dynamic = 'force-dynamic';
 
 const Page: React.FC = () => {
-  const { detectedConfig } = useMultisig();
+  const { detectedConfig, lastKnownAccount } = useMultisig();
   const { openSendModal, openReceiveModal } = useDashboardUI();
   const [isApproveOpen, setIsApproveOpen] = useState(false);
   const history = useTransactionHistory();
@@ -25,12 +25,14 @@ const Page: React.FC = () => {
     return "Multisig Wallet";
   }, []);
 
+  // Until the fresh state arrives: what this browser last knew, else "…".
+  const known = detectedConfig
+    ? { threshold: detectedConfig.threshold, signerCount: detectedConfig.signerCommitments.length, vaultBalances: detectedConfig.vaultBalances }
+    : lastKnownAccount;
+  const updating = !detectedConfig;
   const threshold = detectedConfig?.threshold ?? 0;
-  const signerCount = detectedConfig?.signerCommitments?.length ?? 0;
-  const vaultBalances = useMemo(
-    () => detectedConfig?.vaultBalances ?? [],
-    [detectedConfig?.vaultBalances],
-  );
+  const signerCount = known?.signerCount ?? 0;
+  const vaultBalances = useMemo(() => known?.vaultBalances ?? [], [known?.vaultBalances]);
 
   // Different tokens are never added together: each has its own decimals and
   // value. The card shows the first token and counts the rest.
@@ -53,10 +55,12 @@ const Page: React.FC = () => {
           </div>
           <div>
             <div className="text-[22px] md:text-[26px] font-[600] text-[#111] leading-none break-all">
-              {firstBalance ? <TokenAmount faucetId={firstBalance.faucetId} amount={firstBalance.amount} /> : "0"}
+              {firstBalance ? <TokenAmount faucetId={firstBalance.faucetId} amount={firstBalance.amount} /> : known ? "0" : "…"}
             </div>
             <div className="text-[12px] text-[rgba(0,0,0,0.4)] mt-1.5">
-              {vaultBalances.length === 0
+              {updating
+                ? "Updating…"
+                : vaultBalances.length === 0
                 ? "No tokens in vault"
                 : otherBalances.length > 0
                   ? `and ${otherBalances.length} more token${otherBalances.length !== 1 ? "s" : ""}`
@@ -78,8 +82,8 @@ const Page: React.FC = () => {
           <div className="flex flex-col flex-1 justify-between">
             {[
               { label: "Wallet Name", value: walletName },
-              { label: "Signers", value: String(signerCount) },
-              { label: "Threshold", value: threshold > 0 ? `${threshold} of ${signerCount}` : "N/A" },
+              { label: "Signers", value: known ? String(signerCount) : "…" },
+              { label: "Threshold", value: known ? (known.threshold > 0 ? `${known.threshold} of ${signerCount}` : "N/A") : "…" },
             ].map((row, i, arr) => (
               <div
                 key={row.label}

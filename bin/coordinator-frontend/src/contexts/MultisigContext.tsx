@@ -24,11 +24,12 @@ import {
   AccountInspector,
   isProposalActionable,
 } from "@openzeppelin/miden-multisig-client";
-import { GuardianHttpError, type GuardianHttpClient, type SessionGrantFields, type Signer } from "@openzeppelin/guardian-client";
+import { GuardianHttpError, type GuardianHttpClient, type PubkeyResponse, type SessionGrantFields, type Signer } from "@openzeppelin/guardian-client";
 import { Note, NoteType, type MidenClient } from "@miden-sdk/miden-sdk";
 
 import { normalizeCommitment } from "@/lib/helpers";
-import { findAccountsByKey, type FoundAccount } from "@/lib/findAccounts";
+import { accountAddress, findAccountsByKey, type FoundAccount } from "@/lib/findAccounts";
+import { readAccountSnapshot, saveAccountSnapshot, type AccountSnapshot } from "@/lib/accountSnapshot";
 import { refreshTokenList } from "@/lib/tokenList";
 import { formatError, classifyWalletError, describeExecutionError, UserFacingError } from "@/lib/errors";
 import {
@@ -101,6 +102,7 @@ import {
 } from "@/lib/privateNoteGuard";
 import { useMidenWallet } from "@/hooks/useMidenWallet";
 import { MidenWalletAdapter } from "@miden-sdk/miden-wallet-adapter-miden";
+import { whenWalletInstalled } from "@/lib/walletReconnect";
 import { diagnosticError, diagnosticLog, logReceiveFunding } from '@/lib/midenDiagnostics';
 import {
   clearExecutionPushed,
@@ -274,6 +276,11 @@ export interface MultisigContextValue {
   retryAccountFunding: () => Promise<void>;
   /** The loaded account's nonce, when known (outdated proposals). */
   accountNonce: bigint | null;
+  /**
+   * What this browser last knew of the account (saved or loaded): shown while
+   * its fresh state loads, never used for an action.
+   */
+  lastKnownAccount: AccountSnapshot | null;
   /** The wallet's Guardian session (see guardianSession.ts). */
   guardianSession: GuardianSessionState;
   /** Starts it again after it failed, was declined or ended. */
@@ -352,6 +359,12 @@ export interface MultisigContextValue {
 
 const MultisigContext = createContext<MultisigContextValue | null>(null);
 
+/** Guardian's key requested at start-up, before the Miden client exists. */
+interface EarlyPubkey {
+  url: string;
+  pubkey: Promise<PubkeyResponse | null>;
+}
+
 /**
  * What token display needs from the client, kept apart from the rest of the
  * context so token components re-render only when it changes.
@@ -429,6 +442,15 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
   const [privateNoteGuard, setPrivateNoteGuard] = useState<PrivateNoteGuardState>({ phase: "idle" });
   // The loaded account's nonce: proposals labelled at or below it are outdated.
   const [accountNonce, setAccountNonce] = useState<bigint | null>(null);
+  // The saved account as this browser last saw it (accountSnapshot.ts).
+  const [accountSnapshot, setAccountSnapshot] = useState<AccountSnapshot | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      return readAccountSnapshot(localStorage.getItem("currentWalletId"), MIDEN_NETWORK);
+    } catch {
+      return null;
+    }
+  });
   const privateNoteGuardRef = useRef(privateNoteGuard);
   privateNoteGuardRef.current = privateNoteGuard;
   // Action handlers are defined before the delivery code; they reach the guard
@@ -523,6 +545,33 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     setProposals(synced);
     setConsumableNotes(notes);
   }, []);
+
+  // Each fresh state of the loaded account becomes its snapshot for the next visit.
+  useEffect(() => {
+    if (!multisig || !detectedConfig) return;
+    let address: string | undefined;
+    try {
+      address = accountAddress(multisig.accountId, MIDEN_NETWORK);
+    } catch {
+      // Shown once the SDK can convert it.
+    }
+    const snapshot: AccountSnapshot = {
+      accountId: multisig.accountId,
+      ...(address ? { address } : {}),
+      threshold: detectedConfig.threshold,
+      signerCount: detectedConfig.signerCommitments.length,
+      vaultBalances: detectedConfig.vaultBalances.map(({ faucetId, amount }) => ({ faucetId, amount })),
+      savedAt: Date.now(),
+    };
+    saveAccountSnapshot(snapshot, MIDEN_NETWORK);
+    setAccountSnapshot(snapshot);
+  }, [multisig, detectedConfig]);
+  const lastKnownAccount = useMemo(
+    () => (accountSnapshot && (!multisig || accountSnapshot.accountId.toLowerCase() === multisig.accountId.toLowerCase())
+      ? accountSnapshot
+      : null),
+    [accountSnapshot, multisig],
+  );
 
   // Any account operation in flight: wallets and Guardian must not change under it.
   const accountOperationBusy = creating || loadingAccount || creatingProposal || Boolean(signingProposal)
@@ -623,15 +672,19 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     wasMidenConnected.current = midenWalletSession.connected;
   }, [midenWalletSession.connected, setWalletSource]);
 
-  // Attempt to auto-connect external wallets on mount
+  // Reconnect the Miden Wallet a returning user chose last time. The adapter
+  // finds the extension by polling (about once a second) and connect() before
+  // that fails as "not ready", so ask once it is found. A wallet that already
+  // allows this site answers without a popup; if it does not answer, the
+  // dashboard offers Connect Miden Wallet (AccountGate).
   useEffect(() => {
-    const savedSource = localStorage.getItem("currentWalletSource");
-    if (savedSource === "miden-wallet") {
+    if (localStorage.getItem("currentWalletSource") !== "miden-wallet" || midenWalletAdapter.connected) return;
+    return whenWalletInstalled(midenWalletAdapter, () => {
       connectMidenWalletRaw().catch(() => {
-        // Silently ignore auto-connect failures
+        // The dashboard offers the button instead.
       });
-    }
-  }, [connectMidenWalletRaw]);
+    });
+  }, [midenWalletAdapter, connectMidenWalletRaw]);
 
   // Null means "not connected": an external wallet source never borrows the
   // browser's local key.
@@ -818,7 +871,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
   }, [waitForClient, activeScheme, buildExternalParams, guardianUrl]);
 
   const connectToGuardian = useCallback(
-    async (url: string, clientParam?: MidenClient): Promise<GuardianConnectResult> => {
+    async (url: string, clientParam?: MidenClient, early?: EarlyPubkey): Promise<GuardianConnectResult> => {
       // `accountAffected` is false when the app is still on its working
       // Guardian: the caller shows the reason, the account banner stays clear.
       const fail = (message: string, accountAffected = true): GuardianConnectResult => {
@@ -855,7 +908,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
           client: msClient,
           guardianCommitment: commitment,
           guardianPubkey: pubkey,
-        } = await initMultisigClient(mc, url);
+        } = await initMultisigClient(mc, url, undefined, early?.url === url ? early.pubkey : undefined);
         setGuardianCommitment(commitment);
         setGuardianPublicKey(pubkey);
         setMultisigClient(msClient);
@@ -940,6 +993,16 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     setStartupError(null);
     try {
       assertConfigured(CONFIG_ERRORS);
+      // Guardian's key does not need the client: ask for it while the SDK starts.
+      const earlyUrl = normalizeGuardianUrl(guardianUrl) ?? guardianUrl;
+      const early: EarlyPubkey | undefined = guardianUrl.trim() && !deployedGuardianUrlProblem(earlyUrl)
+        ? {
+            url: earlyUrl,
+            pubkey: import("@openzeppelin/guardian-client")
+              .then(({ GuardianHttpClient }) => new GuardianHttpClient(earlyUrl).getPubkey())
+              .catch(() => null),
+          }
+        : undefined;
       // A retry after a Guardian failure keeps the client it already built: a
       // second client on the same store would leak the first, and a failed
       // second build could reset the store under it.
@@ -982,7 +1045,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      const connected = await connectToGuardianRef.current(guardianUrl, client);
+      const connected = await connectToGuardianRef.current(guardianUrl, client, early);
       if (!connected.ok) setStartupError(connected.error);
       // After connecting, which clears the account error.
       else if (keyProblem) setError(keyProblem);
@@ -1264,7 +1327,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
     ],
   );
 
-  const handleLoad = useCallback(
+  const loadAccount = useCallback(
     async (accountId: string, signatureScheme: SignatureScheme = walletSource === "ledger" ? "ecdsa" : "falcon") => {
       if (!guardianUrl.trim()) {
         const msg = "Set NEXT_PUBLIC_GUARDIAN_ENDPOINT to a Guardian 0.18 endpoint on the same Miden network.";
@@ -1373,6 +1436,23 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       buildExternalParams,
       openGuardianSession,
     ],
+  );
+
+  // One load per account at a time: the dashboard opens the account after a
+  // wallet connects while the auto-load below may start it too.
+  const loadInFlight = useRef<{ accountId: string; load: Promise<void> } | null>(null);
+  const handleLoad = useCallback(
+    (accountId: string, signatureScheme?: SignatureScheme): Promise<void> => {
+      const key = accountId.toLowerCase().replace(/^(0x)?/, "0x");
+      const running = loadInFlight.current;
+      if (running?.accountId === key) return running.load;
+      const load = loadAccount(accountId, signatureScheme).finally(() => {
+        if (loadInFlight.current?.load === load) loadInFlight.current = null;
+      });
+      loadInFlight.current = { accountId: key, load };
+      return load;
+    },
+    [loadAccount],
   );
 
   // Auto-load saved account after initialization completes
@@ -2368,6 +2448,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       registerWithInvitationCode,
       guardianSession,
       accountNonce,
+      lastKnownAccount,
       startGuardianSession,
       endGuardianSession,
       sessionGrantPrompt,
@@ -2464,6 +2545,7 @@ export function MultisigProvider({ children }: { children: React.ReactNode }) {
       registerWithInvitationCode,
       guardianSession,
       accountNonce,
+      lastKnownAccount,
       startGuardianSession,
       endGuardianSession,
       sessionGrantPrompt,

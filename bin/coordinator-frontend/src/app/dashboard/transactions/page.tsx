@@ -31,7 +31,7 @@ function StatCard({ icon, label, value, note }: { icon: typeof media.totalTransa
 // Guardian forgets a proposal once it is executed, so executed transactions
 // come from its history, and the proposals counted here are the open ones.
 const Transactions: React.FC = () => {
-  const { proposals, detectedConfig, activeCommitment, accountNonce } = useMultisig();
+  const { proposals, detectedConfig, activeCommitment, accountNonce, loadingAccount } = useMultisig();
   const history = useTransactionHistory();
 
   const threshold = detectedConfig?.threshold ?? 0;
@@ -45,6 +45,8 @@ const Transactions: React.FC = () => {
     return counts;
   }, [proposals, detectedConfig, activeCommitment, threshold, accountNonce]);
 
+  // Proposals arrive with the account's state: counts wait for it.
+  const count = (n: number) => (detectedConfig && !loadingAccount ? String(n) : "…");
   const executed = history.status === "ready" || history.entries.length > 0
     ? `${history.entries.length}${history.hasMore ? "+" : ""}`
     : "—";
@@ -73,13 +75,13 @@ const Transactions: React.FC = () => {
         <StatCard
           icon={media.thisMonthIcon}
           label="Waiting for signatures"
-          value={String(open.waiting)}
+          value={count(open.waiting)}
           note={open.stale > 0 ? `${open.stale} outdated or invalid not counted` : "Proposals that need signatures"}
         />
         <StatCard
           icon={media.assetValIcon}
           label="Ready to execute"
-          value={String(open.ready)}
+          value={count(open.ready)}
           note="Signed by enough cosigners"
         />
         <StatCard
