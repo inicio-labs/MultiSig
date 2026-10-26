@@ -5,7 +5,7 @@ import { DEV_FAKE_BIOMETRICS } from '@/lib/devBiometrics';
 import { formatError } from '@/lib/errors';
 import { PhoneKeyNotConfirmed, PhoneKeyUnavailable } from '@/lib/phoneKey';
 import { maskEmail, otherPhones, saveRecoveryEmail } from '@/lib/recovery';
-import { phoneLabel, platformName, readRecoveryBook, updateRecoveryBook, type RecoveryBook } from '@/lib/recoveryBook';
+import { platformName, readRecoveryBook, updateRecoveryBook, type RecoveryBook } from '@/lib/recoveryBook';
 import { tellRecoveryNews } from '@/lib/recoveryNews';
 import { storage } from '@/lib/storage';
 import { haptic, onDesktop, setClosingConfirmation, telegramPlatform } from '@/lib/telegram';
@@ -68,9 +68,6 @@ export function NewPhoneSheet({ open, onClose }: { open: boolean; onClose(): voi
     { signers, threshold: 2, overrides: {} },
     { telegram: engine.telegramCommitment(), email: book.email?.commitment ?? box.key?.signer.commitment ?? '', phone: null },
   ).filter((c) => c !== thisPhone.commitment());
-  // Without the email's commitment yet, the Telegram key would count as a phone: name only known phones.
-  const named = others.filter((c) => book.phones[c.toLowerCase()]);
-  const otherLabel = named.length === 1 ? `Your other phone (${phoneLabel(book, named[0])})` : 'Your other phone';
 
   // The code goes to the email the wallet was set up with, as soon as the box is up.
   useEffect(() => {
@@ -86,7 +83,7 @@ export function NewPhoneSheet({ open, onClose }: { open: boolean; onClose(): voi
     if ((step === 'email' || step === 'code') && box.state?.step === 'code') sawCode.current = true;
   }, [step, box.state?.step]);
 
-  // The code typed under the approval card was accepted: that was the approval.
+  // The code typed here was accepted: that was the approval.
   useEffect(() => {
     if ((step === 'code' || step === 'email') && box.key && sawCode.current && !started.current && box.state?.step === 'ready') {
       started.current = true;
@@ -170,9 +167,6 @@ export function NewPhoneSheet({ open, onClose }: { open: boolean; onClose(): voi
               Your wallet has recovery on. To send from this phone, confirm it with {bio} and a code sent to {masked ?? 'your recovery email'}.
             </div>
           </div>
-          {others.length > 0 && (
-            <div className="warn-row"><Icon name="alert" />{otherLabel} will stop sending.</div>
-          )}
           {error && <p className="error" role="alert">{error}</p>}
           <button className="btn" disabled={busy} onClick={() => void begin()}>Continue</button>
           <button className="text-btn" onClick={onClose}>Not now</button>
@@ -186,11 +180,6 @@ export function NewPhoneSheet({ open, onClose }: { open: boolean; onClose(): voi
             {step === 'email'
               ? 'The email you set recovery up with. A code goes there.'
               : signedInAlready ? 'Your recovery email is signed in on this phone.' : <>Sent to <strong>{box.state?.email ? maskEmail(box.state.email) : masked}</strong>.</>}
-          </div>
-          <div className="approval">
-            <div className="approval-head">You’re approving:</div>
-            <div className="approval-row add">+ This phone ({platformName(telegramPlatform())}, today)</div>
-            {others.length > 0 && <div className="approval-row remove">− {named.length === 1 ? `Your other phone (${phoneLabel(book, named[0]).replace(' · ', ', ')})` : 'Your other phone'}</div>}
           </div>
         </>
       )}
@@ -207,10 +196,10 @@ export function NewPhoneSheet({ open, onClose }: { open: boolean; onClose(): voi
         <>
           {(boxError || error) && <p className="error" role="alert">{error ?? boxError}</p>}
           {signedInAlready ? (
-            <button className="btn" onClick={() => { started.current = true; void move(); }}>Approve</button>
+            <button className="btn" onClick={() => { started.current = true; void move(); }}>Continue</button>
           ) : (
             <button className="btn" disabled={!box.state?.valid || box.state.busy} onClick={box.submit}>
-              {box.state?.busy ? 'Checking…' : step === 'email' ? 'Send code' : 'Approve'}
+              {box.state?.busy ? 'Checking…' : step === 'email' ? 'Send code' : 'Continue'}
             </button>
           )}
           {step === 'code' && !signedInAlready && (

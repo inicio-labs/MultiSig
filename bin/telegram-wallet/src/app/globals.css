@@ -386,12 +386,6 @@ html.email-box-page, html.email-box-page body { background: transparent; }
 .code-box.is-next { box-shadow: inset 0 0 0 2px var(--or); }
 .code-input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; font-size: 16px; caret-color: transparent; }
 @media (prefers-reduced-motion: reduce) { .email-box-skeleton { animation: none; } }
-.warn-row { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 14px; background: var(--or-soft); font-size: 14px; font-weight: 600; line-height: 1.35; }
-.warn-row .icon { margin-top: 1px; }
-.approval { padding: 12px 14px; border-radius: 14px; background: var(--surface); display: grid; gap: 6px; font-size: 14px; }
-.approval-head { color: var(--hint); font-weight: 600; }
-.approval-row { font-weight: 700; }
-.approval-row.remove { color: var(--danger); }
 .progress { list-style: none; margin: 0; padding: 4px 4px 6px; display: grid; gap: 12px; }
 .progress-step { display: flex; align-items: center; gap: 12px; font-size: 16px; font-weight: 700; color: var(--hint); transition: color .2s; }
 .progress-step.is-now, .progress-step.is-done { color: var(--ink); }
