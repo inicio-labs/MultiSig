@@ -43,7 +43,7 @@ import { isScannedAddress, SendSheet } from './SendSheet';
 import { SettingsSheet } from './SettingsSheet';
 import { canSetUpRecoveryHere, RecoverySheet, type RecoveryFrom } from './RecoverySheet';
 import { RecoveryNudgeSheet } from './RecoveryNudgeSheet';
-import { canUsePhoneKeyHere, NewPhoneSheet, RemovedPhoneSheet, thisPhoneWasRemoved } from './NewPhoneSheet';
+import { canUsePhoneKeyHere, NewPhoneSheet, NotMeSheet, RemovedPhoneSheet, thisPhoneWasRemoved } from './NewPhoneSheet';
 import { thisPhone } from '@/lib/thisPhone';
 import { TokenAmount } from './TokenAmount';
 import { ToastProvider, useToast } from './Toast';
@@ -66,7 +66,10 @@ export function Screens() {
 function WalletHome() {
   const { engine, snapshot } = useWallet();
   const toast = useToast();
-  const [view, setView] = useState<'home' | 'send' | 'receive' | 'settings' | 'alerts' | 'recovery' | 'recovery-nudge' | 'new-phone' | 'removed-phone'>('home');
+  // Opened from the bot's "This wasn't me": what to secure comes first.
+  const [view, setView] = useState<'home' | 'send' | 'receive' | 'settings' | 'alerts' | 'recovery' | 'recovery-nudge' | 'new-phone' | 'removed-phone' | 'not-me'>(
+    () => (telegramStartParam() === 'not_me' ? 'not-me' : 'home'),
+  );
   const [recoveryFrom, setRecoveryFrom] = useState<RecoveryFrom>('settings');
   const [prefill, setPrefill] = useState<string | null>(null);
   const [cardGone, setCardGone] = useState(false);
@@ -479,6 +482,7 @@ function WalletHome() {
       {/* Stays up after the move succeeds, for "This phone is ready". */}
       {ready && (needsThisPhone || view === 'new-phone') && <NewPhoneSheet open={view === 'new-phone'} onClose={() => setView('home')} />}
       <RemovedPhoneSheet open={view === 'removed-phone'} onClose={() => setView('home')} />
+      <NotMeSheet open={view === 'not-me'} onClose={() => setView('home')} />
       {inviting && <InviteScreen />}
       {/* A new phone or user (nothing saved): a plain loading screen until the
           wallet is found, never an empty home that then turns into Welcome. */}

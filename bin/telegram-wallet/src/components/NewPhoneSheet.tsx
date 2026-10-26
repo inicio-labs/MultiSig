@@ -6,6 +6,7 @@ import { formatError } from '@/lib/errors';
 import { PhoneKeyNotConfirmed, PhoneKeyUnavailable } from '@/lib/phoneKey';
 import { maskEmail, otherPhones, saveRecoveryEmail } from '@/lib/recovery';
 import { phoneLabel, platformName, readRecoveryBook, updateRecoveryBook, type RecoveryBook } from '@/lib/recoveryBook';
+import { tellRecoveryNews } from '@/lib/recoveryNews';
 import { storage } from '@/lib/storage';
 import { haptic, onDesktop, setClosingConfirmation, telegramPlatform } from '@/lib/telegram';
 import { phoneBiometrics, thisPhone } from '@/lib/thisPhone';
@@ -114,6 +115,7 @@ export function NewPhoneSheet({ open, onClose }: { open: boolean; onClose(): voi
         return { ...current, phones, email: current.email ?? { address: email.email, commitment: email.signer.commitment } };
       });
       if (snapshot.accountId) saveRecoveryEmail(storage, snapshot.accountId, { commitment: email.signer.commitment, masked: maskEmail(email.email) });
+      tellRecoveryNews('phone-added', maskEmail(email.email));
       haptic('success');
       setStep('done');
     } catch (e) {
@@ -258,6 +260,25 @@ export function NewPhoneSheet({ open, onClose }: { open: boolean; onClose(): voi
  * Next open of a phone another one replaced: what happened, once. It can
  * still show the balance and collect.
  */
+/** From the bot's "This wasn't me": what to secure, at once. */
+export function NotMeSheet({ open, onClose }: { open: boolean; onClose(): void }) {
+  return (
+    <Sheet open={open} onClose={onClose}>
+      <div className="center nudge">
+        <div className="nudge-icon"><Icon name="alert" /></div>
+        <div className="page-title">If it wasn’t you</div>
+        <div className="sub">Someone may have your Telegram, and your recovery email. Do these now:</div>
+      </div>
+      <div className="cells">
+        <div className="cell"><span className="avatar">1</span><span className="cell-main"><span className="cell-title">End other Telegram sessions</span><span className="cell-sub">Telegram › Settings › Devices › Terminate all other sessions</span></span></div>
+        <div className="cell"><span className="avatar">2</span><span className="cell-main"><span className="cell-title">Change your email password</span><span className="cell-sub">And turn on two-step login for it</span></span></div>
+        <div className="cell"><span className="avatar">3</span><span className="cell-main"><span className="cell-title">Turn on Telegram’s two-step verification</span><span className="cell-sub">Telegram › Settings › Privacy and Security</span></span></div>
+      </div>
+      <button className="btn" onClick={onClose}>Got it</button>
+    </Sheet>
+  );
+}
+
 export function RemovedPhoneSheet({ open, onClose }: { open: boolean; onClose(): void }) {
   const { engine } = useWallet();
   const [book, setBook] = useState<RecoveryBook>({ phones: {} });

@@ -7,6 +7,7 @@ import { formatError } from '@/lib/errors';
 import { PhoneKeyNotConfirmed, PhoneKeyUnavailable } from '@/lib/phoneKey';
 import { loadRecoveryEmail, maskEmail, saveRecoveryEmail, type RecoveryEmail } from '@/lib/recovery';
 import { updateRecoveryBook } from '@/lib/recoveryBook';
+import { tellRecoveryNews } from '@/lib/recoveryNews';
 import { storage } from '@/lib/storage';
 import { recoveryTestRequested } from '@/lib/testPages';
 import { haptic, onDesktop, requestTelegramWriteAccess, setClosingConfirmation, telegramPlatform, telegramStartParam } from '@/lib/telegram';
@@ -138,6 +139,7 @@ export function RecoverySheet({ open, from, onClose, onDone }: {
         ...book,
         phones: { ...book.phones, [phone.toLowerCase()]: { platform: record?.platform ?? telegramPlatform(), addedAt: Date.now() } },
       }));
+      tellRecoveryNews('set-up', email.masked);
       haptic('success');
       setStep('done');
     } catch (e) {

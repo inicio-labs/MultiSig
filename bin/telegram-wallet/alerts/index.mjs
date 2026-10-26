@@ -9,8 +9,11 @@
 // user registered its address (reg_<address> start parameter, Ed25519); payers
 // fetch the proof and check Telegram's signature on their own phone, so this
 // server can withhold or serve an old entry but never forge one.
+// Recovery news: the wallet's security events (recovery set up, a new phone
+// added), sent only to the Telegram user who asks, i.e. the wallet's owner.
 // Every request carries Telegram's signed launch data (verify.mjs).
 import { DeleteItemCommand, DynamoDBClient, GetItemCommand, PutItemCommand, UpdateItemCommand } from '@aws-sdk/client-dynamodb';
+import { recoveryText } from './recoveryText.mjs';
 import { readDirectoryProof, verifyInitData } from './verify.mjs';
 
 const { TABLE, BOT_TOKEN, OPEN_URL } = process.env;
@@ -24,6 +27,10 @@ const ACCOUNT_ID = /^0x[0-9a-f]{20,64}$/;
 // Alerts one sender can trigger per hour (a payment is one).
 const ALERTS_PER_HOUR = 30;
 const ALERT_TEXT = 'You received a private payment. Open your wallet to collect it.';
+// Recovery messages one user can trigger per hour.
+const RECOVERY_PER_HOUR = 10;
+// The mini app's link without its start parameter.
+const APP_LINK = (OPEN_URL ?? '').replace(/\?.*$/, '');
 
 const reply = (status, body) => ({ statusCode: status, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 
@@ -39,6 +46,26 @@ async function sendAlert(chatId) {
   });
   // 403: the user blocked the bot or never allowed messages. Nothing to do.
   if (!response.ok && response.status !== 403) console.warn('sendMessage failed', response.status);
+}
+
+async function sendRecoveryNews(chatId, text) {
+  const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text,
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [[
+          { text: 'Open PrivPay', url: APP_LINK },
+          { text: 'This wasn’t me', url: `${APP_LINK}?startapp=not_me` },
+        ]],
+      },
+    }),
+  });
+  // 403: messages not allowed (asked during setup). Best effort.
+  if (!response.ok && response.status !== 403) console.warn('recovery sendMessage failed', response.status);
 }
 
 export async function handler(event) {
@@ -94,6 +121,27 @@ export async function handler(event) {
       const recipient = found.Item?.userId?.S;
       if (recipient && recipient !== userId) await sendAlert(recipient);
       // The same answer either way: whether an address has alerts on is not anyone's business.
+      return reply(200, { ok: true });
+    }
+    case '/recovery/event': {
+      const text = recoveryText(String(body.event ?? ''), {
+        email: String(body.email ?? ''),
+        platform: String(body.platform ?? ''),
+        when: String(body.when ?? ''),
+      });
+      if (!text) return reply(400, { error: 'unknown event' });
+      const hour = Math.floor(Date.now() / 3_600_000);
+      const counted = await db.send(new UpdateItemCommand({
+        TableName: TABLE,
+        Key: { pk: { S: `recov#${userId}#${hour}` } },
+        UpdateExpression: 'ADD n :one SET #ttl = :ttl',
+        ExpressionAttributeNames: { '#ttl': 'ttl' },
+        ExpressionAttributeValues: { ':one': { N: '1' }, ':ttl': { N: String((hour + 2) * 3600) } },
+        ReturnValues: 'UPDATED_NEW',
+      }));
+      if (Number(counted.Attributes?.n?.N ?? 0) > RECOVERY_PER_HOUR) return reply(429, { error: 'too many' });
+      // Only ever to the user who asks: their own wallet's news.
+      await sendRecoveryNews(userId, text);
       return reply(200, { ok: true });
     }
     case '/directory/register': {
