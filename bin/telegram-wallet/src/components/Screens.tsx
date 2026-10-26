@@ -8,6 +8,8 @@ import { alertsAvailable, refreshAlerts, turnOnAlerts } from '@/lib/alerts';
 import { useContacts, type Contacts } from '@/lib/contacts';
 import { completeRegistration, directoryAvailable, isRegistrationLaunch, lookupSelf, startRegistration } from '@/lib/directory';
 import { DEV_LOCAL_SIGNER } from '@/lib/devSigner';
+import { autoJoinDue, autoJoinNotice, lastAutoJoinAt, markAutoJoin, takeAutoJoin } from '@/lib/directoryAuto';
+import { useDirectory } from '@/hooks/useDirectory';
 import { saveFirstPaint } from '@/lib/firstPaint';
 import { viewKeyFor } from '@/lib/savedView';
 import { accountAddress, shortAddress } from '@/lib/address';
@@ -31,7 +33,6 @@ import { formatTokenAmount, getTokenInfo } from '@/lib/tokenAmounts';
 import type { ActivityItem } from '@/lib/walletEngine';
 import { ActivityList, timeOf, who } from './ActivityList';
 import { AlertsNudgeSheet } from './AlertsNudgeSheet';
-import { WhatsNewSheet } from './WhatsNewSheet';
 import { InviteScreen } from './InviteScreen';
 import { Gate } from './AuthGate';
 import { Splash } from './Splash';
@@ -61,14 +62,14 @@ export function Screens() {
 function WalletHome() {
   const { engine, snapshot } = useWallet();
   const toast = useToast();
-  const [view, setView] = useState<'home' | 'send' | 'receive' | 'settings' | 'alerts' | 'new'>('home');
+  const [view, setView] = useState<'home' | 'send' | 'receive' | 'settings' | 'alerts'>('home');
   const [prefill, setPrefill] = useState<string | null>(null);
   const [cardGone, setCardGone] = useState(false);
   const [away, setAway] = useState(false);
   const [hideAmounts, setHideAmounts] = usePref('hideAmounts');
   const [alerts, setAlerts, alertsLoaded] = usePref('alerts');
   const [directory, setDirectory, directoryLoaded] = usePref('directory');
-  const [newSeen, setNewSeen, newSeenLoaded] = usePref('newUsernameSeen');
+  const [directoryOff, setDirectoryOff, directoryOffLoaded] = usePref('directoryOff');
   const contacts = useContacts(snapshot.accountId);
   // Sending needs a phone (Face ID or fingerprint): say so on desktop before the tap.
   const phoneOnly = !DEV_LOCAL_SIGNER && onDesktop();
@@ -185,9 +186,17 @@ function WalletHome() {
     const to = payLinkAddress(param);
     if (snapshot.accountId && isRegistrationLaunch(snapshot.accountId)) {
       // Reopened from our own registration link: Telegram has signed it.
+      // Joined by itself (on by default): a notice on home, no toast; a
+      // failure stays quiet and is tried again tomorrow.
+      const auto = takeAutoJoin();
       void completeRegistration().then((ok) => {
-        if (ok) setDirectory(true);
-        toast(ok ? 'Friends can now pay you by your @username' : 'Couldn’t turn on pay-by-username. Try again.', ok ? 'check' : 'alert');
+        if (ok) {
+          setDirectory(true);
+          setDirectoryOff(false);
+          if (auto) autoJoinNotice.show();
+          setJoinNotice(auto);
+        }
+        if (!auto) toast(ok ? 'Friends can now pay you by your @username' : 'Couldn’t turn on pay-by-username. Try again.', ok ? 'check' : 'alert');
       });
     } else if (to) {
       setPrefill(to);
@@ -198,29 +207,46 @@ function WalletHome() {
     }
   }, [ready, engine]);
 
-  // "New in PrivPay: get paid by @username": once, to someone who already had
-  // a wallet (payments in their history), has a Telegram username and has not
-  // turned it on; after the start, with nothing else open, not when opened
-  // from a link. Seen as soon as it shows, so it never comes back.
+  // Pay-by-@username is on by default, like a UPI ID (directoryAuto.ts): a
+  // wallet whose owner has not turned it off joins by itself, from home with
+  // nothing else going on. Joining reopens the wallet for Telegram to sign.
   const username = useRef(telegramUsername()).current;
-  const whatsNewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [joining, setJoining] = useState(false);
+  const [joinNotice, setJoinNotice] = useState(() => autoJoinNotice.shown());
+  const autoJoinTried = useRef(false);
   useEffect(() => {
-    const due = ready && newSeenLoaded && directoryLoaded && newSeen === false && directory === false
-      && Boolean(username) && directoryAvailable() && snapshot.history.length > 0 && !telegramStartParam();
-    if (!due || whatsNewTimer.current) return;
-    whatsNewTimer.current = setTimeout(() => {
-      if (nudge.current.view !== 'home' || document.visibilityState !== 'visible') {
-        whatsNewTimer.current = null;
-        return;
-      }
-      setNewSeen(true);
-      setView('new');
-    }, 1200);
-  }, [ready, newSeenLoaded, directoryLoaded, newSeen, directory, username, snapshot.history.length, setNewSeen]);
-  const answerWhatsNew = (turnOn: boolean) => {
-    setView('home');
-    // After the sheet has slid away: the wallet reopens for Telegram to sign.
-    if (turnOn && accountId) setTimeout(() => startRegistration(accountId), 350);
+    if (autoJoinTried.current || !accountId) return;
+    const due = autoJoinDue({
+      on: directory,
+      off: directoryOff,
+      loaded: directoryLoaded && directoryOffLoaded,
+      hasUsername: Boolean(username),
+      available: directoryAvailable(),
+      openedFromLink: Boolean(telegramStartParam()),
+      idle: ready && view === 'home' && !busy,
+      lastTriedAt: lastAutoJoinAt(),
+      now: Date.now(),
+    });
+    if (!due) return;
+    autoJoinTried.current = true;
+    markAutoJoin(Date.now());
+    setJoining(true);
+    startRegistration(accountId);
+    // Still here: the wallet did not reopen (outside Telegram); try another day.
+    setTimeout(() => {
+      takeAutoJoin();
+      setJoining(false);
+    }, 4000);
+  }, [accountId, directory, directoryOff, directoryLoaded, directoryOffLoaded, username, ready, view, busy]);
+  const directorySwitch = useDirectory(accountId);
+  const dismissJoinNotice = () => {
+    autoJoinNotice.dismiss();
+    setJoinNotice(false);
+  };
+  const turnOffFromNotice = () => {
+    dismissJoinNotice();
+    directorySwitch.set(false);
+    toast('Pay-by-username is off. Turn it on in Settings.', 'check');
   };
 
   // In the directory: check once per open that the entry is still there and
@@ -232,10 +258,10 @@ function WalletHome() {
     selfChecked.current = true;
     void lookupSelf().then((entry) => {
       if (entry?.address === accountId.toLowerCase()) return;
+      // Gone from the server: joins again by itself (unless turned off).
       setDirectory(false);
-      toast('Pay-by-username was reset. Turn it on again in Settings.', 'alert');
     });
-  }, [ready, directory, directoryLoaded, accountId, setDirectory, toast]);
+  }, [ready, directory, directoryLoaded, accountId, setDirectory]);
 
   // Settings live in Telegram's own menu for the app; a gear outside Telegram.
   const openSettings = () => {
@@ -374,6 +400,14 @@ function WalletHome() {
             </div>
           </div>
         )}
+        {joinNotice && directory === true && username && (
+          <div className="notice join-notice" role="status">
+            <span className="join-icon" aria-hidden><Icon name="at" /></span>
+            <span className="join-text">Friends can now pay you as <strong>@{username}</strong></span>
+            <button className="join-off" onClick={turnOffFromNotice}>Turn off</button>
+            <button className="join-close" onClick={dismissJoinNotice} aria-label="Dismiss"><Icon name="close" /></button>
+          </div>
+        )}
         {snapshot.notice && !busy && <div className="notice hint">{snapshot.notice}</div>}
 
         <div className={`activity${hidden ? ' amounts-hidden' : ''}${updating ? ' updating' : ''}`}>
@@ -395,7 +429,7 @@ function WalletHome() {
       {!inviting && !snapshot.accountId && !snapshot.savedAt && (phase.kind === 'starting' || phase.kind === 'finding' || phase.kind === 'creating') && (
         <Gate><Splash label={phase.kind === 'creating' ? 'Creating your wallet…' : 'Opening PrivPay…'} /></Gate>
       )}
-      {username && <WhatsNewSheet open={view === 'new'} username={username} onAnswer={answerWhatsNew} />}
+      {joining && <Gate><Splash label="Setting up your wallet…" /></Gate>}
     </>
   );
 }

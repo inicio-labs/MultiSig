@@ -108,6 +108,11 @@ svg.icon { width: 1em; height: 1em; flex: none; }
 .others { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: -4px; }
 .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .notice { background: var(--surface); border-radius: 16px; padding: 14px; display: grid; gap: 10px; font-size: 14px; }
+.join-notice { grid-template-columns: auto 1fr auto auto; align-items: center; gap: 10px; padding: 10px 8px 10px 12px; }
+.join-icon { width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center; background: var(--or-soft); font-size: 16px; }
+.join-text { line-height: 1.35; }
+.join-off { font-size: 14px; font-weight: 700; color: var(--or-press); padding: 8px 4px; }
+.join-close { width: 32px; height: 32px; display: grid; place-items: center; color: var(--hint); font-size: 16px; }
 .selectable { -webkit-user-select: text; user-select: text; word-break: break-word; }
 
 /* The card: Gram's, in Miden orange. --tx/--ty are the tilt (-1…1). */
@@ -248,8 +253,6 @@ button.cell:active { background: var(--bg); }
 .sheet .locked { gap: 12px; padding-bottom: 8px; }
 .sheet .locked .sub { max-width: 300px; line-height: 1.45; }
 .locked-icon { width: 64px; height: 64px; font-size: 30px; animation: none; }
-.new-pill { display: inline-flex; padding: 4px 10px; border-radius: 999px; background: var(--or-soft); color: var(--ink); font-size: 12px; font-weight: 700; }
-.sub.fine-center { font-size: 13px; line-height: 1.4; max-width: 300px; }
 .btn-tag { margin-left: 4px; padding: 2px 7px; border-radius: 999px; background: rgba(23, 17, 13, .14); font-size: 11px; font-weight: 700; }
 .text-btn.small { min-height: 40px; font-size: 13px; }
 .set-head { margin: 0; padding: 14px 4px 6px; font-size: 13px; font-weight: 600; color: var(--hint); }

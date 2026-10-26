@@ -25,8 +25,8 @@ export const PREFS = {
   alertsAsked: { key: perNetwork('payment_alerts_asked'), fallback: false },
   // In the Telegram directory: friends can pay you by @username (directory.ts).
   directory: { key: perNetwork('directory'), fallback: false },
-  // "New in PrivPay: get paid by @username", shown once to existing users.
-  newUsernameSeen: { key: perNetwork('new_username_seen'), fallback: false },
+  // Pay-by-@username turned off by its owner: never turned back on by itself (directoryAuto.ts).
+  directoryOff: { key: perNetwork('directory_off'), fallback: false },
 } as const;
 
 /** The testnet names of the per-network settings (removed on mainnet's fresh start). */
