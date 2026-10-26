@@ -8,8 +8,7 @@ import { alertsAvailable, refreshAlerts, turnOnAlerts } from '@/lib/alerts';
 import { useContacts, type Contacts } from '@/lib/contacts';
 import { completeRegistration, directoryAvailable, isRegistrationLaunch, lookupSelf, startRegistration } from '@/lib/directory';
 import { DEV_LOCAL_SIGNER } from '@/lib/devSigner';
-import { autoJoinDue, autoJoinNotice, lastAutoJoinAt, markAutoJoin, takeAutoJoin } from '@/lib/directoryAuto';
-import { useDirectory } from '@/hooks/useDirectory';
+import { autoJoinDue, lastAutoJoinAt, markAutoJoin, takeAutoJoin } from '@/lib/directoryAuto';
 import { saveFirstPaint } from '@/lib/firstPaint';
 import { viewKeyFor } from '@/lib/savedView';
 import { accountAddress, shortAddress } from '@/lib/address';
@@ -186,15 +185,13 @@ function WalletHome() {
     const to = payLinkAddress(param);
     if (snapshot.accountId && isRegistrationLaunch(snapshot.accountId)) {
       // Reopened from our own registration link: Telegram has signed it.
-      // Joined by itself (on by default): a notice on home, no toast; a
-      // failure stays quiet and is tried again tomorrow.
+      // Joined by itself (on by default): quietly, the switch in Settings
+      // shows it; a failure is tried again tomorrow.
       const auto = takeAutoJoin();
       void completeRegistration().then((ok) => {
         if (ok) {
           setDirectory(true);
           setDirectoryOff(false);
-          if (auto) autoJoinNotice.show();
-          setJoinNotice(auto);
         }
         if (!auto) toast(ok ? 'Friends can now pay you by your @username' : 'Couldn’t turn on pay-by-username. Try again.', ok ? 'check' : 'alert');
       });
@@ -212,7 +209,6 @@ function WalletHome() {
   // nothing else going on. Joining reopens the wallet for Telegram to sign.
   const username = useRef(telegramUsername()).current;
   const [joining, setJoining] = useState(false);
-  const [joinNotice, setJoinNotice] = useState(() => autoJoinNotice.shown());
   const autoJoinTried = useRef(false);
   useEffect(() => {
     if (autoJoinTried.current || !accountId) return;
@@ -238,16 +234,6 @@ function WalletHome() {
       setJoining(false);
     }, 4000);
   }, [accountId, directory, directoryOff, directoryLoaded, directoryOffLoaded, username, ready, view, busy]);
-  const directorySwitch = useDirectory(accountId);
-  const dismissJoinNotice = () => {
-    autoJoinNotice.dismiss();
-    setJoinNotice(false);
-  };
-  const turnOffFromNotice = () => {
-    dismissJoinNotice();
-    directorySwitch.set(false);
-    toast('Pay-by-username is off. Turn it on in Settings.', 'check');
-  };
 
   // In the directory: check once per open that the entry is still there and
   // names this wallet (the server can drop or serve an old one; it cannot fake one).
@@ -398,14 +384,6 @@ function WalletHome() {
               </button>
               <button className="btn soft" onClick={() => void engine.start()}>Try again</button>
             </div>
-          </div>
-        )}
-        {joinNotice && directory === true && username && (
-          <div className="notice join-notice" role="status">
-            <span className="join-icon" aria-hidden><Icon name="at" /></span>
-            <span className="join-text">Friends can now pay you as <strong>@{username}</strong></span>
-            <button className="join-off" onClick={turnOffFromNotice}>Turn off</button>
-            <button className="join-close" onClick={dismissJoinNotice} aria-label="Dismiss"><Icon name="close" /></button>
           </div>
         )}
         {snapshot.notice && !busy && <div className="notice hint">{snapshot.notice}</div>}

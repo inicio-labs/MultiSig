@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { autoJoinDue, autoJoinNotice, lastAutoJoinAt, markAutoJoin, takeAutoJoin, type AutoJoinState } from '@/lib/directoryAuto';
+import { autoJoinDue, lastAutoJoinAt, markAutoJoin, takeAutoJoin, type AutoJoinState } from '@/lib/directoryAuto';
 
 describe('pay-by-username on by default', () => {
   const now = Date.UTC(2026, 9, 26, 12);
@@ -64,14 +64,6 @@ describe('pay-by-username on by default', () => {
       expect(lastAutoJoinAt()).toBe(now);
       expect(takeAutoJoin()).toBe(true);
       expect(takeAutoJoin()).toBe(false);
-    });
-
-    it('keeps the notice until it is dismissed', () => {
-      expect(autoJoinNotice.shown()).toBe(false);
-      autoJoinNotice.show();
-      expect(autoJoinNotice.shown()).toBe(true);
-      autoJoinNotice.dismiss();
-      expect(autoJoinNotice.shown()).toBe(false);
     });
   });
 });

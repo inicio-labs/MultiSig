@@ -8,7 +8,6 @@ import { VIEW_SCOPE } from './viewScope';
  */
 const TRIED = `miden-tg-wallet:${VIEW_SCOPE}directory-auto-at`;
 const PENDING = `miden-tg-wallet:${VIEW_SCOPE}directory-auto-pending`;
-const NOTICE = `miden-tg-wallet:${VIEW_SCOPE}directory-auto-notice`;
 const RETRY_MS = 24 * 60 * 60 * 1000;
 
 export interface AutoJoinState {
@@ -51,10 +50,3 @@ export function takeAutoJoin(): boolean {
   storage.remove(PENDING);
   return pending;
 }
-
-/** "Friends can now pay you as @…", shown on home until dismissed. */
-export const autoJoinNotice = {
-  shown: (): boolean => storage.get(NOTICE) === '1',
-  show: (): void => storage.set(NOTICE, '1'),
-  dismiss: (): void => storage.remove(NOTICE),
-};
