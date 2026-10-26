@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Signer } from '@openzeppelin/miden-multisig-client';
-import { maskEmail, newPhoneSteps, otherPhones, recoveryStatus, recoverySteps, type AccountRules } from '../src/lib/recovery';
+import { emailChangeSteps, maskEmail, newPhoneSteps, otherPhones, recoveryStatus, recoverySteps, type AccountRules } from '../src/lib/recovery';
 import { WalletEngine, type WalletEngineDeps, type WalletMidenClient, type WalletMultisigClient } from '../src/lib/walletEngine';
 
 vi.mock('@openzeppelin/miden-multisig-client', async (importOriginal) => {
@@ -12,6 +12,7 @@ const TELEGRAM = '0x' + '0c'.repeat(32);
 const PHONE = '0x' + 'a1'.repeat(32);
 const EMAIL = '0x' + 'e1'.repeat(32);
 const NEW_PHONE = '0x' + 'b2'.repeat(32);
+const NEW_EMAIL = '0x' + 'f3'.repeat(32);
 
 const rules = (signers: string[], threshold = 1, overrides: AccountRules['overrides'] = {}): AccountRules => ({ signers, threshold, overrides });
 
@@ -61,12 +62,22 @@ describe('recovery setup steps', () => {
     const keys = { telegram: TELEGRAM, email: EMAIL, phone: NEW_PHONE };
     expect(otherPhones(on, keys)).toEqual([PHONE]);
     expect(newPhoneSteps(on, keys)).toEqual([
-      { kind: 'add-phone', commitment: NEW_PHONE },
-      { kind: 'remove-phone', commitment: PHONE },
+      { kind: 'add', commitment: NEW_PHONE },
+      { kind: 'remove', commitment: PHONE },
     ]);
     // Resumed after the add.
-    expect(newPhoneSteps(rules([TELEGRAM, PHONE, EMAIL, NEW_PHONE], 2), keys)).toEqual([{ kind: 'remove-phone', commitment: PHONE }]);
+    expect(newPhoneSteps(rules([TELEGRAM, PHONE, EMAIL, NEW_PHONE], 2), keys)).toEqual([{ kind: 'remove', commitment: PHONE }]);
     expect(newPhoneSteps(rules([TELEGRAM, EMAIL, NEW_PHONE], 2), keys)).toEqual([]);
+  });
+
+  it('a new recovery email: add it, then remove the old one; Telegram and this phone stay', () => {
+    const keys = { telegram: TELEGRAM, phone: PHONE, email: NEW_EMAIL };
+    expect(emailChangeSteps(rules([TELEGRAM, PHONE, EMAIL], 2), keys)).toEqual([
+      { kind: 'add', commitment: NEW_EMAIL },
+      { kind: 'remove', commitment: EMAIL },
+    ]);
+    expect(emailChangeSteps(rules([TELEGRAM, PHONE, EMAIL, NEW_EMAIL], 2), keys)).toEqual([{ kind: 'remove', commitment: EMAIL }]);
+    expect(emailChangeSteps(rules([TELEGRAM, PHONE, NEW_EMAIL], 2), keys)).toEqual([]);
   });
 
   it('masks the email', () => {
@@ -233,6 +244,25 @@ describe('WalletEngine recovery', () => {
     await engine.start();
     const stranger = { commitment: '0x' + '99'.repeat(32) } as unknown as Signer;
     await expect(engine.moveToThisPhone({ phone: NEW_PHONE, email: stranger })).rejects.toThrow(/recovery email/);
+    expect(log).toEqual([]);
+  });
+
+  it('changes the recovery email with this phone and Telegram; the old email does not sign', async () => {
+    const { engine, log, account } = engineWith(rules([TELEGRAM, PHONE, EMAIL], 2, { receive_asset: 1 }));
+    await engine.start();
+    await engine.changeRecoveryEmail(NEW_EMAIL);
+    expect(log).toEqual([
+      `add:${NEW_EMAIL.slice(0, 6)}:2`, 'sign:telegram:p-add-f3', 'sign:phone:p-add-f3', 'execute:p-add-f3',
+      `remove:${EMAIL.slice(0, 6)}:2`, 'sign:telegram:p-remove-e1', 'sign:phone:p-remove-e1', 'execute:p-remove-e1',
+    ]);
+    expect(account.state.signers).toEqual([TELEGRAM, PHONE, NEW_EMAIL]);
+    expect(engine.getSnapshot().recovery).toEqual({ kind: 'on', phoneHere: true });
+  });
+
+  it('refuses to change the email from a phone that is not on the wallet', async () => {
+    const { engine, log } = engineWith(rules([TELEGRAM, PHONE, EMAIL], 2), NEW_PHONE);
+    await engine.start();
+    await expect(engine.changeRecoveryEmail(NEW_EMAIL)).rejects.toThrow(/phone you pay with/);
     expect(log).toEqual([]);
   });
 });

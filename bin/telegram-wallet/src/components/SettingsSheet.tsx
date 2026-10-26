@@ -13,7 +13,7 @@ import { Sheet } from './Sheet';
 import { useWallet } from './WalletProvider';
 
 /** From the gear on the home screen (and Telegram's own Settings item in the app's menu). */
-export function SettingsSheet({ open, onClose, accountId, onRecovery, onUseThisPhone }: {
+export function SettingsSheet({ open, onClose, accountId, onRecovery, onUseThisPhone, onChangeEmail }: {
   open: boolean;
   onClose(): void;
   accountId: string | null;
@@ -21,6 +21,8 @@ export function SettingsSheet({ open, onClose, accountId, onRecovery, onUseThisP
   onRecovery?(): void;
   /** Recovery on, this phone's key not on the account: add this phone. */
   onUseThisPhone?(): void;
+  /** Recovery on, from this phone: a new recovery email. */
+  onChangeEmail?(): void;
 }) {
   const [hideAmounts, setHideAmounts] = usePref('hideAmounts');
   const [sound, setSound] = usePref('sound');
@@ -58,7 +60,7 @@ export function SettingsSheet({ open, onClose, accountId, onRecovery, onUseThisP
           </div>
         </>
       )}
-      <SecuritySection accountId={accountId} onRecovery={onRecovery} onUseThisPhone={onUseThisPhone} />
+      <SecuritySection accountId={accountId} onRecovery={onRecovery} onUseThisPhone={onUseThisPhone} onChangeEmail={onChangeEmail} />
       <h2 className="set-head">Privacy</h2>
       <div className="cells">
         <Toggle icon="eye" label="Hide amounts" hint="Blur balances and payments" on={hideAmounts === true} set={setHideAmounts} />
@@ -133,7 +135,12 @@ function phoneLabel(): string {
 }
 
 /** Recovery (recovery.ts) as plain rows, never a switch: it stays on once on. */
-function SecuritySection({ accountId, onRecovery, onUseThisPhone }: { accountId: string | null; onRecovery?(): void; onUseThisPhone?(): void }) {
+function SecuritySection({ accountId, onRecovery, onUseThisPhone, onChangeEmail }: {
+  accountId: string | null;
+  onRecovery?(): void;
+  onUseThisPhone?(): void;
+  onChangeEmail?(): void;
+}) {
   const { snapshot } = useWallet();
   const bio = useBiometricName();
   const { recovery } = snapshot;
@@ -161,7 +168,18 @@ function SecuritySection({ accountId, onRecovery, onUseThisPhone }: { accountId:
               </button>
             )}
             <InfoRow icon="lock" label="Your Telegram" hint={telegramUsername() ? `@${telegramUsername()}` : 'Signs you in'} />
-            <InfoRow icon="at" label={email?.masked ?? 'Recovery email'} hint="Gets you back in on a new phone" />
+            {recovery.phoneHere && onChangeEmail ? (
+              <button className="cell set-row" onClick={onChangeEmail}>
+                <span className="avatar"><Icon name="at" /></span>
+                <span className="cell-main">
+                  <span className="cell-title">{email?.masked ?? 'Recovery email'}</span>
+                  <span className="cell-sub">Gets you back in on a new phone</span>
+                </span>
+                <span className="pill">Change</span>
+              </button>
+            ) : (
+              <InfoRow icon="at" label={email?.masked ?? 'Recovery email'} hint="Gets you back in on a new phone" />
+            )}
           </>
         ) : (
           <button className="cell set-row" onClick={here ? onRecovery : undefined} disabled={!here}>
@@ -182,7 +200,7 @@ function SecuritySection({ accountId, onRecovery, onUseThisPhone }: { accountId:
       </div>
       {recovery.kind === 'on' && (
         <div className="sub fine">
-          Recovery stays on. Lost your phone? Open PrivPay on the new one.
+          Recovery stays on. Lost your phone? Open PrivPay on the new one. Lost your email? Change it here while you still have this phone.
         </div>
       )}
     </>

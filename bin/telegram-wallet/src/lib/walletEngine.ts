@@ -21,7 +21,7 @@ import {
 } from './pendingCandidate';
 import type { MultisigHooks } from './multisigApi';
 import type { PrivateNotes } from './privateSend';
-import { newPhoneSteps, recoveryStatus, recoverySteps, type AccountRules, type PhoneStep, type RecoveryStatus, type SetupStep } from './recovery';
+import { emailChangeSteps, newPhoneSteps, recoveryStatus, recoverySteps, type AccountRules, type KeyStep, type RecoveryStatus, type SetupStep } from './recovery';
 
 /** The parts of the Miden client the engine uses. */
 export interface WalletMidenClient {
@@ -104,8 +104,11 @@ export type WalletPhase =
 export type ActivityStep = 'preparing' | 'signing' | 'proving' | 'delivering' | 'syncing';
 
 export interface WalletActivity {
-  /** `recovery`: one of the setup transactions; `phone`: moving the wallet to this phone (recovery.ts). */
-  kind: 'send' | 'claim' | 'recovery' | 'phone';
+  /**
+   * `recovery`: one of the setup transactions; `phone`: moving the wallet to
+   * this phone; `email`: changing the recovery email (recovery.ts).
+   */
+  kind: 'send' | 'claim' | 'recovery' | 'phone' | 'email';
   step: ActivityStep;
 }
 
@@ -666,36 +669,76 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
    * the other phones', each a transaction the Telegram key and the recovery
    * email key sign. Done once the account lists this phone and no other.
    */
-  async moveToThisPhone(keys: { phone: string; email: Signer }, onStep?: (done: number, total: number) => void): Promise<void> {
+  moveToThisPhone(keys: { phone: string; email: Signer }, onStep?: (done: number, total: number) => void): Promise<void> {
+    const telegram = this.deps.signer.commitment ?? '';
+    return this.changeKeys('phone', {
+      check: (rules) => {
+        if (!rules.signers.some((s) => s.toLowerCase() === keys.email.commitment.toLowerCase())) {
+          throw new Error('That isn’t the recovery email of this wallet. Use the one you set it up with.');
+        }
+      },
+      steps: (rules) => newPhoneSteps(rules, { telegram, email: keys.email.commitment, phone: keys.phone }),
+      cosigner: async () => keys.email,
+    }, onStep);
+  }
+
+  /**
+   * Recovery on, from a phone whose key is on the account: a new recovery
+   * email key replaces the old one (added, then the old one removed). This
+   * phone's key and the Telegram key sign; the old email is not needed.
+   */
+  changeRecoveryEmail(email: string, onStep?: (done: number, total: number) => void): Promise<void> {
+    const telegram = this.deps.signer.commitment ?? '';
+    const phone = this.deps.phoneKey?.commitment() ?? '';
+    return this.changeKeys('email', {
+      check: (rules) => {
+        if (!phone || !rules.signers.some((s) => s.toLowerCase() === phone.toLowerCase())) {
+          throw new Error('Change the recovery email from the phone you pay with.');
+        }
+        if (rules.signers.some((s) => s.toLowerCase() === email.toLowerCase()) && rules.signers.length === 3) {
+          throw new Error('That’s already your recovery email.');
+        }
+      },
+      steps: (rules) => emailChangeSteps(rules, { telegram, phone, email }),
+    }, onStep);
+  }
+
+  /**
+   * Key changes once recovery is on: each step one transaction, two keys
+   * signing (the Telegram key, then `cosigner`, by default this phone's);
+   * Guardian takes each before the next is built. Resumes from the rules.
+   */
+  private async changeKeys(
+    kind: 'phone' | 'email',
+    plan: { check(rules: AccountRules): void; steps(rules: AccountRules): KeyStep[]; cosigner?: () => Promise<Signer> },
+    onStep?: (done: number, total: number) => void,
+  ): Promise<void> {
     const { midenClient, multisig } = this;
     if (!midenClient || !multisig) throw new Error('The wallet is not ready yet.');
     if (this.busy) throw new Error('Another transaction is still in progress.');
     this.busy = true;
-    const telegram = this.deps.signer.commitment ?? '';
     try {
       await this.exclusive(async () => {
         await this.timed('wait for guardian', () => this.untilGuardianCaughtUp(multisig));
-        const rules = rulesOf(multisig) ?? NO_RULES;
-        if (!rules.signers.some((s) => s.toLowerCase() === keys.email.commitment.toLowerCase())) {
-          throw new Error('That isn’t the recovery email of this wallet. Use the one you set it up with.');
-        }
+        plan.check(rulesOf(multisig) ?? NO_RULES);
         let total = 0;
         for (let done = 0; ; done++) {
           if (done > 0) await this.timed('wait for guardian', () => this.untilGuardianCaughtUp(multisig));
-          const steps = newPhoneSteps(rulesOf(multisig) ?? NO_RULES, { telegram, email: keys.email.commitment, phone: keys.phone });
+          const steps = plan.steps(rulesOf(multisig) ?? NO_RULES);
           const next = steps[0];
           if (!next) break;
           total = Math.max(total, done + steps.length);
-          if (done >= 6) throw new Error('This phone could not be added. Try again in a minute.');
+          // A step that never shows up in the account's rules would repeat forever.
+          if (done >= 6) throw new Error('The change could not be finished. Try again in a minute.');
           onStep?.(done, total);
-          await this.transact(midenClient, multisig, 'phone', (ms) => buildPhoneStep(ms, next), false, [], async () => keys.email);
+          await this.transact(midenClient, multisig, kind, (ms) => buildKeyStep(ms, next), false, [], plan.cosigner);
         }
         this.updateRecovery(multisig);
       });
     } finally {
       this.busy = false;
     }
-    void this.refresh().catch((error) => console.warn('Refresh after adding this phone failed', error));
+    void this.refresh().catch((error) => console.warn('Refresh after the key change failed', error));
   }
 
   /** Until Guardian's canonical nonce reaches this device's (bounded; then the push decides). */
@@ -803,7 +846,7 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
   ): Promise<void> {
     const privateNotes = this.privateNotes;
     const step = (s: ActivityStep) => this.update({ activity: { kind, step: s } });
-    const label = kind === 'send' ? 'Send failed' : kind === 'claim' ? 'Claim failed' : kind === 'recovery' ? 'Recovery could not be turned on' : 'This phone could not be added';
+    const label = kind === 'send' ? 'Send failed' : kind === 'claim' ? 'Claim failed' : kind === 'recovery' ? 'Recovery could not be turned on' : kind === 'phone' ? 'This phone could not be added' : 'The recovery email could not be changed';
     clearExecutionPushed(multisig.accountId);
     let proposal: Proposal | undefined;
     let executed = false;
@@ -952,8 +995,8 @@ function buildSetupStep(multisig: Multisig, step: SetupStep): Promise<Proposal> 
   }
 }
 
-function buildPhoneStep(multisig: Multisig, step: PhoneStep): Promise<Proposal> {
-  return step.kind === 'add-phone'
+function buildKeyStep(multisig: Multisig, step: KeyStep): Promise<Proposal> {
+  return step.kind === 'add'
     ? multisig.createAddSignerProposal(step.commitment, { newThreshold: 2 })
     : multisig.createRemoveSignerProposal(step.commitment, { newThreshold: 2 });
 }

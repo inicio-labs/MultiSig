@@ -72,19 +72,33 @@ export function otherPhones(rules: AccountRules, keys: { telegram: string; email
   return rules.signers.filter((s) => ![keys.telegram, keys.email, keys.phone].some((k) => k && same(s, k)));
 }
 
-export type PhoneStep =
-  | { kind: 'add-phone'; commitment: string }
-  | { kind: 'remove-phone'; commitment: string };
+/** One key change once recovery is on: two keys stay needed (threshold 2). */
+export type KeyStep = { kind: 'add' | 'remove'; commitment: string };
 
 /**
  * Moving the wallet to this phone (recovery on): add this phone's key, then
  * remove the other phones' keys, each a transaction the Telegram and email
  * keys sign; two keys stay needed throughout. Resumes from the account's rules.
  */
-export function newPhoneSteps(rules: AccountRules, keys: { telegram: string; email: string; phone: string }): PhoneStep[] {
-  const steps: PhoneStep[] = [];
-  if (!lists(rules, keys.phone)) steps.push({ kind: 'add-phone', commitment: keys.phone });
-  for (const commitment of otherPhones(rules, keys)) steps.push({ kind: 'remove-phone', commitment });
+export function newPhoneSteps(rules: AccountRules, keys: { telegram: string; email: string; phone: string }): KeyStep[] {
+  const steps: KeyStep[] = [];
+  if (!lists(rules, keys.phone)) steps.push({ kind: 'add', commitment: keys.phone });
+  for (const commitment of otherPhones(rules, keys)) steps.push({ kind: 'remove', commitment });
+  return steps;
+}
+
+/**
+ * Changing the recovery email (recovery on, from this phone): add the new
+ * email key, then remove every key that is neither Telegram, this phone nor
+ * the new email (the old email's). This phone and the Telegram key sign;
+ * the old email is not needed, which is the point when it is lost.
+ */
+export function emailChangeSteps(rules: AccountRules, keys: { telegram: string; phone: string; email: string }): KeyStep[] {
+  const steps: KeyStep[] = [];
+  if (!lists(rules, keys.email)) steps.push({ kind: 'add', commitment: keys.email });
+  for (const commitment of rules.signers.filter((s) => ![keys.telegram, keys.phone, keys.email].some((k) => same(s, k)))) {
+    steps.push({ kind: 'remove', commitment });
+  }
   return steps;
 }
 

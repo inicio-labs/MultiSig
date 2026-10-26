@@ -44,6 +44,7 @@ import { SettingsSheet } from './SettingsSheet';
 import { canSetUpRecoveryHere, RecoverySheet, type RecoveryFrom } from './RecoverySheet';
 import { RecoveryNudgeSheet } from './RecoveryNudgeSheet';
 import { canUsePhoneKeyHere, NewPhoneSheet, NotMeSheet, RemovedPhoneSheet, thisPhoneWasRemoved } from './NewPhoneSheet';
+import { ChangeEmailSheet } from './ChangeEmailSheet';
 import { thisPhone } from '@/lib/thisPhone';
 import { TokenAmount } from './TokenAmount';
 import { ToastProvider, useToast } from './Toast';
@@ -67,7 +68,7 @@ function WalletHome() {
   const { engine, snapshot } = useWallet();
   const toast = useToast();
   // Opened from the bot's "This wasn't me": what to secure comes first.
-  const [view, setView] = useState<'home' | 'send' | 'receive' | 'settings' | 'alerts' | 'recovery' | 'recovery-nudge' | 'new-phone' | 'removed-phone' | 'not-me'>(
+  const [view, setView] = useState<'home' | 'send' | 'receive' | 'settings' | 'alerts' | 'recovery' | 'recovery-nudge' | 'new-phone' | 'removed-phone' | 'not-me' | 'change-email'>(
     () => (telegramStartParam() === 'not_me' ? 'not-me' : 'home'),
   );
   const [recoveryFrom, setRecoveryFrom] = useState<RecoveryFrom>('settings');
@@ -475,6 +476,7 @@ function WalletHome() {
         accountId={snapshot.accountId}
         onRecovery={() => openRecovery('settings')}
         onUseThisPhone={canUsePhoneKeyHere() ? () => setView('new-phone') : undefined}
+        onChangeEmail={canUsePhoneKeyHere() ? () => setView('change-email') : undefined}
       />
       <AlertsNudgeSheet open={view === 'alerts'} firstPayment={firstPayment} onAnswer={answerAlerts} />
       <RecoveryNudgeSheet open={view === 'recovery-nudge'} firstPayment={firstPayment} onAnswer={answerRecoveryNudge} />
@@ -483,6 +485,7 @@ function WalletHome() {
       {ready && (needsThisPhone || view === 'new-phone') && <NewPhoneSheet open={view === 'new-phone'} onClose={() => setView('home')} />}
       <RemovedPhoneSheet open={view === 'removed-phone'} onClose={() => setView('home')} />
       <NotMeSheet open={view === 'not-me'} onClose={() => setView('home')} />
+      {ready && phoneHere && <ChangeEmailSheet open={view === 'change-email'} onClose={() => setView('home')} />}
       {inviting && <InviteScreen />}
       {/* A new phone or user (nothing saved): a plain loading screen until the
           wallet is found, never an empty home that then turns into Welcome. */}

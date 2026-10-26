@@ -25,6 +25,10 @@ const STEPS: Record<WalletActivity['kind'], Array<{ label: string; covers: Activ
     { label: 'Confirming it’s you', covers: ['preparing', 'signing'] },
     { label: 'Moving your wallet to this phone', covers: ['proving', 'delivering', 'syncing'] },
   ],
+  email: [
+    { label: 'Adding your new email', covers: ['preparing', 'signing'] },
+    { label: 'Removing the old one', covers: ['proving', 'delivering', 'syncing'] },
+  ],
 };
 
 /** Where a send or collect is: done, now, next (`done`: every step ticked). */

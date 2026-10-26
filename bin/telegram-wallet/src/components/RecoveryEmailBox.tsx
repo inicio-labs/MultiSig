@@ -136,10 +136,12 @@ function DevBox() {
       setKey(null);
       return;
     }
-    let privateKey = storage.get(DEV_KEY) as Hex | null;
+    // One stand-in key per email, as Privy gives one wallet per email user.
+    const keyName = `${DEV_KEY}:${session.toLowerCase()}`;
+    let privateKey = storage.get(keyName) as Hex | null;
     if (!privateKey) {
       privateKey = generatePrivateKey();
-      storage.set(DEV_KEY, privateKey);
+      storage.set(keyName, privateKey);
     }
     const pk = privateKey;
     setKey({
