@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { HistoryEntry, HistoryNote } from '@openzeppelin/guardian-client';
 import {
   describeHistoryEntry,
+  historyTime,
   settingsDetail,
   settingsTitle,
   soleCounterparty,
@@ -120,5 +121,28 @@ describe('settings rows by the proposal they executed', () => {
   it('falls back to a general title without metadata', () => {
     expect(settingsTitle(undefined)).toBe('Account settings changed');
     expect(settingsDetail(null)).toBeUndefined();
+  });
+});
+
+describe('when a transaction happened, in local time', () => {
+  // Built with local-time constructors, so the test holds in any time zone.
+  const now = new Date(2026, 9, 26, 15, 30);
+  const at = (...parts: [number, number, number, number, number]) => new Date(...parts).getTime();
+
+  it('says Today and Yesterday by calendar day, with the time', () => {
+    expect(historyTime(at(2026, 9, 26, 0, 5), now, 'en-GB')).toBe('Today, 00:05');
+    expect(historyTime(at(2026, 9, 26, 15, 11), now, 'en-GB')).toBe('Today, 15:11');
+    expect(historyTime(at(2026, 9, 25, 23, 59), now, 'en-GB')).toBe('Yesterday, 23:59');
+    expect(historyTime(at(2026, 9, 25, 0, 0), now, 'en-GB')).toBe('Yesterday, 00:00');
+  });
+
+  it('then the date, with the year only when it is not this year', () => {
+    expect(historyTime(at(2026, 9, 24, 16, 45), now, 'en-GB')).toBe('24 Oct, 16:45');
+    expect(historyTime(at(2025, 11, 31, 9, 0), now, 'en-GB')).toBe('31 Dec 2025, 09:00');
+  });
+
+  it('counts yesterday across a month boundary, and uses the viewer\'s clock style', () => {
+    expect(historyTime(at(2026, 9, 31, 22, 0), new Date(2026, 10, 1, 8, 0), 'en-GB')).toBe('Yesterday, 22:00');
+    expect(historyTime(at(2026, 9, 26, 15, 11), now, 'en-US')).toBe('Today, 3:11 PM');
   });
 });

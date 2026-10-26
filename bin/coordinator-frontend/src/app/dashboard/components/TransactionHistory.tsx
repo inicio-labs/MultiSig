@@ -9,6 +9,8 @@ import { accountAddress } from "@/lib/findAccounts";
 import { shortHex } from "@/lib/proposalDescription";
 import {
   describeHistoryEntry,
+  historyTime,
+  historyTimeFull,
   settingsDetail,
   settingsTitle,
   soleCounterparty,
@@ -22,7 +24,6 @@ import {
 const PREVIEW_ROWS = 5;
 const ROW = "flex min-h-14 items-center gap-2.5 px-3 py-2 md:min-h-[60px] md:gap-3 md:px-5";
 const BUTTON = "inline-flex h-8 items-center rounded-[8px] border border-[rgba(0,0,0,0.08)] bg-white px-3 text-[12px] font-[500] text-[#111] transition-colors hover:bg-gray-50 active:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40";
-const WHEN = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 
 const TITLES: Record<Exclude<HistoryKind, "settings">, string> = {
   sent: "Sent",
@@ -100,7 +101,7 @@ function HistoryRow({ item, first, title, detail, sdkReady }: {
           <div className="flex flex-wrap gap-x-1.5 text-[12px] text-[rgba(0,0,0,0.5)]">
             {parties && <span className="min-w-0 basis-full sm:basis-auto">{parties}</span>}
             {parties && item.at !== null && <span aria-hidden className="hidden sm:inline">·</span>}
-            {item.at !== null && <span className="whitespace-nowrap">{WHEN.format(item.at)}</span>}
+            {item.at !== null && <span className="whitespace-nowrap" title={historyTimeFull(item.at)}>{historyTime(item.at)}</span>}
             {item.fees.length > 0 && <span className="whitespace-nowrap sm:hidden">Fee <Amounts moves={item.fees} /></span>}
           </div>
         </div>

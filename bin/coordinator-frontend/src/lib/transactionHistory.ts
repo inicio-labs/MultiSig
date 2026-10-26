@@ -98,6 +98,32 @@ export function describeHistoryEntry(entry: HistoryEntry, accountId: string, nat
   };
 }
 
+/**
+ * When a transaction happened, in the viewer's own time zone and locale:
+ * "Today, 3:11 pm", "Yesterday, 9:10 am", then "24 Oct, 4:45 pm" (with the
+ * year when it is not this year). Days are calendar days, not 24-hour spans.
+ */
+export function historyTime(at: number, now: Date = new Date(), locale?: string): string {
+  const when = new Date(at);
+  const time = new Intl.DateTimeFormat(locale, { timeStyle: 'short' }).format(when);
+  const day = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const today = day(now);
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1).getTime();
+  if (day(when) === today) return `Today, ${time}`;
+  if (day(when) === yesterday) return `Yesterday, ${time}`;
+  const date = new Intl.DateTimeFormat(locale, {
+    day: 'numeric',
+    month: 'short',
+    ...(when.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }),
+  }).format(when);
+  return `${date}, ${time}`;
+}
+
+/** The full date and time with the time zone, for a hover. */
+export function historyTimeFull(at: number, locale?: string): string {
+  return new Intl.DateTimeFormat(locale, { dateStyle: 'full', timeStyle: 'long' }).format(new Date(at));
+}
+
 /** Newest first by when each became canonical (Guardian's order is by key, see TIMESTAMP_KEY). */
 export function sortHistory(entries: readonly HistoryEntry[]): HistoryEntry[] {
   return [...entries].sort((a, b) => canonicalAt(b) - canonicalAt(a) || b.nonce - a.nonce);
