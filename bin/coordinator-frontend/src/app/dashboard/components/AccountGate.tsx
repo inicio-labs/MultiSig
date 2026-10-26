@@ -4,10 +4,11 @@ import { useRouter } from "next/navigation";
 import type { SignatureScheme } from "@openzeppelin/miden-multisig-client";
 import { MIDEN_NETWORK } from "@/config/psm";
 import { useMultisig, useTokenEnv } from "@/contexts/MultisigContext";
-import { WALLET_NAME, WALLET_RECONNECT_WAIT_MS, gateView } from "@/lib/accountGate";
+import { WALLET_NAME, WALLET_RECONNECT_WAIT_MS, gateView, shouldOpenSavedAccount } from "@/lib/accountGate";
 import { accountAddress } from "@/lib/findAccounts";
 import { shortHex } from "@/lib/proposalDescription";
 import { clearWalletCookie } from "@/lib/walletCookie";
+import { midenWalletDisconnectedByUser } from "@/lib/walletReconnect";
 import type { WalletSource } from "@/wallets/types";
 
 const PRIMARY = "inline-flex h-10 min-w-[200px] items-center justify-center rounded-[8px] bg-[#FF5500] px-4 text-[14px] font-[500] text-white transition-colors hover:bg-[#E64A00] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FF5500] disabled:cursor-not-allowed disabled:opacity-60";
@@ -50,7 +51,6 @@ const AccountGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     ledger,
     lastKnownAccount,
     sessionEnded,
-    clearSessionEnded,
   } = useMultisig();
   const router = useRouter();
   const { sdkReady } = useTokenEnv();
@@ -63,10 +63,11 @@ const AccountGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     return () => clearTimeout(timer);
   }, []);
 
-  // A connected wallet opens the saved account, once per connection: a failed
-  // load waits for Try again, and an account closed on purpose stays closed
-  // until the wallet changes or reconnects (an unplugged Ledger, plugged back
-  // in). Ledger is connected only by the user's click.
+  // A connected wallet opens the saved account, once per connection
+  // (shouldOpenSavedAccount): a failed load waits for Try again, and an account
+  // that closed (a session end) opens again with the same wallet only on a
+  // click; another wallet that connects opens it at once. Ledger is connected
+  // only by the user's click.
   const tried = useRef<string | null>(null);
   useEffect(() => {
     if (!activeCommitment) {
@@ -78,13 +79,12 @@ const AccountGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       tried.current = key;
       return;
     }
-    // After a session ended, only the user's click opens the account again.
-    if (loadingAccount || !savedId || sessionEnded || tried.current === key) return;
+    if (!savedId || !shouldOpenSavedAccount({ accountOpen: false, loading: loadingAccount, savedId, walletKey: key, triedKey: tried.current })) return;
     tried.current = key;
     handleLoad(savedId, schemeFor(walletSource)).catch(() => {
       // Shown below through `error`.
     });
-  }, [multisig, loadingAccount, savedId, sessionEnded, activeCommitment, walletSource, handleLoad]);
+  }, [multisig, loadingAccount, savedId, activeCommitment, walletSource, handleLoad]);
 
   const view = gateView({
     accountOpen: Boolean(multisig),
@@ -94,20 +94,20 @@ const AccountGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     loading: loadingAccount,
     startupError: clientStartup.phase === "error" ? clientStartup.error : null,
     error,
-    waitedForWallet,
+    // A wallet disconnected on purpose is not reconnected on its own: no wait.
+    waitedForWallet: waitedForWallet || (walletSource === "miden-wallet" && midenWalletDisconnectedByUser()),
     sessionEnded,
   });
   if (view.kind === "open") return <>{children}</>;
 
   const connect = (source: WalletSource) => {
     setOtherWallets(false);
-    if (sessionEnded) {
-      clearSessionEnded();
-      // Still connected: open the account again, which starts a new session (one wallet approval).
-      if (source === walletSource && activeCommitment && savedId) {
-        handleLoad(savedId, schemeFor(walletSource)).catch(() => {});
-        return;
-      }
+    // After a session end, the same wallet still connected: open the account
+    // again, which starts a new session (one wallet approval). "Session ended"
+    // stays until a load starts, so cancelling another wallet changes nothing.
+    if (sessionEnded && source === walletSource && activeCommitment && savedId) {
+      handleLoad(savedId, schemeFor(walletSource)).catch(() => {});
+      return;
     }
     if (source === "ledger") {
       ledger.show();

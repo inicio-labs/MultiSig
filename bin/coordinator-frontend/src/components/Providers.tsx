@@ -56,7 +56,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     return null;
   }
 
-  // Always wrap with ParaProvider so useParaMiden hook has its context.
+  // Always wrap with ParaProvider so the Para hooks (useParaSession) have their context.
   // When no API key is set, Para features simply won't work but the provider won't crash.
   return (
     <QueryClientProvider client={queryClient}>

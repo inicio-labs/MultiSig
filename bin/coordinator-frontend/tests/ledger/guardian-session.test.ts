@@ -158,6 +158,26 @@ describe('GuardianSessionManager', () => {
     expect(ended.length).toBeGreaterThan(0);
   });
 
+  it('a session refused on one Guardian client is dead on all: every client stops using it and it reads as ended', async () => {
+    const held = session('k');
+    const { sessions, states, ended, store } = manager({ stored: held });
+    await sessions.setWallet('para|0xaaa|https://g');
+    const shared = guardian('multisig-client');
+    const own = guardian('account');
+    await sessions.ensure(shared as never, signer());
+    await sessions.resume(own as never, signer());
+    shared.setSession(held);
+    own.setSession(held);
+    expect(states.at(-1)).toMatchObject({ phase: 'active' });
+    // Guardian refuses it on the account's own client (say, after a restart).
+    ended.at(-1)!('rejected', held);
+    expect(states.at(-1)).toEqual({ phase: 'ended', reason: 'rejected' });
+    expect(shared.getSession()).toBeNull();
+    expect(own.getSession()).toBeNull();
+    expect(sessions.holds(shared as never)).toBe(false);
+    expect(store.remove).toHaveBeenCalled();
+  });
+
   it('reports an unsupported Guardian, a declined grant, a wallet that cosigns nothing and other failures', async () => {
     const cases: Array<[() => Promise<unknown>, GuardianSessionState | RegExp]> = [
       [async () => { throw new GuardianSessionsUnsupportedError(); }, { phase: 'unsupported' }],

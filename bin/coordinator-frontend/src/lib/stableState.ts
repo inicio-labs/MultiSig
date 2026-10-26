@@ -29,6 +29,16 @@ export function sameData(a: unknown, b: unknown): boolean {
     && sameData((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]));
 }
 
+/**
+ * The value to keep as state: `current` when the update returned it, else a
+ * copy of `next`. The SDK changes its own objects in place (a proposal's
+ * verification), so state that held them could change without React knowing,
+ * and a later "same data?" check would compare against the changed object.
+ */
+export function copyUnlessSame<T>(current: T, next: T): T {
+  return next === current ? current : structuredClone(next);
+}
+
 /** A state updater that keeps the current value when `next` holds the same data. */
 export function keepIfSame<T>(next: T): (current: T) => T {
   return (current) => (sameData(current, next) ? current : next);
