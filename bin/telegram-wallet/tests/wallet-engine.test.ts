@@ -251,6 +251,25 @@ describe('WalletEngine.start', () => {
     expect(opened.getSnapshot().phase).toEqual({ kind: 'ready' });
   });
 
+  it('invite-only: an account registered with its code but never used opens again without one', async () => {
+    // Joined yesterday with an invite code, nothing received or sent since (nonce 0).
+    const { deps, log } = setup({ existing: [{ accountId: '0xjoined', updatedAt: '2026-10-26T00:00:00Z' }], nonce: 0n });
+    const engine = new WalletEngine({
+      ...deps,
+      inviteOnly: true,
+      // The node already allows it…
+      needsInvitation: async () => false,
+      // …and registering again needs a code nobody has any more.
+      registerOnNode: async (_c, _id, code) => {
+        log.push('registerOnNode');
+        if (!code) throw new Error('An invitation code is required to register an account on this network.');
+      },
+    });
+    await engine.start();
+    expect(engine.getSnapshot().phase).toEqual({ kind: 'ready' });
+    expect(log).not.toContain('registerOnNode');
+  });
+
   it('creates a new account, registers it on Guardian and the node, and is ready without transacting', async () => {
     const { engine, log, phases, store } = setup();
     await engine.start();

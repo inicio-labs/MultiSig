@@ -397,14 +397,21 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
       // An invite-only network registers only with the user's code: an account
       // created before but never registered asks for it now, before the sync
       // (seconds sooner), and its saved home screen goes (it never had one).
-      if (unregistered && !this.invitationCode && await this.deps.needsInvitation?.(midenClient, multisig.accountId)) {
+      const needsCode = unregistered && !this.invitationCode && this.deps.needsInvitation
+        ? await this.deps.needsInvitation(midenClient, multisig.accountId)
+        : null;
+      if (needsCode) {
         const key = this.viewKey();
         if (key) this.deps.storage?.remove?.(key);
         this.update({ phase: { kind: 'invite' }, balances: [], history: [], savedAt: null });
         return;
       }
       await this.refresh();
-      if (unregistered) {
+      // Registered with its code on an earlier open, never used since: the
+      // node already allows it, and registering again would need a code the
+      // wallet no longer has (invite-only).
+      const alreadyAllowed = needsCode === false;
+      if (unregistered && !alreadyAllowed) {
         // The node only accepts transactions from registered accounts. A new
         // account registers here (with the invite code it was created with,
         // on an invite-only network); one whose first start was interrupted
