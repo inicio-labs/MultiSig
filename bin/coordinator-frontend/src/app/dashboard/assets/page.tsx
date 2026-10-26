@@ -14,21 +14,23 @@ const ACTION = "inline-flex h-9 items-center rounded-[8px] border border-[rgba(0
 // Different tokens are never added together or compared as shares: each has
 // its own decimals and value, so the page is the list of what the account holds.
 const Assets = () => {
-  const { detectedConfig } = useMultisig();
+  const { detectedConfig, lastKnownAccount } = useMultisig();
   const { openSendModal, openReceiveModal } = useDashboardUI();
   const waiting = useWaitingNotes().length;
   const loaded = detectedConfig !== null;
+  // Until the fresh state arrives, what this browser last knew (else placeholders).
+  const shown = detectedConfig?.vaultBalances ?? lastKnownAccount?.vaultBalances;
 
-  const balances = useMemo(
-    () => detectedConfig?.vaultBalances ?? [],
-    [detectedConfig?.vaultBalances],
-  );
+  const balances = useMemo(() => shown ?? [], [shown]);
 
   return (
     // The same width and padding as Home, so the pages line up.
     <div className="flex h-full w-full flex-col px-2 py-2 md:py-3 lg:p-4">
       <div className="mb-4 flex items-center justify-between gap-3 md:mb-5">
-        <h1 className="text-[22px] font-[600] leading-[1.2] text-[#111] md:text-[24px]">Assets</h1>
+        <h1 className="flex items-baseline gap-2 text-[22px] font-[600] leading-[1.2] text-[#111] md:text-[24px]">
+          Assets
+          {!loaded && shown && <span className="text-[12px] font-[400] text-[rgba(0,0,0,0.45)]">Updating…</span>}
+        </h1>
         <div className="flex gap-2">
           <button type="button" disabled={!loaded} onClick={() => openSendModal()} className={ACTION}>
             Send
@@ -50,7 +52,7 @@ const Assets = () => {
         </div>
       </div>
 
-      <TokenHoldings balances={balances} loading={!loaded} />
+      <TokenHoldings balances={balances} loading={!shown} />
     </div>
   );
 };
