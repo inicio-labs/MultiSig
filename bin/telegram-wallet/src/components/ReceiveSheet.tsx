@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type MouseEvent } from 'react';
 import QRCode from 'qrcode';
-import { accountAddress, shortAddress } from '@/lib/address';
+import { accountAddress } from '@/lib/address';
 import { useDirectory } from '@/hooks/useDirectory';
 import { alertsAvailable, turnOnAlerts } from '@/lib/alerts';
 import { formatError } from '@/lib/errors';
@@ -47,6 +47,17 @@ export function ReceiveSheet({ open, onClose, hidden, onCollected }: {
   const [collecting, setCollecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const directory = useDirectory(snapshot.accountId);
+  // Paid by @username: lead with it; the long address waits behind a tap.
+  const byUsername = directory.available && directory.on && Boolean(directory.username);
+  const [showAddress, setShowAddress] = useState(false);
+  useEffect(() => { if (!open) setShowAddress(false); }, [open]);
+  const copyUsername = () => {
+    if (!directory.username) return;
+    void navigator.clipboard.writeText(`@${directory.username}`).then(
+      () => { haptic('light'); toast('Username copied', 'copy'); },
+      () => toast('Copy is not available here', 'alert'),
+    );
+  };
   // The network's funding note is collected automatically during setup.
   const waiting = snapshot.phase.kind === 'ready' ? snapshot.incoming : [];
 
@@ -125,27 +136,40 @@ export function ReceiveSheet({ open, onClose, hidden, onCollected }: {
         </>
       )}
 
-      {qr ? <img className="qr" src={qr} alt="QR code of your address" /> : <div className="qr" />}
-      <button className="addr-full" onClick={copy}>{address}</button>
-      <div className="chips">
-        <button className="chip" onClick={copy}><Icon name="copy" />Copy</button>
-        <button className="chip" onClick={share}><Icon name="share" />Share</button>
-      </div>
-
-      {/* Where people look when they want to get paid: here, not hidden in settings. */}
-      {directory.available && (
+      {byUsername ? (
         <>
-          <div className="cells"><DirectoryToggle directory={directory} /></div>
-          {directory.username && (
-            <div className="sub fine">Anyone who knows your username can find this address. Your balance and payments stay private.</div>
+          {/* Paid by @username: that is what people need; the address is for other wallets. */}
+          <div className="handle-card">
+            <div className="handle">@{directory.username}</div>
+            <div className="sub">Friends on PrivPay pay you by your username.</div>
+          </div>
+          <div className="chips">
+            <button className="chip" onClick={copyUsername}><Icon name="copy" />Copy</button>
+            <button className="chip" onClick={share}><Icon name="share" />Share</button>
+          </div>
+          {showAddress ? (
+            <>
+              {qr ? <img className="qr" src={qr} alt="QR code of your address" /> : <div className="qr" />}
+              <button className="addr-full" onClick={copy}>{address}</button>
+              <div className="chips">
+                <button className="chip" onClick={copy}><Icon name="copy" />Copy address</button>
+              </div>
+            </>
+          ) : (
+            <button className="text-btn" onClick={() => { haptic('light'); setShowAddress(true); }}>Show my Miden address</button>
           )}
         </>
-      )}
-
-      {waiting.length === 0 && (
-        <div className="sub" style={{ padding: '4px 12px 8px' }}>
-          New payments to {address ? shortAddress(address) : 'you'} show up here and on the bell.
-        </div>
+      ) : (
+        <>
+          {qr ? <img className="qr" src={qr} alt="QR code of your address" /> : <div className="qr" />}
+          <button className="addr-full" onClick={copy}>{address}</button>
+          <div className="chips">
+            <button className="chip" onClick={copy}><Icon name="copy" />Copy</button>
+            <button className="chip" onClick={share}><Icon name="share" />Share</button>
+          </div>
+          {/* Where people look when they want to get paid: the way to turn it on. */}
+          {directory.available && <div className="cells"><DirectoryToggle directory={directory} /></div>}
+        </>
       )}
     </Sheet>
   );

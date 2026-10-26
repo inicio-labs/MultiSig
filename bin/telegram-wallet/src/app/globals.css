@@ -333,3 +333,7 @@ button.cell:active { background: var(--bg); }
 .invite .btn { width: 100%; }
 .invite-code { text-align: center; font-size: 18px; letter-spacing: 0.04em; }
 .invite-code::placeholder { letter-spacing: normal; }
+
+/* Receive with pay-by-@username on: the username leads. */
+.handle-card { text-align: center; padding: 18px 12px 6px; }
+.handle { font-size: 28px; font-weight: 700; letter-spacing: -0.01em; word-break: break-all; }

@@ -5,7 +5,6 @@ import { alertsAvailable, turnOffAlerts, turnOnAlerts } from '@/lib/alerts';
 import { usePref } from '@/lib/prefs';
 import { haptic, telegramCloud } from '@/lib/telegram';
 import { Icon, type IconName } from './Icon';
-import { openPasskeyCheck } from './PasskeyCheck';
 import { Sheet } from './Sheet';
 
 /** From the gear on the home screen (and Telegram's own Settings item in the app's menu). */
@@ -58,8 +57,6 @@ export function SettingsSheet({ open, onClose, accountId }: { open: boolean; onC
         {synced ? 'Saved to your Telegram, on all your devices.' : 'Saved on this device.'}
         {' '}Amounts also blur whenever the app is in the background.
       </div>
-      {/* Test: can this Telegram use passkeys (Face ID) for Privy's check? */}
-      <button className="text-btn small" onClick={openPasskeyCheck}>Passkey check (test)</button>
     </Sheet>
   );
 }

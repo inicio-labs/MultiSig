@@ -350,7 +350,7 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
   private async startOnce(): Promise<void> {
     {
       this.update({ phase: { kind: 'starting' }, notice: null });
-      const midenClient = this.midenClient ?? await this.deps.startMidenClient();
+      const midenClient = this.midenClient ?? await this.timed('start: miden client', () => this.deps.startMidenClient());
       this.midenClient = midenClient;
       this.privateNotes ??= this.deps.createPrivateNotes?.(midenClient) ?? null;
       const multisigClient = this.deps.createMultisigClient(midenClient);
@@ -361,14 +361,14 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
           .catch((error: unknown) => console.warn('No Guardian session; the wallet signs requests', error));
       }
 
-      const multisig = this.multisig ?? await this.findOrCreate(multisigClient);
+      const multisig = this.multisig ?? await this.timed('start: find account', () => this.findOrCreate(multisigClient));
       this.multisig = multisig;
       this.deps.storage?.set(this.rememberedKey(), multisig.accountId);
       this.update({ accountId: multisig.accountId });
 
       // The account's note tag before the first sync: a sync without it moves
       // the client past notes that were sent to the account earlier.
-      await this.deps.registerNoteTag(midenClient, multisig.accountId);
+      await this.timed('start: note tag', () => this.deps.registerNoteTag(midenClient, multisig.accountId));
       const unregistered = multisig.account.nonce().asInt() === 0n;
       // An invite-only network registers only with the user's code: an account
       // created before but never registered asks for it now, before the sync
@@ -513,14 +513,21 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
   private async syncAccount(): Promise<void> {
     const { midenClient, multisig } = this;
     if (!midenClient || !multisig) return;
+    // History is only Guardian's feed (no local store): fetched alongside the
+    // sync instead of after it. A nicety: keep the last list if it fails.
+    const historyPage = this.timed('sync: history', () => multisig.deltaHistory({ limit: 20 }))
+      .then((page) => page, (error: unknown) => {
+        console.warn('Could not load the account history', error);
+        return null;
+      });
     try {
-      await midenClient.sync();
+      await this.timed('sync: node', () => midenClient.sync());
     } catch {
       await new Promise((resolve) => setTimeout(resolve, 500));
       await midenClient.sync();
     }
     try {
-      await midenClient.notes.fetchPrivate();
+      await this.timed('sync: private notes', () => midenClient.notes.fetchPrivate());
     } catch (error) {
       console.warn('Could not fetch private notes; private deposits may show up on the next refresh.', error);
     }
@@ -535,7 +542,7 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
     }
     const isToken = (faucetId: string) => faucetId.toLowerCase() === token;
     try {
-      await multisig.syncState();
+      await this.timed('sync: guardian state', () => multisig.syncState());
     } catch (error) {
       // Right after an execute the local account is ahead of what Guardian has
       // seen on chain; the local state is the current one then.
@@ -543,17 +550,15 @@ export class WalletEngine<C extends WalletMidenClient = WalletMidenClient, M ext
     }
     // Only the wallet's token: notes in other tokens are never shown or
     // collected, and stay claimable should the wallet add tokens later.
-    const incoming = (await multisig.getConsumableNotes())
+    const incoming = (await this.timed('sync: incoming notes', () => multisig.getConsumableNotes()))
       .filter((note) => note.assets.length > 0 && note.assets.every((asset) => isToken(asset.faucetId)));
     const balances = AccountInspector.fromAccount(multisig.account).vaultBalances
       .filter((b) => b.amount > 0n && isToken(b.faucetId));
-    // History is a nicety: keep the last list if Guardian's feed fails.
-    const history = await multisig.deltaHistory({ limit: 20 })
-      .then((page) => toActivity(page.entries).filter((item) => isToken(item.faucetId)))
-      .catch((error: unknown) => {
-        console.warn('Could not load the account history', error);
-        return this.snapshot.history;
-      });
+    if (this.multisig !== multisig) return;
+    // The balance and waiting payments as soon as they are known.
+    this.update({ incoming, balances });
+    const page = await historyPage;
+    const history = page ? toActivity(page.entries).filter((item) => isToken(item.faucetId)) : this.snapshot.history;
     if (this.multisig !== multisig) return;
     this.update({ incoming, balances, history, savedAt: null });
     this.saveView();
